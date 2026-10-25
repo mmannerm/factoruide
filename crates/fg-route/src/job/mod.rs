@@ -218,9 +218,14 @@ pub fn prepare(
     let world = load_world(conn, overrides, &profile, &params, progress)?;
     progress("Loading quests");
     progress(r#"@progress {"phase":"prepare","step":"quests"}"#);
-    let mut model = model::load(conn, &world, &profile, &params)?;
-    let mut start_notes = Vec::new();
     let members = req.members(params.edition.rules());
+    let starts: Vec<_> = if members.is_empty() {
+        req.start.iter().collect()
+    } else {
+        members.clone()
+    };
+    let mut model = model::load(conn, &world, &profile, &params, &starts)?;
+    let mut start_notes = Vec::new();
     // A member who already chose an exclusive alternative cannot meet an exact requirement.
     for q in model.quests.iter().filter(|q| q.required) {
         for (k, member) in members.iter().enumerate() {

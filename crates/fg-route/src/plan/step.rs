@@ -284,6 +284,7 @@ impl Planner<'_> {
             self.growth().gather(s, q.starts[0].zone, q.start_kills);
         }
         s.accepted.set(i as usize, true);
+        s.abilities |= self.model.abilities.accepted(q.id);
         s.log += 1;
         s.held += u16::from(q.carried);
         if let Some(limit) = q.time_limit {

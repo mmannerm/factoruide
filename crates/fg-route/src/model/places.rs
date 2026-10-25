@@ -81,20 +81,26 @@ impl Places {
 }
 
 /// The teleports the character's quests teach: none when it cannot take any of those quests.
-pub(super) fn quest_teleports(world: &World, profile: &Profile, quests: &[super::Quest]) -> Vec<Teleport> {
+pub(super) fn quest_teleports(
+    world: &World,
+    profile: &Profile,
+    quests: &[super::Quest],
+    known: &std::collections::HashSet<String>,
+) -> Vec<Teleport> {
     profile
         .quest_teleports
         .iter()
+        .filter(|d| d.class.eq_ignore_ascii_case(&profile.class_name))
         .filter_map(|def| {
             let taught: Vec<usize> = (quests.iter().enumerate())
                 .filter(|(_, q)| q.name == def.quest)
                 .map(|(i, _)| i)
                 .collect();
             let pos = world.to_world(def.to.zone, def.to.x, def.to.y)?;
-            (!taught.is_empty()).then(|| Teleport {
+            (!taught.is_empty() || known.contains(&def.quest)).then(|| Teleport {
                 name: def.name.clone(),
                 level: 0,
-                quests: taught,
+                quests: if known.contains(&def.quest) { vec![] } else { taught },
                 to: Loc {
                     pos,
                     zone: def.to.zone,

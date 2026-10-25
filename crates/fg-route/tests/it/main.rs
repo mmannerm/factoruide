@@ -3,6 +3,7 @@
 
 mod abilities;
 mod addon;
+mod class_unlocks;
 mod common;
 mod draft;
 mod edit;
