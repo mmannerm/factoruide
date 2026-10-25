@@ -668,7 +668,8 @@ impl<'r> Replay<'r> {
                 .find(|s| s.time <= start + 1e-6)
                 .map_or(self.planner.model.initial.movement, |s| s.movement);
             let trips = self.planner.trips().with_movement(movement);
-            let length = trips.walk(&a, &b, saved[i].level).min(end - start);
+            let distance = a.dist(&b) * self.planner.params.detour;
+            let length = trips.walk_time(&a, &b, distance, saved[i].level, 0).min(end - start);
             let leg = Leg {
                 mode: self.walk_mode(saved[i].level),
                 start,

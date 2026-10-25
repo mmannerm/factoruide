@@ -152,6 +152,11 @@ impl Trips<'_> {
             self.world.walk_level(level)
         };
         let distance = self.world.walk_distance_at(a, b, closed) * self.params.detour;
+        self.walk_time(a, b, distance, level, closed)
+    }
+
+    /// Time for a known walking distance, including a timeline's straight-line fallback.
+    pub(crate) fn walk_time(&self, a: &Pos, b: &Pos, distance: f64, level: i64, closed: u8) -> f64 {
         if distance.is_finite()
             && distance > 0.0
             && self.speed(level) > self.params.speed(level)

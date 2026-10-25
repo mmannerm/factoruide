@@ -699,3 +699,18 @@ fn farther_drops_follow_the_tier() {
         "jumped with the third: {third} vs {hurt} and {second}"
     );
 }
+
+/// A wall bends the path into several segments, then a wet strip crosses it between dry ends.
+pub(super) fn movement_ground(mixed: bool) -> Terrain {
+    if !mixed {
+        return flat(|_, _| false);
+    }
+    floors_terrain(&[(1, 32, 32)], |_, r, c| {
+        let (r, c) = (r - 32 * 64, c - 32 * 64);
+        if (20..24).contains(&r) && c < 18 {
+            vec![]
+        } else {
+            vec![(0, if (32..36).contains(&r) { WET | 3 << 3 } else { 0 })]
+        }
+    })
+}

@@ -96,6 +96,7 @@ impl Requirements<'_> {
 
 pub(super) fn apply(
     quests: &mut Vec<Quest>,
+    rows: &[super::sources::QuestRow],
     skipped: &[(i64, String, String)],
     profile: &Profile,
     params: &Params,
@@ -132,12 +133,19 @@ pub(super) fn apply(
         q.required = selected.contains(&q.id);
         q.mandatory |= q.required;
     }
-    quests.retain(|q| {
-        !incompatible.contains(&q.id)
-            && (q.required
-                || q.min_level <= profile.to_level
-                    && q.level <= profile.to_level + params.max_quest_above
-                    && q.level + 10 >= profile.from_level)
-    });
+    // The ordinary window uses the source quest levels, before mob/item modeling raises a
+    // quest's effective minimum level. Selecting a completed quest must not alter that window.
+    let ordinary: HashSet<_> = rows
+        .iter()
+        .filter(|r| {
+            profile.within_levels(
+                r.level.unwrap_or(1).max(1),
+                r.min_level.unwrap_or(1).max(1),
+                params.max_quest_above,
+            )
+        })
+        .map(|r| r.id)
+        .collect();
+    quests.retain(|q| !incompatible.contains(&q.id) && (q.required || ordinary.contains(&q.id)));
     Ok(())
 }

@@ -47,7 +47,10 @@ pub(crate) fn quests_at_start(n: usize) -> Prepared {
         mates: vec![],
         start: None,
     };
-    let mut p = job::prepare(&database(), &overrides, &request, &|_| {}).unwrap();
+    at_start(job::prepare(&database(), &overrides, &request, &|_| {}).unwrap(), n)
+}
+
+fn at_start(mut p: Prepared, n: usize) -> Prepared {
     let here = p.model.start.clone();
     let template = p.model.quests[0].clone();
     p.model.quests = (0..n)
@@ -84,18 +87,17 @@ fn planner(p: &Prepared) -> Planner<'_> {
 fn movement_training_changes_travel_and_exports_the_spell_for_each_class() {
     let conn = database();
     let overrides = Overrides::load_edition(&repo().join("overrides"), Edition::Classic).unwrap();
-    for (class, id, spell) in [("druid", 11, 783), ("shaman", 7, 2645), ("hunter", 3, 5118)] {
-        let mut p = quests_at_start(1);
-        p.profile.from_level = 30;
-        p.profile.to_level = 31;
-        p.profile.class_id = id;
-        let definitions: Vec<_> = overrides
-            .movement
-            .iter()
-            .filter(|a| a.class == class)
-            .cloned()
-            .collect();
-        p.model.movement = crate::movement::Movement::load(&conn, &definitions, id).unwrap();
+    for (race, class, spell, seconds) in [
+        ("nightelf", "druid", 783, 64.22449),
+        ("orc", "shaman", 2645, 67.22449),
+        ("orc", "hunter", 5118, 68.93407),
+    ] {
+        let req: PlanRequest = serde_json::from_value(serde_json::json!({
+            "race":race, "class":class, "from_level":30, "to_level":31,
+            "required_class_quests":[], "start":{"level":30, "spells":[]}
+        }))
+        .unwrap();
+        let mut p = at_start(job::prepare(&conn, &overrides, &req, &|_| {}).unwrap(), 1);
         let a = crate::world::Pos {
             continent: 1,
             x: -100.0,
@@ -103,18 +105,11 @@ fn movement_training_changes_travel_and_exports_the_spell_for_each_class() {
             zone: 0,
             z: None,
         };
-        let b = crate::world::Pos { x: -400.0, ..a };
         p.model.initial.pos = Some((a, 0));
         let mut trainer = p.model.start.clone();
         trainer.pos = a;
         p.model.trainers = vec![trainer];
-        p.world.terrain = crate::terrain::movement_test_ground();
-        let q = &mut p.model.quests[0];
-        q.level = 30;
-        q.xp = 100_000;
-        q.starts[0].pos = b;
-        q.ends[0].pos = b;
-        let planner = planner(&p).explicit();
+        (p.params.run_speed, p.params.detour) = (7.0, 1.0);
         let quest = [
             super::Edit::Stop {
                 stop: Stop::quest(0, Kind::Accept),
@@ -127,35 +122,73 @@ fn movement_training_changes_travel_and_exports_the_spell_for_each_class() {
                 spot: None,
             },
         ];
-        let before = planner.edit(&quest);
-        let mut trained = vec![super::Edit::Train { trainer: 0 }];
-        trained.extend(quest);
-        let after = planner.edit(&trained);
-        assert_eq!(after.errors(), 0);
-        assert!(
-            after.breakdown.travel < before.breakdown.travel,
-            "{class}: learned ability saves travel"
-        );
-        assert_eq!(
-            planner.edit(&quest).breakdown.travel,
-            before.breakdown.travel,
-            "untrained replay keeps its speed"
-        );
-        let guide = crate::export::build_traced(
-            &planner,
-            &p.profile,
-            &after.route,
-            &after.trace,
-            after.breakdown.total,
-            after.breakdown,
-        );
-        assert!(
-            guide
-                .steps
-                .iter()
-                .any(|step| step.kind == crate::export::StepKind::Train && step.spells.contains(&spell)),
-            "{class}: the training step must teach the movement spell"
-        );
+        let trained = [super::Edit::Train { trainer: 0 }, quest[0], quest[1]];
+        // Two 300-yard legs: each must pay its own cast time. A seven-yard leg is shorter
+        // than casting the form, and a level-40 mount is faster than any of these abilities.
+        for (level, distance, mixed, expected) in [
+            (30, 300.0, false, Some(seconds)),
+            (30, 7.0, false, None),
+            (40, 300.0, false, None),
+            (30, 300.0, true, None),
+        ] {
+            p.profile.from_level = level;
+            p.profile.to_level = level + 1;
+            p.world.terrain = crate::terrain::movement_test_ground(mixed);
+            let q = &mut p.model.quests[0];
+            q.level = level;
+            q.xp = 100_000;
+            q.starts[0].pos = crate::world::Pos { x: a.x - distance, ..a };
+            q.ends[0].pos = a;
+            let planner = planner(&p).explicit();
+            let before = planner.edit(&quest);
+            let after = planner.edit(&trained);
+            assert_eq!(after.errors(), 0);
+            if let Some(seconds) = expected {
+                assert!(
+                    (after.breakdown.travel - seconds).abs() < 0.05,
+                    "{class}: two outdoor casts, got {}",
+                    after.breakdown.travel
+                );
+                assert!(after.breakdown.travel < before.breakdown.travel);
+                assert_eq!(
+                    planner.edit(&quest).breakdown.travel,
+                    before.breakdown.travel,
+                    "untrained replay keeps its speed"
+                );
+                let automatic = Planner::new(&p.model, &p.world, &p.params, &p.profile);
+                let guide = crate::export::build(&automatic, &p.profile, &automatic.greedy());
+                assert!(
+                    guide
+                        .steps
+                        .iter()
+                        .any(|step| step.kind == crate::export::StepKind::Train && step.spells.contains(&spell)),
+                    "{class}: generated guides schedule movement training"
+                );
+                assert!(
+                    guide.spells.contains(&spell),
+                    "{class}: the addon purchase list includes the movement spell"
+                );
+            } else {
+                assert_eq!(
+                    after.breakdown.travel, before.breakdown.travel,
+                    "{class}: short legs, mounts and mixed terrain retain their baseline"
+                );
+            }
+        }
+        // Recorded spells and synthetic mid-level assumptions both apply from the first leg.
+        let mut req = req;
+        req.start.as_mut().unwrap().spells = vec![spell];
+        for start in [req.start.clone(), None] {
+            req.start = start;
+            let known = job::prepare(&conn, &overrides, &req, &|_| {}).unwrap();
+            p.model.initial.movement = known.model.initial.movement;
+            p.world.terrain = crate::terrain::movement_test_ground(false);
+            let edited = planner(&p).explicit().edit(&quest);
+            assert!(
+                (edited.breakdown.travel - seconds).abs() < 0.05,
+                "{class}: known spell applies from the first leg"
+            );
+        }
     }
 }
 

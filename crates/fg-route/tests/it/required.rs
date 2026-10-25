@@ -39,7 +39,9 @@ fn required_quest_editor_refuses_removal() {
     let overrides = Overrides::load_edition(&repo().join("overrides"), Edition::Classic).unwrap();
     let req = request("human", "warrior", &[RequiredQuest::Id(783)]);
     let editor = job::Editor::open(&conn, &overrides, &req, None).unwrap();
+    assert!(job::manual(&conn, &overrides, &req, None).unwrap().plan.is_empty());
     assert!(editor.save(&[], vec![]).is_err());
+    assert!(editor.save(&[RouteStep::Accept { quest: 783 }], vec![]).is_err());
     editor
         .save(
             &[RouteStep::Accept { quest: 783 }, RouteStep::TurnIn { quest: 783 }],
@@ -54,12 +56,22 @@ fn required_quest_completed_profile_needs_no_repeat() {
     let overrides = Overrides::load_edition(&repo().join("overrides"), Edition::Classic).unwrap();
     let mut req = request("human", "warrior", &[RequiredQuest::Id(783)]);
     req.start = Some(StartState {
-        level: 2,
+        level: 30,
         completed: vec![783],
         ..StartState::default()
     });
+    req.to_level = 31;
+    req.required_class_quests = None;
     let p = job::prepare(&conn, &overrides, &req, &|_| {}).unwrap();
     assert!(p.model.quests.iter().all(|q| !q.required));
+    req.required_quests.clear();
+    let ordinary = job::prepare(&conn, &overrides, &req, &|_| {}).unwrap();
+    let choices = |p: &job::Prepared| p.model.quests.iter().map(|q| (q.id, q.mandatory)).collect::<Vec<_>>();
+    assert_eq!(
+        choices(&p),
+        choices(&ordinary),
+        "completed requirements leave unrelated class choices intact"
+    );
 }
 
 #[test]
@@ -151,19 +163,13 @@ fn required_sleeping_bag_route_can_be_completed_and_exported() {
 fn required_quest_name_ambiguity_lists_ids() {
     let conn = database();
     let overrides = Overrides::load_edition(&repo().join("overrides"), Edition::Classic).unwrap();
-    let name: String = conn
-        .query_row(
-            "SELECT name FROM m_quest WHERE status = 'available'
-        AND (coalesce(races_mask,0) = 0 OR (races_mask & 1) != 0)
-        AND (coalesce(classes_mask,0) = 0 OR (classes_mask & 1) != 0)
-        GROUP BY lower(name) HAVING count(*) > 1 ORDER BY name LIMIT 1",
-            [],
-            |r| r.get(0),
-        )
-        .unwrap();
-    let req = request("human", "warrior", &[RequiredQuest::Name(name)]);
+    let req = request(
+        "human",
+        "warrior",
+        &[RequiredQuest::Name("A Call to Arms: The Plaguelands!".into())],
+    );
     let error = job::prepare(&conn, &overrides, &req, &|_| {}).err().unwrap();
-    assert!(format!("{error:#}").contains("ambiguous name; choose an ID"));
+    assert!(format!("{error:#}").contains("ambiguous name; choose an ID (5066, 5090, 5091)"));
 }
 
 #[test]
@@ -194,4 +200,70 @@ fn required_quest_completed_by_one_group_member_is_still_required_by_the_other()
     planner
         .validate_required(&[Stop::quest(i, Kind::Accept), Stop::quest(i, Kind::TurnIn)])
         .unwrap();
+}
+
+#[test]
+fn required_generation_refuses_an_incomplete_chain() {
+    let conn = database_of("forever");
+    let mut overrides = Overrides::load_edition(&repo().join("overrides"), Edition::Forever).unwrap();
+    (
+        overrides.params.effort,
+        overrides.params.candidates,
+        overrides.params.threads,
+    ) = (0.0, 1, 1);
+    let mut req = request("skyborne_horde", "druid", &[RequiredQuest::Id(79976)]);
+    req.to_level = 2;
+    let error = job::plan(&conn, &overrides, &req, &|_| {}).err().unwrap();
+    assert!(format!("{error:#}").contains("no route completing every required quest was found:"));
+    assert!(format!("{error:#}").contains("This Must Be The Place (79976)"));
+}
+
+#[test]
+fn completed_required_prerequisite_is_not_repeated() {
+    let conn = database_of("forever");
+    let overrides = Overrides::load_edition(&repo().join("overrides"), Edition::Forever).unwrap();
+    let mut req = request("skyborne_horde", "druid", &[RequiredQuest::Id(79976)]);
+    req.start = Some(StartState {
+        level: 30,
+        completed: vec![79007],
+        ..StartState::default()
+    });
+    req.to_level = 31;
+    let p = job::prepare(&conn, &overrides, &req, &|_| {}).unwrap();
+    assert!(!p.model.quests.iter().any(|q| q.required && q.id == 79007));
+    assert!(p.model.quests[p.model.index[&79976]].required);
+    let planner = Planner::new(&p.model, &p.world, &p.params, &p.profile);
+    let route = planner.greedy();
+    planner.validate_required(&route).unwrap();
+    assert!(
+        !route
+            .iter()
+            .any(|stop| stop.is_quest() && p.model.quests[stop.index as usize].id == 79007)
+    );
+}
+
+#[test]
+fn ineligible_group_member_does_not_repeat_a_completed_class_quest() {
+    let conn = database();
+    let overrides = Overrides::load_edition(&repo().join("overrides"), Edition::Classic).unwrap();
+    let mut req = request("human", "warrior", &[RequiredQuest::Id(3100)]);
+    let leader = StartState {
+        name: "Leader".into(),
+        race: 1,
+        class: "WARRIOR".into(),
+        faction: "Alliance".into(),
+        level: 10,
+        completed: vec![3100],
+        ..StartState::default()
+    };
+    req.start = Some(leader.clone());
+    req.mates = vec![StartState {
+        name: "Mage".into(),
+        class: "MAGE".into(),
+        completed: vec![],
+        ..leader
+    }];
+    req.to_level = 11;
+    let p = job::prepare(&conn, &overrides, &req, &|_| {}).unwrap();
+    assert!(!p.model.quests.iter().any(|q| q.required));
 }

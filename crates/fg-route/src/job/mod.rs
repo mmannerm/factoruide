@@ -201,7 +201,7 @@ pub fn manual(
 ) -> Result<PlanOutcome> {
     let editor = Editor::open(conn, overrides, req, walks)?;
     let notes = editor.prepared.notes.clone();
-    editor.save(&[], notes)
+    Ok(editor.blank(notes))
 }
 
 /// Everything a route is planned from: the character, the settings, the world and the quests.

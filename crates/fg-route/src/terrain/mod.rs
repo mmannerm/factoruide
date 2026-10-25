@@ -2291,6 +2291,6 @@ impl Terrain {
 mod tests;
 
 #[cfg(test)]
-pub(crate) fn movement_test_ground() -> Terrain {
-    tests::flat(|_, _| false)
+pub(crate) fn movement_test_ground(mixed: bool) -> Terrain {
+    tests::movement_ground(mixed)
 }

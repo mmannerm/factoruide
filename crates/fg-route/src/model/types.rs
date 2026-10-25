@@ -65,6 +65,10 @@ pub fn race_bit(race_id: i64) -> i64 {
 }
 
 impl Profile {
+    pub(super) fn within_levels(&self, level: i64, min_level: i64, max_above: i64) -> bool {
+        min_level <= self.to_level && level <= self.to_level + max_above && level + 10 >= self.from_level
+    }
+
     /// Reputation gained for each point a quest gives: humans' Diplomacy adds 10%.
     pub fn reputation_rate(&self) -> f64 {
         if self.race_id == 1 { 1.1 } else { 1.0 }

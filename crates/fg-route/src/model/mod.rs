@@ -56,6 +56,7 @@ pub fn load(conn: &Connection, world: &World, profile: &Profile, params: &Params
             }
         }
     }
+    required::apply(&mut quests, &sources.rows, &skipped, profile, params)?;
     chains::drop_unhanded(&mut quests, &mut skipped);
     report_skipped_class_quests(&sources, &skipped);
 
@@ -63,7 +64,9 @@ pub fn load(conn: &Connection, world: &World, profile: &Profile, params: &Params
     chains::narrow_class_quests_to_spells(&mut quests);
     chains::require_prerequisites(&mut quests);
     chains::release_impossible_class_quests(&mut quests);
-    required::apply(&mut quests, &skipped, profile, params)?;
+    for q in &mut quests {
+        q.mandatory |= q.required;
+    }
     let loot = CommonLoot::load(conn, &mut quests)?;
     dungeons::set_dungeon_levels(&mut sources.dungeons, &quests, params.dungeon_below());
     let index: FxHashMap<i64, usize> = quests.iter().enumerate().map(|(i, q)| (q.id, i)).collect();
