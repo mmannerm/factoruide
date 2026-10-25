@@ -6,6 +6,7 @@ pub mod faction;
 pub mod help;
 pub mod job;
 pub mod model;
+pub mod movement;
 pub mod params;
 pub mod plan;
 pub mod power;

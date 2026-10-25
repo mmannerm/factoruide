@@ -1,0 +1,8 @@
+# Sleeping Bag: each faction starts at its own note, then the two routes converge.
+# The merged ATT data incorrectly makes both faction starters compulsory.
+# Evidence: https://www.icy-veins.com/wow-forever/sleeping-bag (2026-10-24)
+# Horde starts 79007 in the Barrens; Alliance starts 79008 in Westfall.
+[[quest]]
+id = 79192 # Stepping Stones
+pre_all = []
+pre_any = [79007, 79008]

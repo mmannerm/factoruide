@@ -41,6 +41,7 @@ pub(crate) fn quests_at_start(n: usize) -> Prepared {
         name: None,
         params: Some(overrides.params.clone()),
         required_class_quests: None,
+        required_quests: vec![],
         professions: vec![],
         locale: None,
         mates: vec![],
@@ -77,6 +78,85 @@ pub(crate) fn quests_at_start(n: usize) -> Prepared {
 
 fn planner(p: &Prepared) -> Planner<'_> {
     Planner::new(&p.model, &p.world, &p.params, &p.profile)
+}
+
+#[test]
+fn movement_training_changes_travel_and_exports_the_spell_for_each_class() {
+    let conn = database();
+    let overrides = Overrides::load_edition(&repo().join("overrides"), Edition::Classic).unwrap();
+    for (class, id, spell) in [("druid", 11, 783), ("shaman", 7, 2645), ("hunter", 3, 5118)] {
+        let mut p = quests_at_start(1);
+        p.profile.from_level = 30;
+        p.profile.to_level = 31;
+        p.profile.class_id = id;
+        let definitions: Vec<_> = overrides
+            .movement
+            .iter()
+            .filter(|a| a.class == class)
+            .cloned()
+            .collect();
+        p.model.movement = crate::movement::Movement::load(&conn, &definitions, id).unwrap();
+        let a = crate::world::Pos {
+            continent: 1,
+            x: -100.0,
+            y: -100.0,
+            zone: 0,
+            z: None,
+        };
+        let b = crate::world::Pos { x: -400.0, ..a };
+        p.model.initial.pos = Some((a, 0));
+        let mut trainer = p.model.start.clone();
+        trainer.pos = a;
+        p.model.trainers = vec![trainer];
+        p.world.terrain = crate::terrain::movement_test_ground();
+        let q = &mut p.model.quests[0];
+        q.level = 30;
+        q.xp = 100_000;
+        q.starts[0].pos = b;
+        q.ends[0].pos = b;
+        let planner = planner(&p).explicit();
+        let quest = [
+            super::Edit::Stop {
+                stop: Stop::quest(0, Kind::Accept),
+                farm: false,
+                spot: None,
+            },
+            super::Edit::Stop {
+                stop: Stop::quest(0, Kind::TurnIn),
+                farm: false,
+                spot: None,
+            },
+        ];
+        let before = planner.edit(&quest);
+        let mut trained = vec![super::Edit::Train { trainer: 0 }];
+        trained.extend(quest);
+        let after = planner.edit(&trained);
+        assert_eq!(after.errors(), 0);
+        assert!(
+            after.breakdown.travel < before.breakdown.travel,
+            "{class}: learned ability saves travel"
+        );
+        assert_eq!(
+            planner.edit(&quest).breakdown.travel,
+            before.breakdown.travel,
+            "untrained replay keeps its speed"
+        );
+        let guide = crate::export::build_traced(
+            &planner,
+            &p.profile,
+            &after.route,
+            &after.trace,
+            after.breakdown.total,
+            after.breakdown,
+        );
+        assert!(
+            guide
+                .steps
+                .iter()
+                .any(|step| step.kind == crate::export::StepKind::Train && step.spells.contains(&spell)),
+            "{class}: the training step must teach the movement spell"
+        );
+    }
 }
 
 /// Swapping two accepts leaves the same state after them but for a timed quest's deadline: the

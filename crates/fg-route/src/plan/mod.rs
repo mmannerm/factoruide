@@ -74,7 +74,7 @@ use state::{Flags, Landed, Planned};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use step::{CampIndex, VendorIndex, camp_index, vendor_index};
-use travel::{FlightTables, Legs, Trips};
+use travel::{FlightTables, Grounds, Legs, Trips};
 use worth::Worth;
 
 /// What a planner simulates: its own routes, or an imposed route replayed as it is (no grinding
@@ -97,6 +97,7 @@ pub struct Planner<'a> {
     flights: FlightTables,
     /// Trips already computed (see `travel::Legs`).
     legs: Legs,
+    grounds: Grounds,
     /// Mobs farmed on each walk, by level (see `on_the_way::farm_along`).
     farm_walks: FarmWalks,
     /// The camps nearest to each place grinding starts at (see `camp::camp`).
@@ -166,6 +167,7 @@ impl<'a> Planner<'a> {
             profile,
             flights: FlightTables::default(),
             legs: Legs::default(),
+            grounds: Grounds::default(),
             farm_walks: FarmWalks::default(),
             near_camps: NearCamps::default(),
             farm_all: Cell::new(false),
@@ -295,6 +297,7 @@ impl<'a> Planner<'a> {
             hearth_ready: if init.unbound { f64::INFINITY } else { 0.0 },
             recall_ready: if init.unbound { f64::INFINITY } else { 0.0 },
             trained: init.trained.unwrap_or(level).min(level),
+            movement: init.movement,
             dungeons: 0,
             accepted: Flags::new(n),
             turned: Flags::new(n),
@@ -323,6 +326,7 @@ impl<'a> Planner<'a> {
                 .map(|g| init.reputation.get(g).copied().unwrap_or(0.0) as f32)
                 .collect(),
             forced_left: 0,
+            required_left: 0,
             spent: Breakdown::default(),
         };
         for &i in &init.turned {
@@ -354,6 +358,13 @@ impl<'a> Planner<'a> {
         }
         self.growth().refresh_power(&mut s);
         s.synced = self.growth().spread(&s) <= self.params.group_sync_window;
+        s.required_left = self
+            .model
+            .quests
+            .iter()
+            .enumerate()
+            .filter(|(i, q)| q.required && !s.rewarded(*i))
+            .count() as u32;
         s.forced_left = (self.model.quests.iter().enumerate())
             .filter(|(i, q)| q.zone_forced && !s.turned[*i])
             .count() as u32;
@@ -383,6 +394,7 @@ impl<'a> Planner<'a> {
     pub(crate) fn ended(&self, s: &State) -> bool {
         self.growth().lowest_level(s) >= self.profile.to_level
             && s.forced_left == 0
+            && s.required_left == 0
             && self.reputation_missing(s) <= 0.0
     }
 
@@ -428,6 +440,8 @@ impl<'a> Planner<'a> {
             model: self.model,
             flights: &self.flights,
             legs: &self.legs,
+            grounds: &self.grounds,
+            movement: self.model.initial.movement,
             explicit: self.explicit,
             open_walks: self.open_walks.get(),
         }

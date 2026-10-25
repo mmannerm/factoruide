@@ -310,7 +310,7 @@ impl Planner<'_> {
             && stop.kind == Kind::LearnFlight
             && s.landed == Landed::No
             && s.pos.dist(&self.world.taxi_nodes[i].pos) <= self.params.flight_learn_radius)
-            .then(|| 2.0 * self.trips().walk(&s.pos, &self.world.taxi_nodes[i].pos, s.level) + 5.0)
+            .then(|| 2.0 * self.trips().at(s).walk(&s.pos, &self.world.taxi_nodes[i].pos, s.level) + 5.0)
             .filter(|d| d.is_finite());
         if let Some(detour) = detour {
             s.time += detour;
@@ -382,7 +382,7 @@ impl Planner<'_> {
         // As a trip taking the flight by itself: the walk to the flight master and the flight
         // count as flying, the walk on to the next stop ends it (`State::landed`).
         let (start, end) = (nodes[from].pos, nodes[to].pos);
-        let walk = self.trips().walk(&s.pos, &start, s.level);
+        let walk = self.trips().at(s).walk(&s.pos, &start, s.level);
         s.time += walk;
         s.spent.flights += walk;
         record(s, Event::Fly { from, to });
@@ -405,7 +405,7 @@ impl Planner<'_> {
         if !ride.is_finite() {
             return Outcome::Invalid("no such crossing");
         }
-        let walk = self.trips().walk(&s.pos, &links[first].from, s.level);
+        let walk = self.trips().at(s).walk(&s.pos, &links[first].from, s.level);
         if !walk.is_finite() {
             return Outcome::Invalid("unreachable");
         }
@@ -435,7 +435,12 @@ impl Planner<'_> {
 
     /// Training of an edited route, at the trainer it says.
     fn edit_train(&self, s: &mut State, trainer: usize, trace: &mut Vec<Timed>) -> Outcome {
-        if s.trained >= s.level {
+        let movement = if self.profile.mates.is_empty() {
+            self.model.movement.trained(s.level) & !s.movement
+        } else {
+            0
+        };
+        if s.trained >= s.level && movement == 0 {
             return Outcome::Skipped("nothing to learn");
         }
         let (saved, mark) = (s.clone(), trace.len());

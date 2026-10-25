@@ -8,7 +8,7 @@ use super::request::{GROUP_MAX, GROUP_MIN_LEVEL, PlanRequest};
 use crate::model::{Mate, Profile};
 use crate::params::Params;
 use anyhow::{Context, Result, bail};
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 use std::collections::HashMap;
 
 pub(super) fn character(conn: &Connection, overrides: &Overrides, req: &PlanRequest) -> Result<(Profile, Params)> {
@@ -73,6 +73,26 @@ pub(super) fn character(conn: &Connection, overrides: &Overrides, req: &PlanRequ
     if let Some(start) = start {
         start.anchor_professions(&mut professions);
     }
+    let mut completed_quests: std::collections::HashSet<_> =
+        start.map(|s| s.completed.iter().copied().collect()).unwrap_or_default();
+    if members.len() > 1 {
+        let mut scopes =
+            conn.prepare("SELECT coalesce(races_mask, 0), coalesce(classes_mask, 0) FROM m_quest WHERE id = ?1")?;
+        for id in completed_quests.clone() {
+            let scope = scopes
+                .query_row([id], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))
+                .optional()?;
+            if members.iter().skip(1).zip(&mates).any(|(mate, info)| {
+                let eligible = scope.is_none_or(|(races, classes)| {
+                    (races == 0 || races & crate::model::race_bit(mate.race) != 0)
+                        && (classes == 0 || classes & (1 << (info.class_id - 1)) != 0)
+                });
+                eligible && !mate.completed.contains(&id)
+            }) {
+                completed_quests.remove(&id);
+            }
+        }
+    }
     let profile = Profile {
         name: req.name.clone().unwrap_or_else(|| format!("{race_key}-{class}")),
         race_id: race.id,
@@ -88,12 +108,21 @@ pub(super) fn character(conn: &Connection, overrides: &Overrides, req: &PlanRequ
             &class,
             &group,
         ),
+        quest_prerequisites: overrides.quest_prerequisites.clone(),
+        required_quests: super::required::resolve(conn, req, race.id, class_id)?,
+        completed_quests,
         class_powers: overrides.class_powers.get(&class).cloned().unwrap_or_default(),
         spell_weights: overrides
             .spells
             .get(&class)
             .map(|m| m.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
             .unwrap_or_default(),
+        movement: overrides
+            .movement
+            .iter()
+            .filter(|a| a.class == class)
+            .cloned()
+            .collect(),
         dungeons: overrides.dungeons.clone(),
         objective_orders: overrides.objective_orders.clone(),
         quest_teleports: overrides

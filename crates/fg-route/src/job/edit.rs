@@ -629,6 +629,7 @@ impl Editor {
         );
         let (steps, edits): (Vec<RouteStep>, Vec<Edit>) = together.into_iter().unzip();
         let edited = planner.edit(&edits);
+        planner.validate_required_trace(&edited.trace)?;
         let total = edited.breakdown.total;
         let route = export::build_traced(
             &planner,

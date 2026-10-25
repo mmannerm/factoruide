@@ -16,9 +16,10 @@ impl QuestBuilder<'_> {
         // A quest of a member's own race and class (in a group, the others' too: done together,
         // their XP goes to those it is for).
         profile.members_of(r.races, r.classes) != 0
-            && min_level <= profile.to_level
-            && level <= profile.to_level + self.params.max_quest_above
-            && level + 10 >= profile.from_level
+            && (!profile.required_quests.is_empty()
+                || min_level <= profile.to_level
+                    && level <= profile.to_level + self.params.max_quest_above
+                    && level + 10 >= profile.from_level)
     }
 
     /// Profession quests: kept when the profile levels that profession, accepted once the skill

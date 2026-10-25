@@ -40,6 +40,16 @@ zones to do, the level to reach before moving on from each, and where the XP is.
   to see again.
 - **Your dungeons**: force or exclude each dungeon, do the worthwhile ones in a group, take their
   quests a few levels ahead.
+- **Must-have quests**: add a quest ID or exact name. Its prerequisites are included, even when
+  they are below your starting level, and the guide continues past the target level if needed.
+  Unknown, ambiguous, conflicting or unsupported requirements produce an explanation. A guide
+  missing a requirement cannot be generated or saved from the editor. For the Sleeping Bag in
+  Forever, require **79976** (**This Must Be The Place**); the correct faction starter and the
+  rest of its chain are included. This plans acquisition; the item's XP buff is not yet simulated.
+- **Class travel abilities**: learned Travel Form, Ghost Wolf and Aspect of the Cheetah affect
+  solo travel estimates, and the guide includes learning them where trainer spell data is available. They apply conservatively
+  to whole walking legs on exposed dry terrain; water, caves, buildings and unknown geometry
+  keep the existing travel estimate. Activation time is counted per leg. Talent choices and Aquatic Form are not yet modeled.
 - **Your class quests**: the ones you want to do are kept, even when they are not the fastest.
 - **Your play style**: a relaxed, normal or fast pace (time per fight, per loot, per stop), how far
   above your level you take quests and fight mobs, how much grinding you accept, flights or

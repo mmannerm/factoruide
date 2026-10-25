@@ -10,11 +10,16 @@ An addon change also goes, in the same words, under Unreleased in that addon's o
 
 ### App
 
+- Must-have quests can be selected by ID or exact name, with their prerequisites included; guides cannot omit them.
+
 - In the guide editor, a step that only a zone too strong for the character makes possible (the flight path of Gadgetzan from Thousand Needles at level 34) is accepted, with a warning on the step, instead of being impossible. Computed guides still keep out of those zones.
 - A new guide's character shows the flight paths it knows, by continent, and you can tick or untick them: the game only gives the addon those of the continent where a flight master's map is open, so the others are deduced from the quests done in their towns (marked as such), and what you change is kept for the character.
 - Before a guide is computed for a character already on its way, the app can show a few ways to begin (a zone, a flight, the hearthstone) with their estimated time, steps and quests, and you choose; the fastest is chosen at first. It is only shown when there is really a choice, and can be turned off ("Compare the starts").
 
 ### Guides
+
+- Solo routes account for learned Travel Form, Ghost Wolf and Aspect of the Cheetah on supported ground travel, and include learning them at trainers.
+- WoW Forever: requiring the Sleeping Bag includes the correct faction starter and the full quest chain.
 
 - Walks jump down higher cliffs the bolder the profile: 15 yards for "cautious" (no fall damage), 30 for "normal" (about a third of the health), 50 for "risky" (two thirds); the health lost is paid as time resting.
 - Quests in your log with nothing done are no longer tied to the guide: it takes them like any other, or abandons them first. The ones you can turn in, and those you have begun, are still kept.

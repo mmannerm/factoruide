@@ -90,7 +90,11 @@ impl StepWriter<'_> {
             Event::DeathSkip { pos, zone } => self.death_skip(&mut step, pos, *zone),
             Event::Hearth { inn, recall } => self.hearth(&mut step, *inn, *recall),
             Event::Teleport { to } => self.teleport(&mut step, *to),
-            Event::Train { trainer, since } => self.train(&mut step, *trainer, *since, t.level),
+            Event::Train {
+                trainer,
+                since,
+                movement,
+            } => self.train(&mut step, *trainer, *since, t.level, *movement),
             Event::Sell { vendor } => self.sell(&mut step, *vendor),
             Event::Stop { stop, loc } if !stop.is_quest() => self.visit(&mut step, *stop, loc),
             Event::Stop { stop, loc } => self.quest_stop(&mut step, *stop, loc),
@@ -633,7 +637,7 @@ impl StepWriter<'_> {
     }
 
     /// Class training: the spells learned since the last visit.
-    fn train(&self, step: &mut Step, trainer: usize, since: i64, level: i64) -> Place {
+    fn train(&self, step: &mut Step, trainer: usize, since: i64, level: i64, movement: u64) -> Place {
         let npc = &self.planner.model.trainers[trainer];
         step.kind = StepKind::Train;
         let who = Arg::Npc(npc.id, npc.name.clone());
@@ -645,7 +649,7 @@ impl StepWriter<'_> {
             .map(|p| p.new_ranks(since, level))
             .unwrap_or_default();
         step.spells = ranks.iter().map(|r| r.id).collect();
-        let spells: Vec<Arg> = ranks
+        let mut spells: Vec<Arg> = ranks
             .iter()
             .map(|r| {
                 Arg::Text(if r.rank > 0 {
@@ -655,6 +659,14 @@ impl StepWriter<'_> {
                 })
             })
             .collect();
+        for (i, ability) in self.planner.model.movement.abilities.iter().enumerate() {
+            if movement & (1 << i) != 0 {
+                step.spells.extend(&ability.spells);
+                spells.push(Arg::Text(ability.name.clone()));
+            }
+        }
+        step.spells.sort_unstable();
+        step.spells.dedup();
         step.say.push(if spells.is_empty() {
             Phrase::new("train").arg("who", who)
         } else {

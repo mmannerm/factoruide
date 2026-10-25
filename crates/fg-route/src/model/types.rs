@@ -17,10 +17,16 @@ pub struct Profile {
     pub to_level: i64,
     /// Names of class quests that must be done (see overrides/class_quests.toml).
     pub required_class_quests: Vec<String>,
+    /// Exact quests selected by the player.
+    pub required_quests: Vec<i64>,
+    pub quest_prerequisites: Vec<QuestPrerequisites>,
+    /// Confirmed completions from the starting profile, never inferred from character level.
+    pub completed_quests: HashSet<i64>,
     /// Class quests that make the character stronger: name and power gained.
     pub class_powers: Vec<(String, f64)>,
     /// Class trainer spells that count for power (see overrides/spells.toml).
     pub spell_weights: Vec<(String, crate::power::SpellWeight)>,
+    pub movement: Vec<crate::movement::MovementDef>,
     /// Dungeon settings (see overrides/dungeons.toml).
     pub dungeons: Vec<DungeonDef>,
     /// The class's teleports that a quest teaches (see overrides/travel.toml).
@@ -403,6 +409,8 @@ pub struct Quest {
     /// Required because its zone is forced (`Params::forced_zones`), or as a prerequisite of
     /// such a quest: `mandatory` too, reported apart from the class quests.
     pub zone_forced: bool,
+    /// Explicit player requirement or a prerequisite selected to reach one.
+    pub required: bool,
     /// Profession quest: index in `Model::professions` and skill needed to accept it.
     pub skill: Option<(usize, i64)>,
     /// Class quest making the character stronger: index in `Profile::class_powers` (quests of
@@ -421,6 +429,7 @@ pub struct Quest {
 }
 
 pub struct Model {
+    pub movement: crate::movement::Movement,
     pub quests: Vec<Quest>,
     pub dungeons: Vec<Dungeon>,
     pub professions: Vec<ProfessionPlan>,
@@ -528,6 +537,7 @@ pub struct Initial {
     pub gear: Vec<i64>,
     /// Level of the last class training (default: the starting level).
     pub trained: Option<i64>,
+    pub movement: u64,
     /// Every quest turned in, in the model or not, for a character met in game: prerequisites
     /// the model lacks are then known instead of assumed done past level 1.
     pub completed: Option<HashSet<i64>>,
@@ -694,4 +704,12 @@ impl EntityKind {
             _ => None,
         }
     }
+}
+
+/// Edition-specific corrections of prerequisite links, with their evidence kept in TOML.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct QuestPrerequisites {
+    pub id: i64,
+    pub pre_all: Option<Vec<i64>>,
+    pub pre_any: Option<Vec<i64>>,
 }

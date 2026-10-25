@@ -590,7 +590,10 @@ impl Planner<'_> {
                 .unwrap_or(candidate.len())
                 .min(candidate.len());
             self.insert_quest_after(&mut candidate, q, after);
-            if self.simulate(&candidate, None).is_some_and(|c| c < total) {
+            if self.simulate(&candidate, None).is_some_and(|c| {
+                c < total
+                    || quest.required && self.required_missing(&candidate).len() < self.required_missing(&route).len()
+            }) {
                 route = candidate;
             }
         }

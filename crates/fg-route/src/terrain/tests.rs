@@ -123,7 +123,7 @@ fn far_tier(fall: i32) -> Option<usize> {
 }
 
 /// Tile (32, 32) of continent 1, a floor at height 0 on each cell but where `steep` (none).
-fn flat(steep: impl Fn(usize, usize) -> bool) -> Terrain {
+pub(super) fn flat(steep: impl Fn(usize, usize) -> bool) -> Terrain {
     floors_terrain(&[(1, 32, 32)], |_, r, c| {
         let (r, c) = ((r - 32 * 64) as usize, (c - 32 * 64) as usize);
         if steep(r, c) { Vec::new() } else { vec![(0, 0)] }
@@ -164,6 +164,17 @@ fn walks_around_a_wall() {
     // Same side: straight.
     let c = at(30.0, 20.0);
     assert!((t.distance(&a, &c).unwrap() - a.dist(&c)).abs() < 1e-6);
+}
+
+#[test]
+fn movement_only_uses_known_exposed_dry_ground() {
+    let (a, b) = (at(20.0, 10.0), at(20.0, 50.0));
+    assert!(flat(|_, _| false).exposed_ground_line(&a, &b));
+    assert!(!Terrain::default().exposed_ground_line(&a, &b));
+    let water = shaped(|_, _| (0, WET | 3 << 3));
+    assert!(!water.exposed_ground_line(&a, &b));
+    let roof = floors_terrain(&[(1, 32, 32)], |_, _, _| vec![(0, 0), (20, 0)]);
+    assert!(!roof.exposed_ground_line(&Pos { z: Some(0), ..a }, &Pos { z: Some(0), ..b }));
 }
 
 /// The points a walk turns at go through the gap of the wall, not across it; a walk with

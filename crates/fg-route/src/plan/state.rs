@@ -101,6 +101,7 @@ pub enum Event {
     Train {
         trainer: usize,
         since: i64,
+        movement: u64,
     },
     /// The bags' loot sold at a vendor (`Model::vendors`).
     Sell {
@@ -265,6 +266,7 @@ pub(crate) struct State {
     pub(crate) hearth_ready: f64,
     pub(crate) recall_ready: f64,
     pub(crate) trained: i64,
+    pub(crate) movement: u64,
     pub(crate) dungeons: u128,
     pub(crate) accepted: Flags,
     /// Quests out of play: turned in, or given up (those are also in `dropped`).
@@ -324,6 +326,7 @@ pub(crate) struct State {
     /// Quests of the forced zones not done yet (nor closed by an exclusive one): the guide
     /// goes on past the target level until they are.
     pub(crate) forced_left: u32,
+    pub(crate) required_left: u32,
     pub(crate) spent: Breakdown,
 }
 

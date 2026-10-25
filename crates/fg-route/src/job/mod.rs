@@ -13,6 +13,7 @@ mod paths;
 mod race;
 mod reputation;
 mod request;
+mod required;
 mod routes;
 mod services;
 mod start;
@@ -32,7 +33,7 @@ pub use overrides::{Overrides, RaceDef};
 pub use paths::{add_walk_paths, route_walks, walk_world};
 pub use race::{optimize, optimize_interruptible};
 pub use reputation::race_base;
-pub use request::{GROUP_MAX, GROUP_MIN_LEVEL, PlanOutcome, PlanRequest, Prepared};
+pub use request::{GROUP_MAX, GROUP_MIN_LEVEL, PlanOutcome, PlanRequest, Prepared, RequiredQuest};
 pub use routes::{
     DATA_ADDON, GUIDE_FORMAT, POLESTAR_SOURCE_FOLDER, add_polestar_source, addon_walks, data_addon_files, guides_lua,
     load_routes, lua_long_string, polestar_source_dir, render_routes, save_route, slug, write_addon_routes,
@@ -138,6 +139,7 @@ pub fn plan_interruptible(
     }
     // Objectives at the same place one after the other, done at once.
     let best = planner.route_together(best);
+    planner.validate_required(&best)?;
     let route = export::build(&planner, &prepared.profile, &best);
     for missing in planner.missing_class_quests(&best) {
         prepared.notes.push(format!("class quest not planned: {missing}"));
@@ -218,6 +220,22 @@ pub fn prepare(
     let mut model = model::load(conn, &world, &profile, &params)?;
     let mut start_notes = Vec::new();
     let members = req.members(params.edition.rules());
+    // A member who already chose an exclusive alternative cannot meet an exact requirement.
+    for q in model.quests.iter().filter(|q| q.required) {
+        for (k, member) in members.iter().enumerate() {
+            if q.members & (1 << k) != 0
+                && !member.completed.contains(&q.id)
+                && q.exclusive.iter().any(|id| member.completed.contains(id))
+            {
+                bail!(
+                    "required quest {} ({}) conflicts with an exclusive quest already completed by {}",
+                    q.name,
+                    q.id,
+                    member.name
+                );
+            }
+        }
+    }
     // A group is planned for the member with the least XP.
     let start = members.first().copied().or(req.start.as_ref());
     if let Some(start) = start {
@@ -258,6 +276,12 @@ pub fn prepare(
             model.initial.log.len()
         ));
     }
+    // Group mobility remains at the common baseline until every member can be modeled.
+    model.initial.movement = if profile.mates.is_empty() {
+        model.movement.initial(start, profile.from_level)
+    } else {
+        0
+    };
     model.initial.reputation = reputation::starting(conn, &params.reputation_goals, &profile, start, &mut start_notes)?;
     let mut notes = notes::model_notes(&model, &world, progress);
     notes.extend(start_notes);

@@ -281,3 +281,30 @@ A guide file carries its format (`format.rs`). Reading an older one migrates it 
 the other; a migration that cannot carry a guide over refuses it (to compute again), and a guide
 of a newer format asks to update the app. Format 1 (before phrases) keeps its texts as they were
 written.
+
+## Explicit quest requirements and ground mobility
+
+`PlanRequest.required_quests` accepts IDs or exact names (CLI: repeat `--required-quest`). Names
+resolve to one quest for the character, otherwise an error lists the ambiguous IDs. Model loading
+includes old/high-level prerequisite candidates, selects supported alternatives, checks cycles and
+exclusive requirements, then retains the required chain alongside the ordinary level-filtered
+quests. Only recorded completions satisfy missing prerequisites. Requirements keep the simulation
+running after its XP target. Search still uses finite scores for incomplete candidates; generated
+results and saved edits independently validate actual completion. Search failure is reported as
+no completed route found, not proof that the game requirement is impossible. Edition-specific
+prerequisite corrections live in `overrides/<edition>/quests.toml`, with their evidence.
+
+`movement.toml` defines sustained travel abilities independently of combat spell weights. An
+imported profile starts with its recorded capabilities; a synthetic mid-level start assumes the
+trainer abilities normally learned by then. Training updates a compact capability
+mask, included in travel caches and incremental-state comparisons. Training exports include the
+movement spells so the addon can actually learn them. Speeds do not stack with mounts, and short
+walks can stay on foot when activating a form would cost more than it saves.
+
+This first mobility slice keeps the existing terrain paths and their water costs. A bonus applies
+only when an entire chosen walking leg is classified as exposed dry terrain; model floors,
+covered floors, swimming and unknown geometry receive no new bonus. Geometry classification is
+conservative and does not provide complete client indoor-flag detection. Movement inside transport
+link chains retains the baseline estimate. No new Aquatic Form path search or talent progression
+is modeled. Group routes retain common baseline mobility. These limits keep this implementation
+separate from a full movement-mode pathfinder and are documented in the UI/readme.

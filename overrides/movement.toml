@@ -1,0 +1,29 @@
+# Sustained ground-travel abilities. Trainer levels/IDs come from m_class_spell; a recorded
+# profile's actual spell IDs decide what it knows. No talent build is assumed.
+# Ground-only conservative timing: caves, water, model floors and unknown terrain use the
+# existing baseline. Each walking leg pays the activation cost (no persistent form assumed).
+# Sources, checked 2026-10-24:
+# https://www.wowhead.com/forever/spell=783/travel-form
+# https://www.wowhead.com/classic/spell=2645/ghost-wolf
+# https://www.wowhead.com/classic/spell=5118/aspect-of-the-cheetah
+
+[[ability]]
+class = "druid"
+name = "Travel Form"
+spells = [783]
+bonus = 0.4
+activation = 1.5
+
+[[ability]]
+class = "shaman"
+name = "Ghost Wolf"
+spells = [2645]
+bonus = 0.4
+activation = 3.0
+
+[[ability]]
+class = "hunter"
+name = "Aspect of the Cheetah"
+spells = [5118]
+bonus = 0.3
+activation = 1.5

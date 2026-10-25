@@ -16,6 +16,7 @@ mod objectives;
 mod places;
 mod pvp;
 mod quest;
+mod required;
 mod rewards;
 mod selection;
 mod sources;
@@ -29,7 +30,7 @@ pub use loot::CommonLoot;
 pub use names::Names;
 pub use types::{
     Dungeon, DungeonDef, EntityKind, ExploreArea, Guard, Initial, Loc, Mate, MateStart, Model, Objective,
-    ObjectiveOrder, ProfessionPlan, Profile, Quest, Spots, Teleport, TeleportDef, Vendor, race_bit,
+    ObjectiveOrder, ProfessionPlan, Profile, Quest, QuestPrerequisites, Spots, Teleport, TeleportDef, Vendor, race_bit,
 };
 
 use crate::params::Params;
@@ -45,13 +46,25 @@ use std::collections::HashMap;
 pub fn load(conn: &Connection, world: &World, profile: &Profile, params: &Params) -> Result<Model> {
     let mut sources = Sources::read(conn, world, profile, params)?;
     let (mut quests, mut skipped) = build_quests(&sources, world, profile, params);
+    for correction in &profile.quest_prerequisites {
+        if let Some(q) = quests.iter_mut().find(|q| q.id == correction.id) {
+            if let Some(pre) = &correction.pre_all {
+                q.pre_all.clone_from(pre);
+            }
+            if let Some(pre) = &correction.pre_any {
+                q.pre_any.clone_from(pre);
+            }
+        }
+    }
     chains::drop_unhanded(&mut quests, &mut skipped);
     report_skipped_class_quests(&sources, &skipped);
-    let loot = CommonLoot::load(conn, &mut quests)?;
+
     let places = Places::load(conn, world, &sources.entities, profile, &sources.start, params.edition)?;
     chains::narrow_class_quests_to_spells(&mut quests);
     chains::require_prerequisites(&mut quests);
     chains::release_impossible_class_quests(&mut quests);
+    required::apply(&mut quests, &skipped, profile, params)?;
+    let loot = CommonLoot::load(conn, &mut quests)?;
     dungeons::set_dungeon_levels(&mut sources.dungeons, &quests, params.dungeon_below());
     let index: FxHashMap<i64, usize> = quests.iter().enumerate().map(|(i, q)| (q.id, i)).collect();
     let mut teleports = places.teleports;
@@ -92,7 +105,9 @@ pub fn load(conn: &Connection, world: &World, profile: &Profile, params: &Params
             vec![Vec::new(); sources.dungeons.len()],
         ),
     };
+    let movement = crate::movement::Movement::load(conn, &profile.movement, profile.class_id)?;
     Ok(Model {
+        movement,
         quests,
         dungeons: sources.dungeons,
         professions: profile.professions.iter().filter_map(ProfessionPlan::new).collect(),

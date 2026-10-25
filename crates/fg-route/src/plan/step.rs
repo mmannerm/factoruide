@@ -74,7 +74,7 @@ impl Planner<'_> {
         }
         let every = s.level >= s.trained + self.params.train_every;
         let every_late = s.level >= s.trained + self.params.train_every + self.params.train_max_delay;
-        let (due, late) = match self.model.power.as_ref().filter(|p| p.has_spells()) {
+        let (mut due, mut late) = match self.model.power.as_ref().filter(|p| p.has_spells()) {
             Some(p) => {
                 let gain = p.train_gain(s.trained, s.level);
                 // In a group, everyone trains at the cadence (the others' spells are not known).
@@ -86,6 +86,15 @@ impl Planner<'_> {
             }
             None => (every, every_late),
         };
+        if self.profile.mates.is_empty() {
+            let movement = &self.model.movement;
+            let available = s.movement | movement.trained(s.level);
+            let gain = movement.speed(available, s.level, self.params)
+                / movement.speed(s.movement, s.level, self.params)
+                - 1.0;
+            due |= gain >= self.params.train_min_gain && gain > 0.0;
+            late |= gain >= self.params.train_trip_gain && gain > 0.0;
+        }
         if !due {
             return;
         }
@@ -151,7 +160,7 @@ impl Planner<'_> {
     pub(crate) fn sell_at(&self, s: &mut State, i: usize, record: &mut impl FnMut(&State, Event)) {
         let vendor = &self.model.vendors[i];
         let detour = (s.landed == Landed::No && s.pos.dist(&vendor.pos) <= self.params.sell_radius)
-            .then(|| 2.0 * self.trips().walk(&s.pos, &vendor.pos, s.level))
+            .then(|| 2.0 * self.trips().at(s).walk(&s.pos, &vendor.pos, s.level))
             .filter(|d| d.is_finite());
         if let Some(detour) = detour {
             s.time += detour;
@@ -172,7 +181,7 @@ impl Planner<'_> {
         let trainer = &self.model.trainers[i];
         // Close as the crow flies, but maybe not on foot (another side of the mountains).
         let detour = (s.landed == Landed::No && s.pos.dist(&trainer.pos) <= self.params.train_radius)
-            .then(|| 2.0 * self.trips().walk(&s.pos, &trainer.pos, s.level))
+            .then(|| 2.0 * self.trips().at(s).walk(&s.pos, &trainer.pos, s.level))
             .filter(|d| d.is_finite());
         if let Some(detour) = detour {
             s.time += detour;
@@ -184,9 +193,20 @@ impl Planner<'_> {
         s.time += self.growth().train_time();
         s.spent.training += self.growth().train_time();
         let since = s.trained;
+        let movement_before = s.movement;
         s.trained = s.level;
+        if self.profile.mates.is_empty() {
+            s.movement |= self.model.movement.trained(s.level);
+        }
         self.growth().refresh_power(s);
-        record(s, Event::Train { trainer: i, since });
+        record(
+            s,
+            Event::Train {
+                trainer: i,
+                since,
+                movement: s.movement & !movement_before,
+            },
+        );
     }
 
     /// Give up the quests of the log that can no longer be finished: an objective left in a
@@ -286,6 +306,7 @@ impl Planner<'_> {
         s.turned.set(i as usize, true);
         s.log -= 1;
         s.started.retain(|&(q, _, _)| q != i);
+        s.required_left = s.required_left.saturating_sub(u32::from(q.required));
         s.spent.quest_xp += self.growth().reward(s, i);
         self.growth().gain_power(s, i);
         if s.forced_left > 0 {
@@ -660,7 +681,12 @@ impl Planner<'_> {
         if s.known & (1u128 << node) != 0 {
             return;
         }
-        let detour = 2.0 * self.trips().walk(&s.pos, &self.world.taxi_nodes[node].pos, s.level) + 5.0;
+        let detour = 2.0
+            * self
+                .trips()
+                .at(s)
+                .walk(&s.pos, &self.world.taxi_nodes[node].pos, s.level)
+            + 5.0;
         if !detour.is_finite() {
             return;
         }
@@ -820,7 +846,7 @@ impl Planner<'_> {
         }
         let (mut missing, mut zone) = (0, 0);
         for (i, q) in self.model.quests.iter().enumerate() {
-            if q.mandatory && !s.rewarded(i) && !self.availability().alternative_done(s, q) {
+            if q.mandatory && !s.rewarded(i) && (q.required || !self.availability().alternative_done(s, q)) {
                 if q.zone_forced { zone += 1 } else { missing += 1 }
             }
         }
