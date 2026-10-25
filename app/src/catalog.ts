@@ -5,6 +5,12 @@
 type Entry = Partial<Record<"en" | "de" | "es" | "esMX" | "pt" | "ru" | "ko" | "zhCN" | "zhTW", string>>;
 
 export const CATALOG: Record<string, Entry> = {
+  "Bonus d'XP": { en: "XP bonuses" },
+  "Estimation : les bonus s'additionnent avant l'XP de repos, qui reste limitée au stock du personnage.": { en: "Estimate: the bonuses add before rested XP, which remains limited to the character's stored amount." },
+  "Bonus d'XP de nourriture (+5 %)": { en: "Food XP bonus (+5%)" },
+  "XP des kills uniquement. Le bonus est supposé actif en permanence, sans temps ni coût de nourriture.": { en: "Kill XP only. Assumes the bonus stays active, with no food time or cost." },
+  "Sac de couchage (+3 %)": { en: "Sleeping Bag (+3%)" },
+  "Inclut la suite de quêtes. Après la récompense, trois charges sont supposées actives en permanence sur les kills et les quêtes, sans temps de repos. Une quête déjà terminée dans le profil active le bonus dès le départ.": { en: "Includes the quest chain. After the reward, assumes three stacks stay active for kills and quests, with no resting time. Completion recorded in the profile enables the bonus from the start." },
   "Quêtes indispensables": { en: "Must-have quests" },
   "ID ou nom exact de la quête": { en: "Quest ID or exact name" },
   "Ajoutez un ID ou un nom exact. Les prérequis sont inclus et le guide doit terminer ces quêtes, même après le niveau cible.": { en: "Add an ID or exact name. Prerequisites are included, and the guide must finish these quests even after the target level." },
