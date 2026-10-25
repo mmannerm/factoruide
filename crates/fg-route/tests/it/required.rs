@@ -39,7 +39,10 @@ fn required_quest_editor_refuses_removal() {
     let overrides = Overrides::load_edition(&repo().join("overrides"), Edition::Classic).unwrap();
     let req = request("human", "warrior", &[RequiredQuest::Id(783)]);
     let editor = job::Editor::open(&conn, &overrides, &req, None).unwrap();
-    assert!(job::manual(&conn, &overrides, &req, None).unwrap().plan.is_empty());
+    assert_eq!(
+        job::manual(&conn, &overrides, &req, None).unwrap().plan,
+        [] as [RouteStep; 0]
+    );
     assert!(editor.save(&[], vec![]).is_err());
     assert!(editor.save(&[RouteStep::Accept { quest: 783 }], vec![]).is_err());
     editor
