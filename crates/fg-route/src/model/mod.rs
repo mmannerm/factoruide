@@ -60,6 +60,7 @@ pub fn load(
                 class_id: m.class_id,
                 class_name: m.class_name.clone(),
                 spell_weights: m.spell_weights.clone(),
+                abilities: vec![],
                 ..profile.clone()
             },
         )?);

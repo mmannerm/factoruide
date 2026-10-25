@@ -261,17 +261,18 @@ fn route_of(
         quests: route.iter().filter(|s| s.kind == Kind::TurnIn).count(),
         breakdown,
         locale: Some(model.names.locale.clone()),
-        spells: {
-            let mut spells: Vec<_> = model
-                .power
-                .as_ref()
-                .map(|p| p.ranks().map(|r| r.id).collect())
-                .unwrap_or_default();
-            spells.extend(model.abilities.spells());
-            spells.sort_unstable();
-            spells.dedup();
-            spells
-        },
+        spells: model
+            .power
+            .as_ref()
+            .filter(|p| p.has_spells())
+            .map(|p| {
+                let mut spells: Vec<_> = p.ranks().map(|r| r.id).collect();
+                spells.extend(model.abilities.spells());
+                spells.sort_unstable();
+                spells.dedup();
+                spells
+            })
+            .unwrap_or_default(),
         professions: model
             .professions
             .iter()
