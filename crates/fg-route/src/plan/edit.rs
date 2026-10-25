@@ -435,12 +435,8 @@ impl Planner<'_> {
 
     /// Training of an edited route, at the trainer it says.
     fn edit_train(&self, s: &mut State, trainer: usize, trace: &mut Vec<Timed>) -> Outcome {
-        let movement = if self.profile.mates.is_empty() {
-            self.model.movement.trained(s.level) & !s.movement
-        } else {
-            0
-        };
-        if s.trained >= s.level && movement == 0 {
+        let abilities = self.model.abilities.trained(s.abilities, s.level) & !s.abilities;
+        if s.trained >= s.level && abilities == 0 {
             return Outcome::Skipped("nothing to learn");
         }
         let (saved, mark) = (s.clone(), trace.len());

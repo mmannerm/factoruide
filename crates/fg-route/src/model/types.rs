@@ -19,14 +19,14 @@ pub struct Profile {
     pub required_class_quests: Vec<String>,
     /// Exact quests selected by the player.
     pub required_quests: Vec<i64>,
-    pub quest_prerequisites: Vec<QuestPrerequisites>,
+    pub quest_overrides: Vec<QuestOverride>,
     /// Confirmed completions from the starting profile, never inferred from character level.
     pub completed_quests: HashSet<i64>,
     /// Class quests that make the character stronger: name and power gained.
     pub class_powers: Vec<(String, f64)>,
     /// Class trainer spells that count for power (see overrides/spells.toml).
     pub spell_weights: Vec<(String, crate::power::SpellWeight)>,
-    pub movement: Vec<crate::movement::MovementDef>,
+    pub abilities: Vec<crate::abilities::MovementDef>,
     /// Dungeon settings (see overrides/dungeons.toml).
     pub dungeons: Vec<DungeonDef>,
     /// The class's teleports that a quest teaches (see overrides/travel.toml).
@@ -433,7 +433,7 @@ pub struct Quest {
 }
 
 pub struct Model {
-    pub movement: crate::movement::Movement,
+    pub abilities: crate::abilities::Abilities,
     pub quests: Vec<Quest>,
     pub dungeons: Vec<Dungeon>,
     pub professions: Vec<ProfessionPlan>,
@@ -541,7 +541,7 @@ pub struct Initial {
     pub gear: Vec<i64>,
     /// Level of the last class training (default: the starting level).
     pub trained: Option<i64>,
-    pub movement: u64,
+    pub abilities: u64,
     /// Every quest turned in, in the model or not, for a character met in game: prerequisites
     /// the model lacks are then known instead of assumed done past level 1.
     pub completed: Option<HashSet<i64>>,
@@ -710,10 +710,12 @@ impl EntityKind {
     }
 }
 
-/// Edition-specific corrections of prerequisite links, with their evidence kept in TOML.
+/// Edition-specific quest prerequisites and granted spells, with evidence kept in TOML.
 #[derive(Debug, Clone, serde::Deserialize)]
-pub struct QuestPrerequisites {
+pub struct QuestOverride {
     pub id: i64,
     pub pre_all: Option<Vec<i64>>,
     pub pre_any: Option<Vec<i64>>,
+    #[serde(default)]
+    pub spells: Vec<i64>,
 }

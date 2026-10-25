@@ -270,3 +270,36 @@ fn ineligible_group_member_does_not_repeat_a_completed_class_quest() {
     let p = job::prepare(&conn, &overrides, &req, &|_| {}).unwrap();
     assert!(!p.model.quests.iter().any(|q| q.required));
 }
+
+#[test]
+fn skyborne_cat_chain_completes_before_the_trainer_travel_form() {
+    let conn = database_of("forever");
+    let overrides = Overrides::load_edition(&repo().join("overrides"), Edition::Forever).unwrap();
+    let mut req = request("skyborne_horde", "druid", &[]);
+    req.to_level = 30;
+    req.required_class_quests = None;
+    let p = job::prepare(&conn, &overrides, &req, &|_| {}).unwrap();
+    let planner = Planner::new(&p.model, &p.world, &p.params, &p.profile);
+    let route = planner.construct(|_| {});
+    let guide = fg_route::export::build(&planner, &p.profile, &route);
+    for id in [98340, 98341, 98404, 98738, 98362] {
+        assert!(
+            guide
+                .steps
+                .iter()
+                .any(|s| s.quest == Some(id) && s.kind == fg_route::export::StepKind::TurnIn),
+            "the normal class selection completes quest {id}"
+        );
+    }
+    let reward = guide
+        .steps
+        .iter()
+        .find(|s| s.quest == Some(98362) && s.kind == fg_route::export::StepKind::TurnIn)
+        .unwrap();
+    assert!(
+        (20..30).contains(&reward.level),
+        "the form is acquired while its speed is useful: {}",
+        reward.level
+    );
+    assert_eq!(guide.breakdown.missing_class_quests, 0);
+}

@@ -101,7 +101,7 @@ pub enum Event {
     Train {
         trainer: usize,
         since: i64,
-        movement: u64,
+        abilities: u64,
     },
     /// The bags' loot sold at a vendor (`Model::vendors`).
     Sell {
@@ -266,7 +266,7 @@ pub(crate) struct State {
     pub(crate) hearth_ready: f64,
     pub(crate) recall_ready: f64,
     pub(crate) trained: i64,
-    pub(crate) movement: u64,
+    pub(crate) abilities: u64,
     pub(crate) dungeons: u128,
     pub(crate) accepted: Flags,
     /// Quests out of play: turned in, or given up (those are also in `dropped`).

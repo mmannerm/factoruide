@@ -1,0 +1,286 @@
+//! Class abilities acquired from recorded spells, quest rewards, or real trainer visits.
+
+use crate::{Params, job::StartState, model::Profile};
+use anyhow::Result;
+use rusqlite::Connection;
+use serde::Deserialize;
+use std::collections::HashMap;
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MovementTalent {
+    FeralSwiftness,
+    ImprovedGhostWolf,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct MovementDef {
+    pub class: String,
+    pub name: String,
+    pub spells: Vec<i64>,
+    pub bonus: f64,
+    pub activation: f64,
+    pub talent: Option<MovementTalent>,
+}
+
+pub struct Ability {
+    pub name: String,
+    /// Spells actually granted, rather than higher ranks that merely prove the ability is known.
+    pub spells: Vec<i64>,
+    known_spells: Vec<i64>,
+    pub level: Option<i64>,
+    pub rank: i64,
+    pub requires: u64,
+    quests: Vec<i64>,
+    travel: Option<Travel>,
+}
+
+struct Travel {
+    bonus: f64,
+    activation: f64,
+    talent: Option<MovementTalent>,
+}
+
+#[derive(Default)]
+pub struct Abilities {
+    pub entries: Vec<Ability>,
+    by_quest: HashMap<i64, u64>,
+}
+
+impl Abilities {
+    pub fn load(conn: &Connection, profile: &Profile) -> Result<Self> {
+        let has_trainers: bool = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name = 'm_class_spell')",
+            [],
+            |r| r.get(0),
+        )?;
+        let mut trainer = Vec::new();
+        if has_trainers {
+            let mut stmt = conn.prepare(
+                "SELECT spell_id,name,rank,level FROM m_class_spell WHERE class_id=?1 ORDER BY name,rank,spell_id",
+            )?;
+            trainer = stmt
+                .query_map([profile.class_id], |r| {
+                    Ok((
+                        r.get::<_, i64>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, i64>(2)?,
+                        r.get::<_, i64>(3)?,
+                    ))
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+        }
+        let mut abilities = Self::default();
+        for def in &profile.abilities {
+            abilities.entries.push(Ability {
+                name: def.name.clone(),
+                spells: def.spells.clone(),
+                known_spells: def.spells.clone(),
+                level: None,
+                rank: 0,
+                requires: 0,
+                quests: vec![],
+                travel: Some(Travel {
+                    bonus: def.bonus,
+                    activation: def.activation,
+                    talent: def.talent,
+                }),
+            });
+        }
+        let mut stmt = conn.prepare(
+            "SELECT id, reward_spell FROM m_quest WHERE status = 'available' AND reward_spell > 0
+             AND (coalesce(classes_mask,0) & ?1 != 0 OR zone_or_sort = ?2)
+             AND (coalesce(classes_mask,0) = 0 OR classes_mask & ?1 != 0)
+             AND (coalesce(races_mask,0) = 0 OR races_mask & ?3 != 0) ORDER BY reward_spell, id",
+        )?;
+        let rows = stmt.query_map(
+            rusqlite::params![
+                profile.class_bit(),
+                -crate::model::class_sort(profile.class_id),
+                profile.race_bit()
+            ],
+            |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)),
+        )?;
+        for row in rows {
+            let (quest, spell) = row?;
+            let spells = profile.quest_overrides.iter().find(|q| q.id == quest).map_or_else(
+                || vec![spell],
+                |q| {
+                    if q.spells.is_empty() {
+                        vec![spell]
+                    } else {
+                        q.spells.clone()
+                    }
+                },
+            );
+            for spell in spells {
+                let i = abilities.entry(conn, &trainer, spell)?;
+                abilities.entries[i].quests.push(quest);
+            }
+        }
+        // Only ranks whose acquisition matters independently of the common training level
+        // enter the ability book: movement, quest rewards and form-dependent combat spells.
+        if has_trainers {
+            for (name, weight) in &profile.spell_weights {
+                let Some(required) = weight.requires() else { continue };
+                let index = abilities.entry(conn, &trainer, required)?;
+                let mask = 1 << index;
+                for (spell, _, _, _) in trainer.iter().filter(|(_, n, _, _)| n == name) {
+                    let i = abilities.entry(conn, &trainer, *spell)?;
+                    abilities.entries[i].requires = mask;
+                }
+            }
+        }
+        // A quest may teach the first rank of an otherwise trainer-learned family.
+        // Keep its later ranks in the same book so a common training level cannot grant them
+        // before the unlock, or forget them after a continuing profile is exported.
+        let quest_families: Vec<_> = abilities
+            .entries
+            .iter()
+            .filter(|a| !a.quests.is_empty() && profile.spell_weights.iter().any(|(name, _)| name == &a.name))
+            .map(|a| a.name.clone())
+            .collect();
+        for (spell, name, _, _) in &trainer {
+            if quest_families.contains(name) {
+                abilities.entry(conn, &trainer, *spell)?;
+            }
+        }
+        for (i, a) in abilities.entries.iter_mut().enumerate() {
+            if let Some((_, _, rank, _)) = trainer.iter().find(|(s, _, _, _)| a.spells.contains(s)) {
+                a.rank = *rank;
+            }
+            for (spell, _, rank, level) in trainer.iter().filter(|(_, n, _, _)| *n == a.name) {
+                if *rank >= a.rank {
+                    a.known_spells.push(*spell);
+                }
+                if *rank == a.rank && a.quests.is_empty() {
+                    a.spells.push(*spell);
+                    a.level = Some(a.level.map_or(*level, |old| old.min(*level)));
+                }
+            }
+            a.spells.sort_unstable();
+            a.spells.dedup();
+            for &quest in &a.quests {
+                *abilities.by_quest.entry(quest).or_default() |= 1 << i;
+            }
+        }
+        Ok(abilities)
+    }
+
+    fn entry(&mut self, conn: &Connection, trainer: &[(i64, String, i64, i64)], spell: i64) -> Result<usize> {
+        if let Some(i) = self.entries.iter().position(|a| a.spells.contains(&spell)) {
+            return Ok(i);
+        }
+        let name = match trainer.iter().find(|(id, _, _, _)| *id == spell) {
+            Some((_, name, _, _)) => name.clone(),
+            None => conn.query_row("SELECT Name_lang FROM client_spellname WHERE ID=?1", [spell], |r| {
+                r.get(0)
+            })?,
+        };
+        self.entries.push(Ability {
+            name,
+            spells: vec![spell],
+            known_spells: vec![spell],
+            level: None,
+            rank: 0,
+            requires: 0,
+            quests: vec![],
+            travel: None,
+        });
+        Ok(self.entries.len() - 1)
+    }
+
+    pub fn initial(&self, start: Option<&StartState>, level: i64) -> u64 {
+        match start {
+            Some(start) => self
+                .entries
+                .iter()
+                .enumerate()
+                .filter(|(_, a)| {
+                    a.known_spells.iter().any(|s| start.spells.contains(s))
+                        || a.quests.iter().any(|q| start.completed.contains(q))
+                })
+                .fold(0, |mask, (i, _)| mask | 1 << i),
+            None => self.trained(0, level),
+        }
+    }
+
+    pub fn trained(&self, known: u64, level: i64) -> u64 {
+        let available = |a: &Ability| a.level.is_some_and(|at| at <= level);
+        let forms = self
+            .entries
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| available(a) && a.requires == 0)
+            .fold(known, |mask, (i, _)| mask | 1 << i);
+        self.entries
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| available(a) && forms & a.requires == a.requires)
+            .fold(forms, |mask, (i, _)| mask | 1 << i)
+    }
+
+    pub fn bit(&self, spell: i64) -> Option<u64> {
+        self.entries
+            .iter()
+            .position(|a| a.spells.contains(&spell))
+            .map(|i| 1 << i)
+    }
+
+    pub fn quest(&self, quest: i64) -> u64 {
+        self.by_quest.get(&quest).copied().unwrap_or(0)
+    }
+
+    fn travel(&self, known: u64, level: i64, params: &Params) -> impl Iterator<Item = (f64, f64)> + '_ {
+        let talents = params.assume_movement_talents;
+        let edition = params.edition;
+        self.entries
+            .iter()
+            .enumerate()
+            .filter(move |(i, _)| known & (1 << i) != 0)
+            .filter_map(move |(_, a)| {
+                let t = a.travel.as_ref()?;
+                Some(match (t.talent, talents) {
+                    (Some(MovementTalent::FeralSwiftness), true) => (
+                        if edition != crate::xp::Edition::Forever && level == 20 {
+                            0.15
+                        } else {
+                            0.3
+                        },
+                        t.activation,
+                    ),
+                    (Some(MovementTalent::ImprovedGhostWolf), trained) => (
+                        t.bonus,
+                        match (trained, edition) {
+                            (true, crate::xp::Edition::Classic) => 1.0,
+                            (true, _) => 0.0,
+                            (false, crate::xp::Edition::Tbc) => 2.0,
+                            (false, _) => t.activation,
+                        },
+                    ),
+                    _ => (t.bonus, t.activation),
+                })
+            })
+    }
+
+    /// Optimistic speed for travel bounds. Forms and mounts do not stack.
+    pub fn speed(&self, known: u64, level: i64, params: &Params) -> f64 {
+        self.travel(known, level, params)
+            .map(|(bonus, _)| params.run_speed * (1.0 + bonus))
+            .fold(params.speed(level), f64::max)
+    }
+
+    pub fn walk_time(&self, distance: f64, known: u64, level: i64, params: &Params) -> f64 {
+        self.travel(known, level, params)
+            .map(|(bonus, activation)| distance / (params.run_speed * (1.0 + bonus)) + activation)
+            .fold(distance / params.speed(level), f64::min)
+    }
+
+    /// Only trainer-learned spells belong in the addon's purchase list.
+    pub fn spells(&self) -> impl Iterator<Item = i64> + '_ {
+        self.entries
+            .iter()
+            .filter(|a| a.level.is_some())
+            .flat_map(|a| a.spells.iter().copied())
+    }
+}

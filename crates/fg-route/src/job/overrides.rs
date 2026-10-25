@@ -26,11 +26,11 @@ pub struct Overrides {
     pub class_power: HashMap<String, ClassPower>,
     /// Class trainer spells that count for power, by class (spells.toml).
     pub spells: HashMap<String, BTreeMap<String, crate::power::SpellWeight>>,
-    pub movement: Vec<crate::movement::MovementDef>,
+    pub abilities: Vec<crate::abilities::MovementDef>,
     pub dungeons: Vec<DungeonDef>,
     /// Objectives done only once others of their quest are (`[[order]]` of objectives.toml).
     pub objective_orders: Vec<crate::model::ObjectiveOrder>,
-    pub quest_prerequisites: Vec<crate::model::QuestPrerequisites>,
+    pub quest_overrides: Vec<crate::model::QuestOverride>,
     pub links: Vec<LinkDef>,
     /// Class teleports quests teach (`[[teleport]]` of travel.toml).
     pub teleports: Vec<crate::model::TeleportDef>,
@@ -168,9 +168,9 @@ impl Overrides {
             power: BTreeMap<String, f64>,
         }
         #[derive(Deserialize, Default)]
-        struct Movement {
+        struct Abilities {
             #[serde(default)]
-            ability: Vec<crate::movement::MovementDef>,
+            ability: Vec<crate::abilities::MovementDef>,
         }
         #[derive(Deserialize, Default)]
         struct Dungeons {
@@ -185,7 +185,7 @@ impl Overrides {
         #[derive(Deserialize, Default)]
         struct Quests {
             #[serde(default)]
-            quest: Vec<crate::model::QuestPrerequisites>,
+            quest: Vec<crate::model::QuestOverride>,
         }
         #[derive(Deserialize, Default)]
         struct Travel {
@@ -216,11 +216,11 @@ impl Overrides {
                 .collect(),
             class_quests: class_quests.into_iter().map(|(k, v)| (k, v.required)).collect(),
             spells: parse_toml(&file, "spells.toml")?,
-            movement: parse_toml::<Movement>(&file, "movement.toml")?.ability,
+            abilities: parse_toml::<Abilities>(&file, "movement.toml")?.ability,
             class_power: parse_toml(&file, "class_power.toml")?,
             dungeons: parse_toml::<Dungeons>(&file, "dungeons.toml")?.dungeon,
             objective_orders: parse_toml::<Objectives>(&file, "objectives.toml")?.order,
-            quest_prerequisites: parse_toml::<Quests>(&file, "quests.toml")?.quest,
+            quest_overrides: parse_toml::<Quests>(&file, "quests.toml")?.quest,
             links: travel.link,
             teleports: travel.teleport,
             passes: passes.pass,

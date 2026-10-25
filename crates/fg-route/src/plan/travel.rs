@@ -102,7 +102,7 @@ pub(crate) struct Trips<'t> {
     pub(crate) flights: &'t FlightTables,
     pub(crate) legs: &'t Legs,
     pub(crate) grounds: &'t Grounds,
-    pub(crate) movement: u64,
+    pub(crate) abilities: u64,
     /// On foot only: flights, boats and teleports are steps of their own (`Planner::explicit`).
     pub(crate) explicit: bool,
     /// Walks go into the zones closed to the character (`Planner::open_walks`).
@@ -110,17 +110,25 @@ pub(crate) struct Trips<'t> {
 }
 
 impl Trips<'_> {
-    pub(crate) fn with_movement(mut self, movement: u64) -> Self {
-        self.movement = movement;
+    pub(crate) fn with_movement(mut self, abilities: u64) -> Self {
+        self.abilities = abilities;
         self
     }
     pub(crate) fn at(mut self, state: &State) -> Self {
-        self.movement = state.movement;
+        self.abilities = state.abilities;
         self
     }
 
+    fn travel_abilities(&self) -> u64 {
+        if self.model.initial.mates.is_empty() {
+            self.abilities
+        } else {
+            0
+        }
+    }
+
     fn speed(&self, level: i64) -> f64 {
-        self.model.movement.speed(self.movement, level, self.params)
+        self.model.abilities.speed(self.travel_abilities(), level, self.params)
     }
 
     fn exposed(&self, a: &Pos, b: &Pos, closed: u8) -> bool {
@@ -163,22 +171,10 @@ impl Trips<'_> {
             && self.exposed(a, b, closed)
         {
             self.model
-                .movement
-                .walk_time(distance, self.movement, level, self.params)
+                .abilities
+                .walk_time(distance, self.travel_abilities(), level, self.params)
         } else {
             distance / self.params.speed(level)
-        }
-    }
-
-    /// The level a trip is remembered at (`Legs`): what its time and choice depend on apart
-    /// from the speed, the zones closed to walks (`World::walk_level`) and the weight of gold
-    /// (`Params::gold_weight_at`, by bands of 5 levels, the same up to level 30).
-    fn leg_level(&self, level: i64) -> u8 {
-        let band = ((level.clamp(1, 250) + 4) / 5 * 5) as u8;
-        if self.params.gold_weight > 0.0 && f64::from(band) > crate::params::GOLD_WEIGHT_LEVEL {
-            band
-        } else {
-            self.world.walk_level(level)
         }
     }
 
@@ -202,13 +198,13 @@ impl Trips<'_> {
         if self.open_walks {
             return self.compute_leg(from, b, level, known, open);
         }
-        // The level only matters through the speed: mounted or not.
+        // The level affects mounts, talent ranks, closed zones and the weight of gold.
         let mounted = level >= self.params.mount_level;
-        let (Some(mut a), Some(z)) = (pos_key(from, mounted, self.leg_level(level)), pos_key(b, false, 0)) else {
+        let (Some(mut a), Some(z)) = (pos_key(from, mounted, level as u8), pos_key(b, false, 0)) else {
             return self.compute_leg(from, b, level, known, open);
         };
         a[0] |= u64::from(open) << 58;
-        let key = (a, z, known, self.movement);
+        let key = (a, z, known, self.abilities);
         if let Some(&(t, hop)) = self.legs.borrow().get(&key) {
             return (t, hop.leg());
         }

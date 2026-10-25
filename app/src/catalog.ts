@@ -5,6 +5,8 @@
 type Entry = Partial<Record<"en" | "de" | "es" | "esMX" | "pt" | "ru" | "ko" | "zhCN" | "zhTW", string>>;
 
 export const CATALOG: Record<string, Entry> = {
+  "Supposer les talents de déplacement appris": { en: "Assume movement talents are learned" },
+  "Rapidité farouche pour la forme de félin et Loup fantôme amélioré. Les formes doivent être débloquées. Aucun effet sur le bonus de base d'Aspect du guépard.": { en: "Feral Swiftness for Cat Form and Improved Ghost Wolf. Forms must still be unlocked. Does not affect Aspect of the Cheetah's base bonus." },
   "Quêtes indispensables": { en: "Must-have quests" },
   "ID ou nom exact de la quête": { en: "Quest ID or exact name" },
   "Ajoutez un ID ou un nom exact. Les prérequis sont inclus et le guide doit terminer ces quêtes, même après le niveau cible.": { en: "Add an ID or exact name. Prerequisites are included, and the guide must finish these quests even after the target level." },

@@ -297,7 +297,7 @@ impl<'a> Planner<'a> {
             hearth_ready: if init.unbound { f64::INFINITY } else { 0.0 },
             recall_ready: if init.unbound { f64::INFINITY } else { 0.0 },
             trained: init.trained.unwrap_or(level).min(level),
-            movement: init.movement,
+            abilities: init.abilities,
             dungeons: 0,
             accepted: Flags::new(n),
             turned: Flags::new(n),
@@ -441,7 +441,7 @@ impl<'a> Planner<'a> {
             flights: &self.flights,
             legs: &self.legs,
             grounds: &self.grounds,
-            movement: self.model.initial.movement,
+            abilities: self.model.initial.abilities,
             explicit: self.explicit,
             open_walks: self.open_walks.get(),
         }

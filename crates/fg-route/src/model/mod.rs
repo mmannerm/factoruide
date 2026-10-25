@@ -30,7 +30,7 @@ pub use loot::CommonLoot;
 pub use names::Names;
 pub use types::{
     Dungeon, DungeonDef, EntityKind, ExploreArea, Guard, Initial, Loc, Mate, MateStart, Model, Objective,
-    ObjectiveOrder, ProfessionPlan, Profile, Quest, QuestPrerequisites, Spots, Teleport, TeleportDef, Vendor, race_bit,
+    ObjectiveOrder, ProfessionPlan, Profile, Quest, QuestOverride, Spots, Teleport, TeleportDef, Vendor, race_bit,
 };
 
 use crate::params::Params;
@@ -46,7 +46,7 @@ use std::collections::HashMap;
 pub fn load(conn: &Connection, world: &World, profile: &Profile, params: &Params) -> Result<Model> {
     let mut sources = Sources::read(conn, world, profile, params)?;
     let (mut quests, mut skipped) = build_quests(&sources, world, profile, params);
-    for correction in &profile.quest_prerequisites {
+    for correction in &profile.quest_overrides {
         if let Some(q) = quests.iter_mut().find(|q| q.id == correction.id) {
             if let Some(pre) = &correction.pre_all {
                 q.pre_all.clone_from(pre);
@@ -56,7 +56,14 @@ pub fn load(conn: &Connection, world: &World, profile: &Profile, params: &Params
             }
         }
     }
-    required::apply(&mut quests, &sources.rows, &skipped, profile, params)?;
+    required::apply(
+        &mut quests,
+        &sources.rows,
+        &sources.class_quest_ids,
+        &skipped,
+        profile,
+        params,
+    )?;
     chains::drop_unhanded(&mut quests, &mut skipped);
     report_skipped_class_quests(&sources, &skipped);
 
@@ -76,6 +83,7 @@ pub fn load(conn: &Connection, world: &World, profile: &Profile, params: &Params
     let chain_top = chains::chain_tops(&quests, &index);
     let (explore, explore_by_zone) = explore::load_explore(conn, world)?;
     let farm = FarmMobs::load(conn, world, &quests)?;
+    let abilities = crate::abilities::Abilities::load(conn, profile)?;
     let power = crate::power::PowerModel::load(
         conn,
         profile.class_id,
@@ -83,10 +91,21 @@ pub fn load(conn: &Connection, world: &World, profile: &Profile, params: &Params
         profile.to_level.max(60),
         &profile.spell_weights,
         params,
+        &abilities,
     )?;
     // A group's other classes: the spells each one learns (the addon of each player trains its own).
     let mut mate_spells = Vec::new();
     for m in &profile.mates {
+        let abilities = crate::abilities::Abilities::load(
+            conn,
+            &Profile {
+                race_id: m.race_id,
+                class_id: m.class_id,
+                spell_weights: m.spell_weights.clone(),
+                abilities: vec![],
+                ..profile.clone()
+            },
+        )?;
         let mate = crate::power::PowerModel::load(
             conn,
             m.class_id,
@@ -94,8 +113,12 @@ pub fn load(conn: &Connection, world: &World, profile: &Profile, params: &Params
             profile.to_level.max(60),
             &m.spell_weights,
             params,
+            &abilities,
         )?;
-        mate_spells.push(mate.map(|p| p.ranks().map(|r| r.id).collect()).unwrap_or_default());
+        mate_spells.push(
+            mate.map(|p| p.ranks().map(|r| r.id).chain(abilities.spells()).collect())
+                .unwrap_or_default(),
+        );
     }
     let patrols = (sources.entities.paths.keys())
         .map(|&id| (id, sources.entities.path(world, id)))
@@ -108,9 +131,8 @@ pub fn load(conn: &Connection, world: &World, profile: &Profile, params: &Params
             vec![Vec::new(); sources.dungeons.len()],
         ),
     };
-    let movement = crate::movement::Movement::load(conn, &profile.movement, profile.class_id)?;
     Ok(Model {
-        movement,
+        abilities,
         quests,
         dungeons: sources.dungeons,
         professions: profile.professions.iter().filter_map(ProfessionPlan::new).collect(),

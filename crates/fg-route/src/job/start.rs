@@ -229,8 +229,8 @@ impl StartState {
         };
         let inn = &model.inns[end.bind];
         let mut spells = self.spells.clone();
-        for (i, ability) in model.movement.abilities.iter().enumerate() {
-            if end.movement & (1 << i) != 0 {
+        for (i, ability) in model.abilities.entries.iter().enumerate() {
+            if end.abilities & (1 << i) != 0 {
                 spells.extend(&ability.spells);
             }
         }

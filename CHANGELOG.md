@@ -18,6 +18,12 @@ An addon change also goes, in the same words, under Unreleased in that addon's o
 
 ### Guides
 
+- Class-quest rewards now unlock abilities before their travel or form-dependent combat benefits
+  apply. Forever Cat Form includes its free starter spells; trainers learn later ranks only after
+  the form is known. Duplicate prerequisite links no longer break the Horde Skyborne Cat chain.
+- Advanced settings can assume Feral Swiftness and Improved Ghost Wolf, enabled by default.
+  Cheetah's baseline bonus stays independent of talents; instant forms add no cast delay.
+
 - Solo routes account for learned Travel Form, Ghost Wolf and Aspect of the Cheetah on supported ground travel, and include learning them at trainers.
 - WoW Forever: requiring the Sleeping Bag includes the correct faction starter and the full quest chain.
 

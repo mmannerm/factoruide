@@ -312,27 +312,27 @@ fn quest_rows(conn: &Connection) -> Result<Vec<QuestRow>> {
     Ok(rows.collect::<rusqlite::Result<_>>()?)
 }
 
-/// The class quests the profile requires, of the classes in the group; another player's come
-/// with the rest of their chain (its prerequisites are of that class too, under other names).
+/// Keep eligible class unlock chains, including prerequisites below the starting level.
+/// Selection and mandatory flags still follow the player's chosen class quests.
 fn class_quest_ids(rows: &[QuestRow], profile: &Profile, links: &HashMap<i64, Vec<(LinkKind, i64)>>) -> HashSet<i64> {
     let mut ids: HashSet<i64> = rows
         .iter()
         .filter(|r| profile.class_ids().iter().any(|c| r.of_class(*c)))
-        .filter(|r| profile.required_class_quests.iter().any(|n| n == &r.name))
+        .filter(|r| profile.required_class_quests.iter().any(|n| n == &r.name) || r.reward_spell.is_some_and(|spell| spell>0))
         // Of a member's race and class.
         .filter(|r| r.classes.is_some_and(|m| m != 0) && profile.members_of(r.races, r.classes) != 0)
         .filter(|r| r.min_level.unwrap_or(1) <= profile.to_level)
         .map(|r| r.id)
         .collect();
-    let others: HashSet<i64> = rows
+    let eligible: HashSet<i64> = rows
         .iter()
-        .filter(|r| r.classes.is_some_and(|m| m != 0 && m & profile.class_bit() == 0))
+        .filter(|r| profile.members_of(r.races, r.classes) != 0)
         .map(|r| r.id)
         .collect();
-    let mut stack: Vec<i64> = ids.iter().copied().filter(|id| others.contains(id)).collect();
+    let mut stack: Vec<i64> = ids.iter().copied().collect();
     while let Some(id) = stack.pop() {
         for &(kind, pre) in links.get(&id).into_iter().flatten() {
-            if matches!(kind, LinkKind::PreAll | LinkKind::PreAny) && others.contains(&pre) && ids.insert(pre) {
+            if matches!(kind, LinkKind::PreAll | LinkKind::PreAny) && eligible.contains(&pre) && ids.insert(pre) {
                 stack.push(pre);
             }
         }
@@ -362,7 +362,7 @@ fn relations(conn: &Connection) -> Result<Relations> {
 
 fn links(conn: &Connection) -> Result<HashMap<i64, Vec<(LinkKind, i64)>>> {
     let mut links: HashMap<i64, Vec<(LinkKind, i64)>> = HashMap::new();
-    let mut stmt = conn.prepare("SELECT quest_id, kind, other_id FROM m_quest_link")?;
+    let mut stmt = conn.prepare("SELECT DISTINCT quest_id, kind, other_id FROM m_quest_link")?;
     for row in stmt.query_map([], |r| {
         Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?))
     })? {

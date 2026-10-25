@@ -13,13 +13,12 @@ fn repo() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
-/// The Classic database, unpacked next to the packed one when missing or older.
-fn database() -> Connection {
+fn database_of(edition: &str) -> Connection {
     static UNPACK: Mutex<()> = Mutex::new(());
     let _guard = UNPACK.lock().unwrap();
     let (path, packed) = (
-        repo().join("data/classic.sqlite"),
-        repo().join("data/classic.sqlite.zst"),
+        repo().join(format!("data/{edition}.sqlite")),
+        repo().join(format!("data/{edition}.sqlite.zst")),
     );
     let modified = |p: &PathBuf| std::fs::metadata(p).and_then(|m| m.modified()).ok();
     if !path.exists() || modified(&packed) > modified(&path) {
@@ -27,6 +26,10 @@ fn database() -> Connection {
         std::fs::write(&path, data).unwrap();
     }
     Connection::open(path).unwrap()
+}
+
+fn database() -> Connection {
+    database_of("classic")
 }
 
 /// Level 1 human warrior with only `n` quests of its own: taken and turned in at the start NPC,
@@ -69,9 +72,13 @@ fn at_start(mut p: Prepared, n: usize) -> Prepared {
         .collect();
     p.model.index = p.model.quests.iter().enumerate().map(|(i, q)| (q.id, i)).collect();
     (p.model.chain_top, p.model.unlocks, p.model.rewards) = (vec![1; n], vec![0.0; n], vec![(vec![], vec![]); n]);
-    p.model.initial = Initial::default();
+    p.model.initial = Initial {
+        abilities: p.model.initial.abilities,
+        ..Initial::default()
+    };
     p.model.power = None;
     p.model.trainers.clear();
+    p.model.teleports.clear();
     p.model.vendors.clear();
     p.model.explore.clear();
     p.model.explore_by_zone.clear();
@@ -86,12 +93,15 @@ fn planner(p: &Prepared) -> Planner<'_> {
 #[test]
 fn movement_training_changes_travel_and_exports_the_spell_for_each_class() {
     let conn = database();
-    let overrides = Overrides::load_edition(&repo().join("overrides"), Edition::Classic).unwrap();
-    for (race, class, spell, seconds) in [
-        ("nightelf", "druid", 783, 64.22449),
-        ("orc", "shaman", 2645, 67.22449),
-        ("orc", "hunter", 5118, 68.93407),
+    for (edition, race, class, spell, seconds) in [
+        (Edition::Classic, "nightelf", "druid", 783, 61.22449),
+        (Edition::Classic, "orc", "shaman", 2645, 63.22449),
+        (Edition::Classic, "orc", "hunter", 5118, 65.93407),
+        (Edition::Forever, "orc", "shaman", 2645, 61.22449),
+        (Edition::Tbc, "orc", "shaman", 2645, 61.22449),
+        (Edition::Forever, "orc", "hunter", 5118, 65.93407),
     ] {
+        let overrides = Overrides::load_edition(&repo().join("overrides"), edition).unwrap();
         let req: PlanRequest = serde_json::from_value(serde_json::json!({
             "race":race, "class":class, "from_level":30, "to_level":31,
             "required_class_quests":[], "start":{"level":30, "spells":[]}
@@ -110,6 +120,7 @@ fn movement_training_changes_travel_and_exports_the_spell_for_each_class() {
         trainer.pos = a;
         p.model.trainers = vec![trainer];
         (p.params.run_speed, p.params.detour) = (7.0, 1.0);
+        p.params.mount_level = 40; // Compare the spells before buying a mount, also in TBC.
         let quest = [
             super::Edit::Stop {
                 stop: Stop::quest(0, Kind::Accept),
@@ -123,11 +134,22 @@ fn movement_training_changes_travel_and_exports_the_spell_for_each_class() {
             },
         ];
         let trained = [super::Edit::Train { trainer: 0 }, quest[0], quest[1]];
-        // Two 300-yard legs: each must pay its own cast time. A seven-yard leg is shorter
-        // than casting the form, and a level-40 mount is faster than any of these abilities.
+        // Two 300-yard legs; Ghost Wolf pays its cast time on each. Seven-yard legs can
+        // favor walking, and a level-40 mount is faster than any of these abilities.
         for (level, distance, mixed, expected) in [
             (30, 300.0, false, Some(seconds)),
-            (30, 7.0, false, None),
+            (
+                30,
+                7.0,
+                false,
+                Some(if class == "shaman" && edition == Edition::Classic {
+                    2.0
+                } else if class == "hunter" {
+                    1.53846
+                } else {
+                    1.42857
+                }),
+            ),
             (40, 300.0, false, None),
             (30, 300.0, true, None),
         ] {
@@ -146,28 +168,30 @@ fn movement_training_changes_travel_and_exports_the_spell_for_each_class() {
             if let Some(seconds) = expected {
                 assert!(
                     (after.breakdown.travel - seconds).abs() < 0.05,
-                    "{class}: two outdoor casts, got {}",
+                    "{class}: two outdoor legs, got {}",
                     after.breakdown.travel
                 );
-                assert!(after.breakdown.travel < before.breakdown.travel);
+                assert!(after.breakdown.travel <= before.breakdown.travel);
                 assert_eq!(
                     planner.edit(&quest).breakdown.travel,
                     before.breakdown.travel,
                     "untrained replay keeps its speed"
                 );
-                let automatic = Planner::new(&p.model, &p.world, &p.params, &p.profile);
-                let guide = crate::export::build(&automatic, &p.profile, &automatic.greedy());
-                assert!(
-                    guide
-                        .steps
-                        .iter()
-                        .any(|step| step.kind == crate::export::StepKind::Train && step.spells.contains(&spell)),
-                    "{class}: generated guides schedule movement training"
-                );
-                assert!(
-                    guide.spells.contains(&spell),
-                    "{class}: the addon purchase list includes the movement spell"
-                );
+                if distance > 7.0 {
+                    let automatic = Planner::new(&p.model, &p.world, &p.params, &p.profile);
+                    let guide = crate::export::build(&automatic, &p.profile, &automatic.greedy());
+                    assert!(
+                        guide
+                            .steps
+                            .iter()
+                            .any(|step| step.kind == crate::export::StepKind::Train && step.spells.contains(&spell)),
+                        "{class}: generated guides schedule movement training"
+                    );
+                    assert!(
+                        guide.spells.contains(&spell),
+                        "{class}: the addon purchase list includes the movement spell"
+                    );
+                }
             } else {
                 assert_eq!(
                     after.breakdown.travel, before.breakdown.travel,
@@ -181,7 +205,7 @@ fn movement_training_changes_travel_and_exports_the_spell_for_each_class() {
         for start in [req.start.clone(), None] {
             req.start = start;
             let known = job::prepare(&conn, &overrides, &req, &|_| {}).unwrap();
-            p.model.initial.movement = known.model.initial.movement;
+            p.model.initial.abilities = known.model.initial.abilities;
             p.world.terrain = crate::terrain::movement_test_ground(false);
             let edited = planner(&p).explicit().edit(&quest);
             assert!(
@@ -189,6 +213,17 @@ fn movement_training_changes_travel_and_exports_the_spell_for_each_class() {
                 "{class}: known spell applies from the first leg"
             );
         }
+        p.params.assume_movement_talents = false;
+        let without = planner(&p).explicit().edit(&quest);
+        let expected = match (class, edition) {
+            ("shaman", Edition::Tbc) => 65.22449,
+            ("shaman", _) => 67.22449,
+            _ => seconds,
+        };
+        assert!(
+            (without.breakdown.travel - expected).abs() < 0.05,
+            "the talent option changes Ghost Wolf's cast time, not Cheetah or Travel Form"
+        );
     }
 }
 
@@ -1011,5 +1046,279 @@ fn the_player_behind_catches_up() {
         s.party(),
         [(1, 200), (1, 100)],
         "a quarter of a level apart: within the most"
+    );
+}
+
+#[test]
+fn cat_form_is_a_quest_reward_before_it_can_change_travel_or_combat() {
+    let conn = database_of("forever");
+    let overrides = Overrides::load_edition(&repo().join("overrides"), Edition::Forever).unwrap();
+    let req:PlanRequest=serde_json::from_value(serde_json::json!({"race":"skyborne_horde","class":"druid","from_level":20,"to_level":21,"required_class_quests":[],"start":{"level":20}})).unwrap();
+    let mut original = job::prepare(&conn, &overrides, &req, &|_| {}).unwrap();
+    let power = original.model.power.take();
+    let mut p = at_start(original, 2);
+    p.model.power = power;
+    let a = crate::world::Pos {
+        continent: 1,
+        x: -100.0,
+        y: -100.0,
+        zone: 0,
+        z: None,
+    };
+    p.model.initial.pos = Some((a, 0));
+    p.world.terrain = crate::terrain::movement_test_ground(false);
+    (p.params.run_speed, p.params.detour) = (7.0, 1.0);
+    p.model.quests[0].id = 98362; // The final Horde Cat Form hand-in, after its trial.
+    p.model.index = p.model.quests.iter().enumerate().map(|(i, q)| (q.id, i)).collect();
+    for q in &mut p.model.quests {
+        q.level = 20;
+        q.starts[0].pos = a;
+        q.ends[0].pos = a;
+    }
+    p.model.quests[1].xp = 100_000;
+    p.model.quests[1].starts[0].pos = crate::world::Pos { x: -400.0, ..a };
+    p.model.quests[1].ends[0].pos = crate::world::Pos { x: -400.0, ..a };
+    let mut trainer = p.model.start.clone();
+    trainer.pos = a;
+    p.model.trainers = vec![trainer];
+    let edits = |i| {
+        [
+            super::Edit::Stop {
+                stop: Stop::quest(i, Kind::Accept),
+                farm: false,
+                spot: None,
+            },
+            super::Edit::Stop {
+                stop: Stop::quest(i, Kind::TurnIn),
+                farm: false,
+                spot: None,
+            },
+        ]
+    };
+    let far = edits(1);
+    let mut trained = vec![super::Edit::Train { trainer: 0 }];
+    trained.extend(far);
+    let plan = planner(&p).explicit();
+    let locked = plan.edit(&trained);
+    let mut unlock = edits(0).to_vec();
+    unlock.extend(far);
+    let learned = plan.edit(&unlock);
+    assert_eq!(learned.errors(), 0);
+    assert!(
+        (locked.breakdown.travel - 42.85714).abs() < 0.01,
+        "training cannot buy Cat Form: {}",
+        locked.breakdown.travel
+    );
+    assert!(
+        (learned.breakdown.travel - 32.96703).abs() < 0.01,
+        "the completed quest enables Feral Swiftness"
+    );
+    let guide = crate::export::build_traced(
+        &plan,
+        &p.profile,
+        &learned.route,
+        &learned.trace,
+        learned.breakdown.total,
+        learned.breakdown,
+    );
+    assert!(
+        guide.steps[2].power > guide.steps[0].power,
+        "combat power waits for the quest too"
+    );
+    assert!(
+        !guide.spells.contains(&768),
+        "quest-only spells are not trainer purchases"
+    );
+    let end = plan.end_of(&learned.route).unwrap();
+    let after = job::StartState::default().after(&p.model, &p.world, Edition::Forever.rules(), &end);
+    assert!(
+        after.spells.contains(&768),
+        "the continuing character knows the quest reward"
+    );
+    // Starting at level 20 cannot stand in for the quest. Recorded spells and confirmed
+    // completions can, even when the player starts a new guide after finishing the chain.
+    for (start, expected) in [
+        (serde_json::Value::Null, locked.breakdown.travel),
+        (serde_json::json!({"level":20,"spells":[768]}), learned.breakdown.travel),
+        (
+            serde_json::json!({"level":20,"completed":[98362]}),
+            learned.breakdown.travel,
+        ),
+    ] {
+        let mut request = serde_json::to_value(&req).unwrap();
+        request["start"] = start;
+        let request = serde_json::from_value(request).unwrap();
+        let imported = job::prepare(&conn, &overrides, &request, &|_| {}).unwrap();
+        p.model.initial.abilities = imported.model.initial.abilities;
+        let resumed = planner(&p).explicit().edit(&far);
+        assert!((resumed.breakdown.travel - expected).abs() < 0.01);
+    }
+    p.model.initial.abilities = 0;
+    p.params.assume_movement_talents = false;
+    let without = planner(&p).explicit().edit(&unlock);
+    assert!(
+        (without.breakdown.travel - locked.breakdown.travel).abs() < 0.01,
+        "without the talent Cat Form has no speed bonus"
+    );
+}
+
+#[test]
+fn late_cat_unlock_teaches_starter_attacks_then_allows_training_later_ranks() {
+    let conn = database_of("forever");
+    let overrides = Overrides::load_edition(&repo().join("overrides"), Edition::Forever).unwrap();
+    let req: PlanRequest = serde_json::from_value(serde_json::json!({
+        "race":"skyborne_horde", "class":"druid", "from_level":30, "to_level":31,
+        "required_class_quests":[], "start":{"level":30}
+    }))
+    .unwrap();
+    let mut original = job::prepare(&conn, &overrides, &req, &|_| {}).unwrap();
+    let power = original.model.power.take();
+    let mut p = at_start(original, 1);
+    p.model.power = power;
+    let mut trainer = p.model.start.clone();
+    trainer.pos = p.model.start.pos;
+    p.model.trainers.push(trainer);
+    p.model.quests[0].id = 98362;
+    p.model.quests[0].level = 30;
+    p.model.index = [(98362, 0)].into_iter().collect();
+    let quest = [
+        super::Edit::Stop {
+            stop: Stop::quest(0, Kind::Accept),
+            farm: false,
+            spot: None,
+        },
+        super::Edit::Stop {
+            stop: Stop::quest(0, Kind::TurnIn),
+            farm: false,
+            spot: None,
+        },
+    ];
+    let train = super::Edit::Train { trainer: 0 };
+    let plan = planner(&p).explicit();
+    let before = plan.edit(&[train, quest[0], quest[1]]);
+    let after = plan.edit(&[quest[0], quest[1], train]);
+    let export = |edited: &super::Edited| {
+        crate::export::build_traced(
+            &plan,
+            &p.profile,
+            &edited.route,
+            &edited.trace,
+            edited.breakdown.total,
+            edited.breakdown,
+        )
+    };
+    let before_guide = export(&before);
+    let after_guide = export(&after);
+    let trained_spells = |guide: &crate::export::Route| {
+        guide
+            .steps
+            .iter()
+            .filter(|s| s.kind == crate::export::StepKind::Train)
+            .flat_map(|s| s.spells.iter().copied())
+            .collect::<Vec<_>>()
+    };
+    assert!(
+        !trained_spells(&before_guide).contains(&3029),
+        "Claw 2 cannot be bought before Cat Form"
+    );
+    assert!(
+        trained_spells(&after_guide).contains(&3029),
+        "a same-level trainer visit after the quest teaches Claw 2"
+    );
+    assert!(
+        !trained_spells(&after_guide).contains(&1082),
+        "the quest already taught Claw 1 for free"
+    );
+    let reward = plan.end_of(&before.route).unwrap();
+    let reward = job::StartState::default().after(&p.model, &p.world, Edition::Forever.rules(), &reward);
+    assert!(reward.spells.contains(&1082));
+    assert!(
+        !reward.spells.contains(&3029),
+        "the earlier trainer visit did not learn a locked rank"
+    );
+    // The spellbook records only the highest learned rank; a new guide must not rebuy it.
+    let mut imported = req;
+    imported.start.as_mut().unwrap().spells = vec![768, 3029, 1079];
+    let imported = job::prepare(&conn, &overrides, &imported, &|_| {}).unwrap();
+    p.model.initial.abilities = imported.model.initial.abilities;
+    let plan = planner(&p).explicit();
+    let replay = plan.edit(&[train]);
+    let guide = crate::export::build_traced(
+        &plan,
+        &p.profile,
+        &replay.route,
+        &replay.trace,
+        replay.breakdown.total,
+        replay.breakdown,
+    );
+    assert!(!trained_spells(&guide).contains(&3029));
+    assert!(!trained_spells(&guide).contains(&1082));
+}
+
+#[test]
+fn undead_paladin_learns_holy_light_from_its_quest() {
+    let conn = database_of("forever");
+    let overrides = Overrides::load_edition(&repo().join("overrides"), Edition::Forever).unwrap();
+    let req: PlanRequest = serde_json::from_value(serde_json::json!({
+        "race":"undead","class":"paladin","from_level":1,"to_level":2,
+        "required_class_quests":[],"start":{"level":1}
+    }))
+    .unwrap();
+    let mut p = at_start(job::prepare(&conn, &overrides, &req, &|_| {}).unwrap(), 1);
+    p.model.quests[0].id = 90902; // Rediscovering the Light rewards Holy Light 1.
+    p.model.index = [(90902, 0)].into_iter().collect();
+    let trainer = p.model.start.clone();
+    p.model.trainers.push(trainer);
+    let plan = planner(&p).explicit();
+    let before = plan.edit(&[super::Edit::Train { trainer: 0 }]);
+    let after = plan.edit(&[
+        super::Edit::Stop {
+            stop: Stop::quest(0, Kind::Accept),
+            farm: false,
+            spot: None,
+        },
+        super::Edit::Stop {
+            stop: Stop::quest(0, Kind::TurnIn),
+            farm: false,
+            spot: None,
+        },
+    ]);
+    let spells = |route: &[Stop]| {
+        let end = plan.end_of(route).unwrap();
+        job::StartState::default()
+            .after(&p.model, &p.world, Edition::Forever.rules(), &end)
+            .spells
+    };
+    assert!(
+        !spells(&before.route).contains(&635),
+        "the trainer cannot bypass the class quest"
+    );
+    assert!(
+        spells(&after.route).contains(&635),
+        "another class uses the same quest reward path"
+    );
+}
+
+#[test]
+fn classic_cat_speed_follows_the_available_feral_swiftness_rank() {
+    let conn = database();
+    let overrides = Overrides::load_edition(&repo().join("overrides"), Edition::Classic).unwrap();
+    let req: PlanRequest = serde_json::from_value(serde_json::json!({
+        "race":"nightelf","class":"druid","from_level":20,"to_level":22,
+        "required_class_quests":[],"start":{"level":20,"spells":[768]}
+    }))
+    .unwrap();
+    let mut p = job::prepare(&conn, &overrides, &req, &|_| {}).unwrap();
+    let time = |p: &Prepared, level| {
+        p.model
+            .abilities
+            .walk_time(300.0, p.model.initial.abilities, level, &p.params)
+    };
+    assert!((time(&p, 20) - 37.26708).abs() < 0.01, "rank one at level 20");
+    assert!((time(&p, 21) - 32.96703).abs() < 0.01, "rank two at level 21");
+    p.params.assume_movement_talents = false;
+    assert!(
+        (time(&p, 21) - 42.85714).abs() < 0.01,
+        "without the talent Cat Form keeps running speed"
     );
 }

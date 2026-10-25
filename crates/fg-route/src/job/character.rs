@@ -108,7 +108,7 @@ pub(super) fn character(conn: &Connection, overrides: &Overrides, req: &PlanRequ
             &class,
             &group,
         ),
-        quest_prerequisites: overrides.quest_prerequisites.clone(),
+        quest_overrides: overrides.quest_overrides.clone(),
         required_quests: super::required::resolve(conn, req, race.id, class_id)?,
         completed_quests,
         class_powers: overrides.class_powers.get(&class).cloned().unwrap_or_default(),
@@ -117,8 +117,8 @@ pub(super) fn character(conn: &Connection, overrides: &Overrides, req: &PlanRequ
             .get(&class)
             .map(|m| m.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
             .unwrap_or_default(),
-        movement: overrides
-            .movement
+        abilities: overrides
+            .abilities
             .iter()
             .filter(|a| a.class == class)
             .cloned()

@@ -93,8 +93,8 @@ impl StepWriter<'_> {
             Event::Train {
                 trainer,
                 since,
-                movement,
-            } => self.train(&mut step, *trainer, *since, t.level, *movement),
+                abilities,
+            } => self.train(&mut step, *trainer, *since, t.level, *abilities),
             Event::Sell { vendor } => self.sell(&mut step, *vendor),
             Event::Stop { stop, loc } if !stop.is_quest() => self.visit(&mut step, *stop, loc),
             Event::Stop { stop, loc } => self.quest_stop(&mut step, *stop, loc),
@@ -637,7 +637,7 @@ impl StepWriter<'_> {
     }
 
     /// Class training: the spells learned since the last visit.
-    fn train(&self, step: &mut Step, trainer: usize, since: i64, level: i64, movement: u64) -> Place {
+    fn train(&self, step: &mut Step, trainer: usize, since: i64, level: i64, abilities: u64) -> Place {
         let npc = &self.planner.model.trainers[trainer];
         step.kind = StepKind::Train;
         let who = Arg::Npc(npc.id, npc.name.clone());
@@ -659,10 +659,14 @@ impl StepWriter<'_> {
                 })
             })
             .collect();
-        for (i, ability) in self.planner.model.movement.abilities.iter().enumerate() {
-            if movement & (1 << i) != 0 {
+        for (i, ability) in self.planner.model.abilities.entries.iter().enumerate() {
+            if abilities & (1 << i) != 0 {
                 step.spells.extend(&ability.spells);
-                spells.push(Arg::Text(ability.name.clone()));
+                spells.push(Arg::Text(if ability.rank > 0 {
+                    format!("{} {}", ability.name, ability.rank)
+                } else {
+                    ability.name.clone()
+                }));
             }
         }
         step.spells.sort_unstable();

@@ -76,7 +76,12 @@ impl Planner<'_> {
         let every_late = s.level >= s.trained + self.params.train_every + self.params.train_max_delay;
         let (mut due, mut late) = match self.model.power.as_ref().filter(|p| p.has_spells()) {
             Some(p) => {
-                let gain = p.train_gain(s.trained, s.level);
+                let gain = p.train_gain(
+                    s.trained,
+                    s.level,
+                    s.abilities,
+                    self.model.abilities.trained(s.abilities, s.level),
+                );
                 // In a group, everyone trains at the cadence (the others' spells are not known).
                 let group = !self.profile.mates.is_empty();
                 (
@@ -87,10 +92,10 @@ impl Planner<'_> {
             None => (every, every_late),
         };
         if self.profile.mates.is_empty() {
-            let movement = &self.model.movement;
-            let available = s.movement | movement.trained(s.level);
-            let gain = movement.speed(available, s.level, self.params)
-                / movement.speed(s.movement, s.level, self.params)
+            let abilities = &self.model.abilities;
+            let available = s.abilities | abilities.trained(s.abilities, s.level);
+            let gain = abilities.speed(available, s.level, self.params)
+                / abilities.speed(s.abilities, s.level, self.params)
                 - 1.0;
             due |= gain >= self.params.train_min_gain && gain > 0.0;
             late |= gain >= self.params.train_trip_gain && gain > 0.0;
@@ -193,18 +198,16 @@ impl Planner<'_> {
         s.time += self.growth().train_time();
         s.spent.training += self.growth().train_time();
         let since = s.trained;
-        let movement_before = s.movement;
+        let abilities_before = s.abilities;
         s.trained = s.level;
-        if self.profile.mates.is_empty() {
-            s.movement |= self.model.movement.trained(s.level);
-        }
+        s.abilities |= self.model.abilities.trained(s.abilities, s.level);
         self.growth().refresh_power(s);
         record(
             s,
             Event::Train {
                 trainer: i,
                 since,
-                movement: s.movement & !movement_before,
+                abilities: s.abilities & !abilities_before,
             },
         );
     }

@@ -28,9 +28,12 @@ impl Worth<'_> {
     }
 
     /// Rough standalone cost of a quest, to skip quests not worth the trip.
-    pub(crate) fn quest_cost(&self, i: u32, level: i64, bonus: f64, movement: u64) -> f64 {
+    pub(crate) fn quest_cost(&self, i: u32, level: i64, bonus: f64, abilities: u64) -> f64 {
         let q = self.quest(i);
-        let trips = Trips { movement, ..self.trips };
+        let trips = Trips {
+            abilities,
+            ..self.trips
+        };
         let leg = |a: &crate::world::Pos, b: &crate::world::Pos| trips.leg(a, b, level, 0, u8::MAX).0;
         let work_at = |o: &Objective| {
             o.kills * self.combat.kill_time(level, bonus, o) + o.uses * self.params.object_time + o.extra
@@ -111,7 +114,7 @@ impl Worth<'_> {
         if past && worth <= 0.0 {
             return false;
         }
-        self.beats_grinding(s, worth, trip + self.quest_cost(i, level, s.bonus, s.movement), level)
+        self.beats_grinding(s, worth, trip + self.quest_cost(i, level, s.bonus, s.abilities), level)
     }
 
     /// Whether `worth` XP for `cost` seconds beats grinding.
@@ -206,7 +209,7 @@ impl Worth<'_> {
         }
         let efficiency =
             (self.quest_worth(i, level) + self.growth.gear_xp(s, i, level) + self.reputation_xp(s, i, level))
-                / self.quest_cost(i, level, s.bonus, s.movement).max(1.0);
+                / self.quest_cost(i, level, s.bonus, s.abilities).max(1.0);
         let reference = self.combat.grind_rate(level, s.bonus, &s.pos) * 2.0;
         (reference / efficiency.max(1e-6))
             .powf(self.params.efficiency_power)

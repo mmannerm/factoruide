@@ -267,7 +267,7 @@ fn route_of(
                 .as_ref()
                 .map(|p| p.ranks().map(|r| r.id).collect())
                 .unwrap_or_default();
-            spells.extend(model.movement.spells());
+            spells.extend(model.abilities.spells());
             spells.sort_unstable();
             spells.dedup();
             spells

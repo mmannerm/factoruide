@@ -177,7 +177,7 @@ pub struct InnInfo {
 /// What the replay keeps of the character after each step.
 struct Snapshot {
     pos: Pos,
-    movement: u64,
+    abilities: u64,
     time: f64,
     level: i64,
     spent: Breakdown,
@@ -392,7 +392,7 @@ impl<'r> Replay<'r> {
                 .collect();
             snaps.push(Snapshot {
                 pos: s.pos,
-                movement: s.movement,
+                abilities: s.abilities,
                 time: s.time,
                 level: s.level,
                 spent: s.spent,
@@ -661,13 +661,13 @@ impl<'r> Replay<'r> {
             if !apart(&a, &b) || a.continent != b.continent {
                 continue;
             }
-            let movement = self
+            let abilities = self
                 .snaps
                 .iter()
                 .rev()
                 .find(|s| s.time <= start + 1e-6)
-                .map_or(self.planner.model.initial.movement, |s| s.movement);
-            let trips = self.planner.trips().with_movement(movement);
+                .map_or(self.planner.model.initial.abilities, |s| s.abilities);
+            let trips = self.planner.trips().with_movement(abilities);
             let distance = a.dist(&b) * self.planner.params.detour;
             let length = trips.walk_time(&a, &b, distance, saved[i].level, 0).min(end - start);
             let leg = Leg {

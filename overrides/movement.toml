@@ -1,10 +1,14 @@
 # Sustained ground-travel abilities. Trainer levels/IDs come from m_class_spell; a recorded
-# profile's actual spell IDs decide what it knows. No talent build is assumed.
+# profile's actual spell IDs and completed quests decide what it knows. The advanced
+# movement-talent assumption enables Feral Swiftness and Improved Ghost Wolf (default on).
 # Ground-only conservative timing: caves, water, model floors and unknown terrain use the
 # existing baseline. Each walking leg pays the activation cost (no persistent form assumed).
 # Sources, checked 2026-10-24:
+# https://news.blizzard.com/en-us/article/24301515/world-of-warcraft-forever-class-deep-dives-hunter-and-druid
+# https://news.blizzard.com/en-gb/article/24302097/world-of-warcraft-forever-class-deep-dives-mage-and-shaman
 # https://www.wowhead.com/forever/spell=783/travel-form
 # https://www.wowhead.com/classic/spell=2645/ghost-wolf
+# https://www.wowhead.com/tbc/spell=2645/ghost-wolf (two-second base cast)
 # https://www.wowhead.com/classic/spell=5118/aspect-of-the-cheetah
 
 [[ability]]
@@ -12,7 +16,7 @@ class = "druid"
 name = "Travel Form"
 spells = [783]
 bonus = 0.4
-activation = 1.5
+activation = 0.0
 
 [[ability]]
 class = "shaman"
@@ -20,10 +24,21 @@ name = "Ghost Wolf"
 spells = [2645]
 bonus = 0.4
 activation = 3.0
+talent = "improved_ghost_wolf"
 
 [[ability]]
 class = "hunter"
 name = "Aspect of the Cheetah"
 spells = [5118]
 bonus = 0.3
-activation = 1.5
+activation = 0.0
+
+# Cat Form is a quest reward in Forever. Feral Swiftness affects movement only after the form
+# is known, and only while the explicit movement-talent assumption is enabled.
+[[ability]]
+class = "druid"
+name = "Cat Form"
+spells = [768]
+bonus = 0.0
+activation = 0.0
+talent = "feral_swiftness"
