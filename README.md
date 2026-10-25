@@ -48,7 +48,8 @@ zones to do, the level to reach before moving on from each, and where the XP is.
   Forever, require **79976** (**This Must Be The Place**); the correct faction starter and the
   rest of its chain are included. This plans acquisition; the item's XP buff is not yet simulated.
 - **Class travel abilities**: known Cat Form, Travel Form, Ghost Wolf and Aspect of the Cheetah
-  affect solo travel estimates. Quest rewards unlock forms and their starter spells; trainers
+  affect solo travel estimates. Where acquisition data is available, quest rewards unlock forms
+  and their starter spells; trainers
   cannot substitute for a required class quest. Later attack ranks still need training after the
   form is acquired. Advanced settings include **Assume movement talents are learned**, enabled
   by default: Feral Swiftness supplies Cat Form's speed bonus, and Improved Ghost Wolf shortens
@@ -56,7 +57,9 @@ zones to do, the level to reach before moving on from each, and where the XP is.
   as the relevant ranks are available; it does not plan a talent tree. Bonuses apply conservatively
   to whole walking legs on exposed dry terrain; water, caves, buildings and unknown geometry
   keep the existing estimate. Cast time is counted per leg; instant forms do not stop movement.
-  Aquatic Form travel is not yet modeled.
+  Synthetic mid-level guides assume earlier class unlocks; import your character to account for
+  skipped class quests. Explicit must-have quests still require completion. Aquatic Form travel
+  is not yet modeled.
 - **Your class quests**: the ones you want to do are kept, even when they are not the fastest.
   Druids include the Moonglade quest by default, unlocking teleport access to their class quests.
 - **Your play style**: a relaxed, normal or fast pace (time per fight, per loot, per stop), how far

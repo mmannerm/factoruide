@@ -1153,6 +1153,29 @@ fn cat_form_is_a_quest_reward_before_it_can_change_travel_or_combat() {
         let resumed = planner(&p).explicit().edit(&far);
         assert!((resumed.breakdown.travel - expected).abs() < 0.01);
     }
+    // A synthetic leveled preset assumes earlier unlocks, except for a quest explicitly
+    // requested as still to do. Recorded characters never infer missing spells this way.
+    let mut synthetic = req.clone();
+    synthetic.start = None;
+    synthetic.from_level = 21;
+    synthetic.to_level = 22;
+    p.profile.from_level = 21;
+    p.profile.to_level = 22;
+    for required in [false, true] {
+        if required {
+            synthetic.required_quests.push(job::RequiredQuest::Id(98362));
+        }
+        let preset = job::prepare(&conn, &overrides, &synthetic, &|_| {}).unwrap();
+        p.model.initial.abilities = preset.model.initial.abilities;
+        let resumed = planner(&p).explicit().edit(&far);
+        let expected = if required { 42.85714 } else { 32.96703 };
+        assert!(
+            (resumed.breakdown.travel - expected).abs() < 0.01,
+            "an explicit quest requirement cannot inherit its own reward from the preset"
+        );
+    }
+    p.profile.from_level = 20;
+    p.profile.to_level = 21;
     p.model.initial.abilities = 0;
     p.params.assume_movement_talents = false;
     let without = planner(&p).explicit().edit(&unlock);
@@ -1209,6 +1232,18 @@ fn late_cat_unlock_teaches_starter_attacks_then_allows_training_later_ranks() {
     };
     let before_guide = export(&before);
     let after_guide = export(&after);
+    let power =
+        |guide: &crate::export::Route, kind| guide.steps.iter().find(|s| s.kind == kind).unwrap().power.unwrap();
+    assert!(
+        (power(&before_guide, crate::export::StepKind::Train) - power(&after_guide, crate::export::StepKind::Accept))
+            .abs()
+            < 0.001,
+        "training before the form gives no form-dependent combat power"
+    );
+    assert!(
+        power(&after_guide, crate::export::StepKind::Train) > power(&after_guide, crate::export::StepKind::TurnIn),
+        "the unlock grants starter ranks, not the later ranks from an earlier trainer visit"
+    );
     let trained_spells = |guide: &crate::export::Route| {
         guide
             .steps
@@ -1260,8 +1295,8 @@ fn undead_paladin_learns_holy_light_from_its_quest() {
     let conn = database_of("forever");
     let overrides = Overrides::load_edition(&repo().join("overrides"), Edition::Forever).unwrap();
     let req: PlanRequest = serde_json::from_value(serde_json::json!({
-        "race":"undead","class":"paladin","from_level":1,"to_level":2,
-        "required_class_quests":[],"start":{"level":1}
+        "race":"undead","class":"paladin","from_level":6,"to_level":7,
+        "required_class_quests":[],"start":{"level":6}
     }))
     .unwrap();
     let mut p = at_start(job::prepare(&conn, &overrides, &req, &|_| {}).unwrap(), 1);
@@ -1269,7 +1304,7 @@ fn undead_paladin_learns_holy_light_from_its_quest() {
     p.model.index = [(90902, 0)].into_iter().collect();
     let trainer = p.model.start.clone();
     p.model.trainers.push(trainer);
-    let plan = planner(&p).explicit();
+    let plan = planner(&p).replaying().explicit();
     let before = plan.edit(&[super::Edit::Train { trainer: 0 }]);
     let after = plan.edit(&[
         super::Edit::Stop {
@@ -1293,32 +1328,117 @@ fn undead_paladin_learns_holy_light_from_its_quest() {
         !spells(&before.route).contains(&635),
         "the trainer cannot bypass the class quest"
     );
+    let before_guide = crate::export::build_traced(
+        &plan,
+        &p.profile,
+        &before.route,
+        &before.trace,
+        before.breakdown.total,
+        before.breakdown,
+    );
+    assert!(
+        !before_guide
+            .steps
+            .iter()
+            .any(|s| s.kind == crate::export::StepKind::Train && s.spells.contains(&639)),
+        "a later rank cannot bypass the starter quest"
+    );
     assert!(
         spells(&after.route).contains(&635),
         "another class uses the same quest reward path"
+    );
+    let learned = plan.edit(&[
+        super::Edit::Stop {
+            stop: Stop::quest(0, Kind::Accept),
+            farm: false,
+            spot: None,
+        },
+        super::Edit::Stop {
+            stop: Stop::quest(0, Kind::TurnIn),
+            farm: false,
+            spot: None,
+        },
+        super::Edit::Train { trainer: 0 },
+    ]);
+    let guide = crate::export::build_traced(
+        &plan,
+        &p.profile,
+        &learned.route,
+        &learned.trace,
+        learned.breakdown.total,
+        learned.breakdown,
+    );
+    assert!(
+        guide
+            .steps
+            .iter()
+            .any(|s| s.kind == crate::export::StepKind::Train && s.spells.contains(&639)),
+        "training after the quest teaches Holy Light 2"
     );
 }
 
 #[test]
 fn classic_cat_speed_follows_the_available_feral_swiftness_rank() {
     let conn = database();
-    let overrides = Overrides::load_edition(&repo().join("overrides"), Edition::Classic).unwrap();
+    let mut overrides = Overrides::load_edition(&repo().join("overrides"), Edition::Classic).unwrap();
+    overrides.params.zone_gap = 0.0; // A supported setting: zone closures do not separate cached legs.
     let req: PlanRequest = serde_json::from_value(serde_json::json!({
         "race":"nightelf","class":"druid","from_level":20,"to_level":22,
         "required_class_quests":[],"start":{"level":20,"spells":[768]}
     }))
     .unwrap();
-    let mut p = job::prepare(&conn, &overrides, &req, &|_| {}).unwrap();
-    let time = |p: &Prepared, level| {
-        p.model
-            .abilities
-            .walk_time(300.0, p.model.initial.abilities, level, &p.params)
+    let mut p = at_start(job::prepare(&conn, &overrides, &req, &|_| {}).unwrap(), 2);
+    let a = crate::world::Pos {
+        continent: 1,
+        x: -100.0,
+        y: -100.0,
+        zone: 0,
+        z: None,
     };
-    assert!((time(&p, 20) - 37.26708).abs() < 0.01, "rank one at level 20");
-    assert!((time(&p, 21) - 32.96703).abs() < 0.01, "rank two at level 21");
-    p.params.assume_movement_talents = false;
+    p.model.initial.pos = Some((a, 0));
+    p.world.terrain = crate::terrain::movement_test_ground(false);
+    (p.params.run_speed, p.params.detour) = (7.0, 1.0);
+    for q in &mut p.model.quests {
+        q.starts[0].pos = a;
+        q.ends[0].pos = a;
+        q.level = 20;
+    }
+    p.model.quests[0].xp = Edition::Classic.rules().to_next_level(20);
+    p.model.quests[1].xp = 100_000;
+    let b = crate::world::Pos { x: -400.0, ..a };
+    p.model.quests[1].starts[0].pos = b;
+    p.model.quests[1].ends[0].pos = b;
+    let edits = |i| {
+        [
+            super::Edit::Stop {
+                stop: Stop::quest(i, Kind::Accept),
+                farm: false,
+                spot: None,
+            },
+            super::Edit::Stop {
+                stop: Stop::quest(i, Kind::TurnIn),
+                farm: false,
+                spot: None,
+            },
+        ]
+    };
+    let far = edits(1);
+    let plan = planner(&p).explicit();
+    let before = plan.edit(&far);
+    let after = plan.edit(&[edits(0)[0], edits(0)[1], far[0], far[1]]);
+    assert_eq!(after.errors(), 0);
     assert!(
-        (time(&p, 21) - 42.85714).abs() < 0.01,
+        (before.breakdown.travel - 37.26708).abs() < 0.01,
+        "rank one at level 20"
+    );
+    assert!(
+        (after.breakdown.travel - 32.96703).abs() < 0.01,
+        "the same leg at level 21 uses rank two"
+    );
+    p.params.assume_movement_talents = false;
+    let without = planner(&p).explicit().edit(&far);
+    assert!(
+        (without.breakdown.travel - 42.85714).abs() < 0.01,
         "without the talent Cat Form keeps running speed"
     );
 }

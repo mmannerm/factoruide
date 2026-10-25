@@ -110,7 +110,7 @@ pub(super) fn character(conn: &Connection, overrides: &Overrides, req: &PlanRequ
         ),
         quest_overrides: overrides.quest_overrides.clone(),
         required_quests: super::required::resolve(conn, req, race.id, class_id)?,
-        completed_quests,
+        completed_quests: start.map(|_| completed_quests),
         class_powers: overrides.class_powers.get(&class).cloned().unwrap_or_default(),
         spell_weights: overrides
             .spells

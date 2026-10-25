@@ -31,7 +31,7 @@ pub struct Ability {
     pub level: Option<i64>,
     pub rank: i64,
     pub requires: u64,
-    quests: Vec<i64>,
+    quests: Vec<(i64, i64)>,
     travel: Option<Travel>,
 }
 
@@ -49,27 +49,19 @@ pub struct Abilities {
 
 impl Abilities {
     pub fn load(conn: &Connection, profile: &Profile) -> Result<Self> {
-        let has_trainers: bool = conn.query_row(
-            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name = 'm_class_spell')",
-            [],
-            |r| r.get(0),
+        let mut trainer_stmt = conn.prepare(
+            "SELECT spell_id,name,rank,level FROM m_class_spell WHERE class_id=?1 ORDER BY name,rank,spell_id",
         )?;
-        let mut trainer = Vec::new();
-        if has_trainers {
-            let mut stmt = conn.prepare(
-                "SELECT spell_id,name,rank,level FROM m_class_spell WHERE class_id=?1 ORDER BY name,rank,spell_id",
-            )?;
-            trainer = stmt
-                .query_map([profile.class_id], |r| {
-                    Ok((
-                        r.get::<_, i64>(0)?,
-                        r.get::<_, String>(1)?,
-                        r.get::<_, i64>(2)?,
-                        r.get::<_, i64>(3)?,
-                    ))
-                })?
-                .collect::<rusqlite::Result<Vec<_>>>()?;
-        }
+        let trainer = trainer_stmt
+            .query_map([profile.class_id], |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, i64>(2)?,
+                    r.get::<_, i64>(3)?,
+                ))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
         let mut abilities = Self::default();
         for def in &profile.abilities {
             abilities.entries.push(Ability {
@@ -88,7 +80,7 @@ impl Abilities {
             });
         }
         let mut stmt = conn.prepare(
-            "SELECT id, reward_spell FROM m_quest WHERE status = 'available' AND reward_spell > 0
+            "SELECT id, reward_spell, coalesce(min_level,1) FROM m_quest WHERE status = 'available' AND reward_spell > 0
              AND (coalesce(classes_mask,0) & ?1 != 0 OR zone_or_sort = ?2)
              AND (coalesce(classes_mask,0) = 0 OR classes_mask & ?1 != 0)
              AND (coalesce(races_mask,0) = 0 OR races_mask & ?3 != 0) ORDER BY reward_spell, id",
@@ -99,10 +91,10 @@ impl Abilities {
                 -crate::model::class_sort(profile.class_id),
                 profile.race_bit()
             ],
-            |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)),
+            |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?)),
         )?;
         for row in rows {
-            let (quest, spell) = row?;
+            let (quest, spell, level) = row?;
             let spells = profile.quest_overrides.iter().find(|q| q.id == quest).map_or_else(
                 || vec![spell],
                 |q| {
@@ -115,20 +107,18 @@ impl Abilities {
             );
             for spell in spells {
                 let i = abilities.entry(conn, &trainer, spell)?;
-                abilities.entries[i].quests.push(quest);
+                abilities.entries[i].quests.push((quest, level));
             }
         }
         // Only ranks whose acquisition matters independently of the common training level
         // enter the ability book: movement, quest rewards and form-dependent combat spells.
-        if has_trainers {
-            for (name, weight) in &profile.spell_weights {
-                let Some(required) = weight.requires() else { continue };
-                let index = abilities.entry(conn, &trainer, required)?;
-                let mask = 1 << index;
-                for (spell, _, _, _) in trainer.iter().filter(|(_, n, _, _)| n == name) {
-                    let i = abilities.entry(conn, &trainer, *spell)?;
-                    abilities.entries[i].requires = mask;
-                }
+        for (name, weight) in &profile.spell_weights {
+            let Some(required) = weight.requires() else { continue };
+            let index = abilities.entry(conn, &trainer, required)?;
+            let mask = 1 << index;
+            for (spell, _, _, _) in trainer.iter().filter(|(_, n, _, _)| n == name) {
+                let i = abilities.entry(conn, &trainer, *spell)?;
+                abilities.entries[i].requires = mask;
             }
         }
         // A quest may teach the first rank of an otherwise trainer-learned family.
@@ -137,12 +127,16 @@ impl Abilities {
         let quest_families: Vec<_> = abilities
             .entries
             .iter()
-            .filter(|a| !a.quests.is_empty() && profile.spell_weights.iter().any(|(name, _)| name == &a.name))
-            .map(|a| a.name.clone())
+            .enumerate()
+            .filter(|(_, a)| !a.quests.is_empty() && profile.spell_weights.iter().any(|(name, _)| name == &a.name))
+            .map(|(i, a)| (a.name.clone(), i))
             .collect();
         for (spell, name, _, _) in &trainer {
-            if quest_families.contains(name) {
-                abilities.entry(conn, &trainer, *spell)?;
+            if let Some((_, first)) = quest_families.iter().find(|(family, _)| family == name) {
+                let i = abilities.entry(conn, &trainer, *spell)?;
+                if i != *first {
+                    abilities.entries[i].requires |= 1 << *first;
+                }
             }
         }
         for (i, a) in abilities.entries.iter_mut().enumerate() {
@@ -160,7 +154,7 @@ impl Abilities {
             }
             a.spells.sort_unstable();
             a.spells.dedup();
-            for &quest in &a.quests {
+            for &(quest, _) in &a.quests {
                 *abilities.by_quest.entry(quest).or_default() |= 1 << i;
             }
         }
@@ -190,19 +184,29 @@ impl Abilities {
         Ok(self.entries.len() - 1)
     }
 
-    pub fn initial(&self, start: Option<&StartState>, level: i64) -> u64 {
-        match start {
-            Some(start) => self
+    pub fn initial(&self, start: Option<&StartState>, level: i64, quests: &[crate::model::Quest]) -> u64 {
+        if let Some(start) = start {
+            return self
                 .entries
                 .iter()
                 .enumerate()
                 .filter(|(_, a)| {
                     a.known_spells.iter().any(|s| start.spells.contains(s))
-                        || a.quests.iter().any(|q| start.completed.contains(q))
+                        || a.quests.iter().any(|(q, _)| start.completed.contains(q))
                 })
-                .fold(0, |mask, (i, _)| mask | 1 << i),
-            None => self.trained(0, level),
+                .fold(0, |mask, (i, _)| mask | 1 << i);
         }
+        let required = quests
+            .iter()
+            .filter(|q| q.required)
+            .fold(0, |mask, q| mask | self.quest(q.id));
+        let earlier = self
+            .entries
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| a.quests.iter().any(|(_, at)| *at < level))
+            .fold(0, |mask, (i, _)| mask | 1 << i);
+        self.trained(earlier & !required, level)
     }
 
     pub fn trained(&self, known: u64, level: i64) -> u64 {

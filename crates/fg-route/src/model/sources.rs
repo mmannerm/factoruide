@@ -319,6 +319,9 @@ fn class_quest_ids(rows: &[QuestRow], profile: &Profile, links: &HashMap<i64, Ve
         .iter()
         .filter(|r| profile.class_ids().iter().any(|c| r.of_class(*c)))
         .filter(|r| profile.required_class_quests.iter().any(|n| n == &r.name) || r.reward_spell.is_some_and(|spell| spell>0))
+        // A synthetic leveled preset assumes earlier class unlocks; recorded characters
+        // retain missing unlock chains even when they are below the level window.
+        .filter(|r| profile.completed_quests.is_some() || r.min_level.unwrap_or(1) >= profile.from_level)
         // Of a member's race and class.
         .filter(|r| r.classes.is_some_and(|m| m != 0) && profile.members_of(r.races, r.classes) != 0)
         .filter(|r| r.min_level.unwrap_or(1) <= profile.to_level)

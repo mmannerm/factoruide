@@ -300,21 +300,28 @@ prerequisite corrections live in `overrides/<edition>/quests.toml`, with their e
 `abilities.rs` keeps actual knowledge in one compact bitmask: movement abilities, eligible class
 quest rewards, and weighted combat ranks that require a form. The mask participates in travel
 caches, incremental-state comparisons and continuing profiles. Recorded spell IDs (including
-higher ranks) and confirmed quest completions initialize it. Synthetic starts assume available
-trainer spells, but never quest-only rewards. A matching class quest reward takes precedence over
-a generic trainer row. Quest completion grants its spell IDs; an edition override can specify
-additional granted spells, such as Forever Cat Form's free Claw, Rip and Prowl ranks. The addon
-purchase list includes only trainer spells. Form-dependent combat weights require the form and
-the actual learned rank; training before a quest cannot credit a later rank after the unlock.
-Eligible class unlock chains retain their prerequisites below the starting level. Moonglade is included in the default Druid class-quest selection so Skyborne can unlock
-the existing teleport route to their Cat quest chain. Duplicate
-prerequisite edges from different sources are read once by logical quest/kind/target identity.
+higher ranks) and confirmed quest completions initialize it. Synthetic starts preserve the
+leveled-character preset: trainer spells available at the start and quest unlocks from strictly
+earlier levels are assumed known, except for rewards of explicit must-have quests. This does
+not mark any quest completed. At an unlock's own level, its quest still has to be done. A matching
+class quest reward takes precedence over a generic trainer row. Quest completion grants its spell
+IDs; an edition override can specify additional granted spells, such as Forever Cat Form's free
+Claw, Rip and Prowl ranks. The addon purchase list includes only trainer spells. Form-dependent
+combat weights require the form and the actual learned rank; training before a quest cannot
+credit a later rank after the unlock. A quest-granted first rank also gates its family's later
+trainer ranks.
+
+Missing class chains of recorded characters bypass the normal lower-level filter. Synthetic
+presets keep the normal window for earlier quests and retain current/future unlock chains.
+Explicit must-have quests retain their prerequisites in both cases.
+Moonglade is included in the default Druid class-quest selection so Skyborne can unlock the
+existing teleport route to their Cat quest chain. Duplicate prerequisite edges from different
+sources are read once by logical quest/kind/target identity.
 
 The advanced `assume_movement_talents` option defaults to true. Feral Swiftness grants Cat Form
 30% speed in Forever; Classic/TBC use 15% at level 20 and 30% from 21. Improved Ghost Wolf reduces
 the cast to one second in Classic, and to instant in Forever/TBC (base three seconds in
-Classic/Forever, two in TBC). This assumes the
-relevant ranks as they become available, without selecting or training a talent tree. Cheetah's
+Classic/Forever, two in TBC). This assumes the relevant ranks as they become available, without selecting or training a talent tree. Cheetah's
 30% and Travel Form's 40% baseline bonuses are independent of that option. Instant abilities add
 no stationary delay; a cast is paid per walking leg. Speeds do not stack with mounts, and short
 walks can stay on foot when activating a form would cost more than it saves.

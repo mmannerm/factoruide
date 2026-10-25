@@ -20,8 +20,9 @@ pub struct Profile {
     /// Exact quests selected by the player.
     pub required_quests: Vec<i64>,
     pub quest_overrides: Vec<QuestOverride>,
-    /// Confirmed completions from the starting profile, never inferred from character level.
-    pub completed_quests: HashSet<i64>,
+    /// Confirmed completions from a recorded character. None is a synthetic leveled preset;
+    /// its assumed abilities never count as completed must-have quests.
+    pub completed_quests: Option<HashSet<i64>>,
     /// Class quests that make the character stronger: name and power gained.
     pub class_powers: Vec<(String, f64)>,
     /// Class trainer spells that count for power (see overrides/spells.toml).

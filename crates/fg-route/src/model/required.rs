@@ -8,14 +8,14 @@ use std::collections::{HashMap, HashSet};
 struct Requirements<'a> {
     quests: &'a [Quest],
     index: HashMap<i64, usize>,
-    completed: &'a HashSet<i64>,
+    completed: Option<&'a HashSet<i64>>,
     skipped: &'a [(i64, String, String)],
     roots: &'a [i64],
 }
 
 impl Requirements<'_> {
     fn add(&self, id: i64, selected: &mut HashSet<i64>, visiting: &mut HashSet<i64>) -> Result<()> {
-        if self.completed.contains(&id) || selected.contains(&id) {
+        if self.completed.is_some_and(|done| done.contains(&id)) || selected.contains(&id) {
             return Ok(());
         }
         if !visiting.insert(id) {
@@ -41,7 +41,7 @@ impl Requirements<'_> {
         };
         if let Some(other) = selected
             .iter()
-            .chain(self.completed)
+            .chain(self.completed.into_iter().flatten())
             .chain(self.roots)
             .chain(visiting.iter())
             .copied()
@@ -69,7 +69,7 @@ impl Requirements<'_> {
         if alternatives.is_empty()
             || alternatives
                 .iter()
-                .any(|id| self.completed.contains(id) || selected.contains(id))
+                .any(|id| self.completed.is_some_and(|done| done.contains(id)) || selected.contains(id))
         {
             return Ok(());
         }
@@ -108,7 +108,7 @@ pub(super) fn apply(
     let required = Requirements {
         quests,
         index: quests.iter().enumerate().map(|(i, q)| (q.id, i)).collect(),
-        completed: &profile.completed_quests,
+        completed: profile.completed_quests.as_ref(),
         skipped,
         roots: &profile.required_quests,
     };

@@ -303,3 +303,42 @@ fn skyborne_cat_chain_completes_before_the_trainer_travel_form() {
     );
     assert_eq!(guide.breakdown.missing_class_quests, 0);
 }
+
+#[test]
+fn a_late_start_keeps_missing_class_unlock_prerequisites() {
+    let conn = database_of("forever");
+    let overrides = Overrides::load_edition(&repo().join("overrides"), Edition::Forever).unwrap();
+    let mut req = request("skyborne_horde", "druid", &[]);
+    req.from_level = 40;
+    req.to_level = 41;
+    req.start = Some(StartState {
+        level: 40,
+        ..StartState::default()
+    });
+    req.required_class_quests = None;
+    let p = job::prepare(&conn, &overrides, &req, &|_| {}).unwrap();
+    for id in [94913, 98340, 98341, 98404, 98738, 98362] {
+        assert!(
+            p.model.index.contains_key(&id),
+            "missing class unlock quest {id} survives the lower level filter"
+        );
+    }
+}
+
+#[test]
+fn a_synthetic_midlevel_preset_does_not_return_for_earlier_class_unlocks() {
+    let conn = database();
+    let overrides = Overrides::load_edition(&repo().join("overrides"), Edition::Classic).unwrap();
+    let mut req = request("nightelf", "druid", &[]);
+    req.from_level = 50;
+    req.to_level = 51;
+    req.required_class_quests = None;
+    let p = job::prepare(&conn, &overrides, &req, &|_| {}).unwrap();
+    let planner = Planner::new(&p.model, &p.world, &p.params, &p.profile);
+    let guide = fg_route::export::build(&planner, &p.profile, &planner.construct(|_| {}));
+    assert_eq!(guide.breakdown.missing_class_quests, 0);
+    assert!(
+        !guide.steps.iter().any(|s| s.quest == Some(456)),
+        "the preset need not redo The Balance of Nature at level 50"
+    );
+}

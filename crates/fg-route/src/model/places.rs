@@ -94,7 +94,15 @@ pub(super) fn quest_teleports(world: &World, profile: &Profile, quests: &[super:
             (!taught.is_empty()).then(|| Teleport {
                 name: def.name.clone(),
                 level: 0,
-                quests: taught,
+                quests: if profile.completed_quests.is_none()
+                    && taught
+                        .iter()
+                        .any(|&i| !quests[i].required && quests[i].min_level < profile.from_level)
+                {
+                    vec![]
+                } else {
+                    taught
+                },
                 to: Loc {
                     pos,
                     zone: def.to.zone,
