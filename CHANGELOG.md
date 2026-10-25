@@ -17,6 +17,7 @@ An addon change also goes, in the same words, under Unreleased in that addon's o
 
 ### Guides
 
+- Class quests teach their spells; form attacks count only after the form and attack rank are learned.
 - Guides complete must-have quests and their prerequisites, even past the target level.
 - Quest prerequisites keep the eligible race and class branches; Sleeping Bag uses your faction's starter.
 - Walks jump down higher cliffs the bolder the profile: 15 yards for "cautious" (no fall damage), 30 for "normal" (about a third of the health), 50 for "risky" (two thirds); the health lost is paid as time resting.
