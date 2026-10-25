@@ -104,8 +104,9 @@ fn sleeping_bag_option_requires_the_chain_and_recognizes_imported_completion() {
         req.from_level = 35;
         req.to_level = 36;
         let p = job::prepare(&conn, &overrides, &req, &|_| {}).unwrap();
-        assert!(p.model.quests[p.model.index[&79976]].required);
-        assert!(p.model.quests[p.model.index[&starter]].required);
+        for id in [starter, 79192, 79980, 79974, 79975, 79976] {
+            assert!(p.model.quests[p.model.index[&id]].required, "required bag quest {id}");
+        }
         assert!(!p.model.index.contains_key(&other));
         req.start = Some(StartState {
             level: 35,

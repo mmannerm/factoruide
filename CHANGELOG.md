@@ -18,6 +18,7 @@ An addon change also goes, in the same words, under Unreleased in that addon's o
 
 ### Guides
 
+- Rested XP reduces estimated grinding time when choosing quest spots and is consumed during group catch-up.
 - Guides complete must-have quests and their prerequisites, even past the target level.
 - Quest prerequisites keep the eligible race and class branches; Sleeping Bag uses your faction's starter.
 - Walks jump down higher cliffs the bolder the profile: 15 yards for "cautious" (no fall damage), 30 for "normal" (about a third of the health), 50 for "risky" (two thirds); the health lost is paid as time resting.

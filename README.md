@@ -42,8 +42,7 @@ zones to do, the level to reach before moving on from each, and where the XP is.
   quests a few levels ahead.
 - **Your quests**: add a must-have quest by ID or exact name. The guide includes its
   prerequisites and finishes the chain, even past your target level. It cannot be saved with
-  a required quest missing. For the Sleeping Bag in Forever, add **79976** (**This Must Be The
-  Place**).
+  a required quest missing.
 - **XP bonuses (Forever, advanced settings)**: optionally keep the food bonus (+5% kill XP)
   and Sleeping Bag (+3% kill and quest XP) active. Sleeping Bag includes its quest chain and
   starts after the reward, or from the start when the imported profile confirms completion.
