@@ -26,6 +26,7 @@ pub struct Profile {
     pub class_powers: Vec<(String, f64)>,
     /// Class trainer spells that count for power (see overrides/spells.toml).
     pub spell_weights: Vec<(String, crate::power::SpellWeight)>,
+    pub spell_levels: Vec<SpellLevel>,
     pub abilities: Vec<crate::abilities::MovementDef>,
     /// Dungeon settings (see overrides/dungeons.toml).
     pub dungeons: Vec<DungeonDef>,
@@ -96,6 +97,14 @@ pub fn race_bit(race_id: i64) -> i64 {
 }
 
 impl Profile {
+    /// Trainer level after the edition's client corrections.
+    pub fn spell_level(&self, spell: i64, level: i64) -> i64 {
+        self.spell_levels
+            .iter()
+            .find(|s| s.id == spell)
+            .map_or(level, |s| s.level)
+    }
+
     pub(super) fn within_levels(&self, level: i64, min_level: i64, max_above: i64) -> bool {
         min_level <= self.to_level && level <= self.to_level + max_above && level + 10 >= self.from_level
     }
@@ -543,6 +552,13 @@ pub struct TeleportDef {
     /// Name of the quests teaching it.
     pub quest: String,
     pub to: crate::world::ZonePoint,
+}
+
+/// A verified training level overriding a spell in the edition's bundled catalog.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct SpellLevel {
+    pub id: i64,
+    pub level: i64,
 }
 
 /// Edition-specific quest corrections, applied over the bundled database.

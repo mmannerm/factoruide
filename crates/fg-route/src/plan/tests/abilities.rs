@@ -10,7 +10,6 @@ fn late_form_unlock_does_not_credit_unlearned_attack_ranks() {
         ("Rip", 9492, 98362),
         ("Rake", 1822, 98362),
         ("Shred", 5221, 98362),
-        ("Tiger's Fury", 5217, 98362),
         ("Ferocious Bite", 22568, 98362),
         ("Maul", 6808, 94638),
         ("Swipe", 779, 94638),

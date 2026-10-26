@@ -27,6 +27,7 @@ pub struct Overrides {
     /// Class trainer spells that count for power, by class (spells.toml).
     pub spells: HashMap<String, BTreeMap<String, crate::power::SpellWeight>>,
     pub abilities: Vec<crate::abilities::MovementDef>,
+    pub spell_levels: Vec<crate::model::SpellLevel>,
     pub dungeons: Vec<DungeonDef>,
     /// Objectives done only once others of their quest are (`[[order]]` of objectives.toml).
     pub objective_orders: Vec<crate::model::ObjectiveOrder>,
@@ -197,6 +198,13 @@ impl Overrides {
             teleport: Vec<crate::model::TeleportDef>,
         }
         #[derive(Deserialize, Default)]
+        struct Client {
+            #[serde(default)]
+            spell: Vec<crate::model::SpellLevel>,
+            #[serde(default)]
+            link: Vec<LinkDef>,
+        }
+        #[derive(Deserialize, Default)]
         struct Passes {
             #[serde(default)]
             pass: Vec<crate::world::PassDef>,
@@ -210,6 +218,7 @@ impl Overrides {
         let class_quests: HashMap<String, ClassQuests> = parse_toml(&file, "class_quests.toml")?;
         let passes = parse_toml::<Passes>(&file, "passes.toml")?;
         let travel = parse_toml::<Travel>(&file, "travel.toml")?;
+        let client = parse_toml::<Client>(&file, "client.toml")?;
         let mut movement = parse_toml::<Abilities>(&file, "movement.toml")?;
         for ability in &mut movement.ability {
             ability.trained_at = movement.training.get(&ability.name).copied();
@@ -223,11 +232,12 @@ impl Overrides {
             class_quests: class_quests.into_iter().map(|(k, v)| (k, v.required)).collect(),
             spells: parse_toml(&file, "spells.toml")?,
             abilities: movement.ability,
+            spell_levels: client.spell,
             class_power: parse_toml(&file, "class_power.toml")?,
             dungeons: parse_toml::<Dungeons>(&file, "dungeons.toml")?.dungeon,
             objective_orders: parse_toml::<Objectives>(&file, "objectives.toml")?.order,
             quest_overrides: parse_toml::<Quests>(&file, "quests.toml")?.quest,
-            links: travel.link,
+            links: travel.link.into_iter().chain(client.link).collect(),
             teleports: travel.teleport,
             passes: passes.pass,
             enclosed: passes.enclosed,

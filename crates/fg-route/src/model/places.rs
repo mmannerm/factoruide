@@ -41,7 +41,7 @@ impl Places {
         let trainers = finder.with_subname(&format!("{} Trainer", profile.class_name))?;
         // The vendor flag of the client the data was read from (1.12 for Classic and Forever).
         let vendors = finder.with_flag(if edition == crate::xp::Edition::Tbc { 128 } else { 4 })?;
-        let spells = class_spells(conn, profile.class_id)?;
+        let spells = class_spells(conn, profile)?;
         // Where a teleport lands: the class trainer of that city, else its inn (the character's
         // capitals only: the others have none friendly to it).
         let in_city = |locs: &[Loc], city: &str| {
@@ -115,7 +115,7 @@ pub(super) fn quest_teleports(
 
 /// The class's spells that travel ("Teleport: Stormwind", "Astral Recall") and the level they
 /// are learned at; none without the class spell data.
-fn class_spells(conn: &Connection, class_id: i64) -> Result<Vec<(String, i64)>> {
+fn class_spells(conn: &Connection, profile: &Profile) -> Result<Vec<(String, i64)>> {
     let known: i64 = conn.query_row(
         "SELECT count(*) FROM sqlite_master WHERE name = 'm_class_spell'",
         [],
@@ -125,12 +125,22 @@ fn class_spells(conn: &Connection, class_id: i64) -> Result<Vec<(String, i64)>> 
         return Ok(Vec::new());
     }
     let mut stmt = conn.prepare(
-        "SELECT name, min(level) FROM m_class_spell
-         WHERE class_id = ?1 AND (name LIKE 'Teleport: %' OR name = 'Astral Recall')
-         GROUP BY name",
+        "SELECT spell_id, name, level FROM m_class_spell
+         WHERE class_id = ?1 AND (name LIKE 'Teleport: %' OR name = 'Astral Recall')",
     )?;
-    let rows = stmt.query_map([class_id], |r| Ok((r.get(0)?, r.get(1)?)))?;
-    Ok(rows.collect::<rusqlite::Result<_>>()?)
+    let rows = stmt.query_map([profile.class_id], |r| {
+        Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?))
+    })?;
+    let mut spells = std::collections::BTreeMap::<String, i64>::new();
+    for row in rows {
+        let (id, name, level) = row?;
+        let level = profile.spell_level(id, level);
+        spells
+            .entry(name)
+            .and_modify(|old| *old = (*old).min(level))
+            .or_insert(level);
+    }
+    Ok(spells.into_iter().collect())
 }
 
 struct NpcFinder<'a> {

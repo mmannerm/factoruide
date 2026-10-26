@@ -14,6 +14,109 @@ fn request(quests: &serde_json::Value) -> PlanRequest {
     .unwrap()
 }
 
+fn druid_at_twenty() -> PlanRequest {
+    let mut req = request(&json!([]));
+    req.race = "skyborne_horde".into();
+    req.class = "druid".into();
+    req.to_level = 21;
+    req.start = Some(StartState {
+        level: 20,
+        spells: vec![768],
+        ..StartState::default()
+    });
+    req
+}
+
+#[test]
+fn forever_trains_shred_at_twenty_after_learning_cat_form() {
+    let conn = database_of("forever");
+    let p = job::prepare(&conn, &overrides(Edition::Forever), &druid_at_twenty(), &|_| {}).unwrap();
+    let book = &p.model.abilities;
+    let shred = book.bit(5221).unwrap();
+    assert_eq!(book.trained(0, 20) & shred, 0, "Cat Form still gates Shred");
+    let trained = book.trained(p.model.initial.abilities, 20);
+    assert_ne!(trained & shred, 0);
+    let power = p.model.power.as_ref().unwrap();
+    assert!(power.spell_bonus(20, 20, trained) > power.spell_bonus(20, 20, trained & !shred));
+}
+
+#[test]
+fn forever_no_longer_plans_training_for_tigers_fury() {
+    let conn = database_of("forever");
+    let p = job::prepare(&conn, &overrides(Edition::Forever), &druid_at_twenty(), &|_| {}).unwrap();
+    let planner = fg_route::plan::Planner::new(&p.model, &p.world, &p.params, &p.profile);
+    let guide = fg_route::export::build(&planner, &p.profile, &[]);
+    assert!(!guide.spells.iter().any(|id| matches!(id, 5217 | 6793 | 9845 | 9846)));
+}
+
+#[test]
+fn the_skyborne_wind_bridge_is_open_during_confront_lorthuna() {
+    let conn = database_of("forever");
+    let o = overrides(Edition::Forever);
+    let names = Names::load(&conn, "enUS").unwrap();
+    for (race, quest) in [("skyborne_horde", 92646), ("skyborne", 93835)] {
+        for state in 0..3 {
+            let mut req = request(&json!([]));
+            req.race = race.into();
+            req.from_level = 12;
+            req.to_level = 13;
+            req.start = Some(StartState {
+                level: 12,
+                position: Some(job::MapPos {
+                    map: 2665,
+                    x: 71.614068,
+                    y: 50.665884,
+                }),
+                log: if state == 1 {
+                    vec![job::LogQuest {
+                        id: quest,
+                        complete: true,
+                        ..Default::default()
+                    }]
+                } else {
+                    vec![]
+                },
+                completed: if state == 2 { vec![quest] } else { vec![] },
+                ..StartState::default()
+            });
+            let editor = Editor::open(&conn, &o, &req, None).unwrap();
+            let link = editor
+                .catalog(&names)
+                .links
+                .into_iter()
+                .find(|l| l.link.name.starts_with("Wind bridge to Rohashi Spires"))
+                .unwrap()
+                .link;
+            let report = editor.simulate(
+                &[
+                    RouteStep::Link {
+                        first: link.clone(),
+                        last: link,
+                    },
+                    RouteStep::TurnIn { quest },
+                ],
+                &names,
+            );
+            assert_eq!(
+                report.steps[0].status,
+                if state == 1 { "done" } else { "error" },
+                "{race}, quest state {state}: {:?}",
+                report.steps[0]
+            );
+            if state == 1 {
+                assert!(
+                    report.steps[0]
+                        .line
+                        .as_ref()
+                        .unwrap()
+                        .text
+                        .contains("wait for the wind")
+                );
+            }
+        }
+    }
+}
+
 fn overrides(edition: Edition) -> Overrides {
     let mut o = Overrides::load_edition(&repo().join("overrides"), edition).unwrap();
     o.params.effort = 0.0;
