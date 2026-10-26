@@ -20,6 +20,8 @@ An addon change also goes, in the same words, under Unreleased in that addon's o
 
 ### Guides
 
+- Forever Cat Form trials use the statue's stealth blessing; quest-chain corrections follow newer Questie data.
+- Forever learns Shred at level 20, leaves out Tiger's Fury, and uses the quest's wind bridge at Rohashi Spires.
 - Learned class movement spells affect walks entirely on exposed dry ground; most walks keep the usual estimate.
 - Missing class unlocks keep their prerequisites; known unlocks are not repeated. Druids include Moonglade by default.
 - Class quests teach their spells; form attacks count only after the form and attack rank are learned.

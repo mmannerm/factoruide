@@ -95,7 +95,7 @@ impl ObjectiveKind {
 
 /// How a quest is linked to another.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum LinkKind {
+pub(crate) enum LinkKind {
     /// Every one of these first.
     PreAll,
     /// One of these first.
@@ -392,22 +392,17 @@ fn relations(conn: &Connection) -> Result<Relations> {
     Ok(relations)
 }
 
-fn links(conn: &Connection, profile: &Profile) -> Result<HashMap<i64, Vec<(LinkKind, i64)>>> {
-    let mut links: HashMap<i64, Vec<(LinkKind, i64, bool)>> = HashMap::new();
-    let mut stmt = conn.prepare(
-        "SELECT l.quest_id,l.kind,l.other_id,q.races_mask,q.classes_mask
-         FROM m_quest_link l LEFT JOIN m_quest q ON q.id=l.other_id",
-    )?;
+/// The corrected quest graph, shared by planning and data audits.
+pub(crate) fn quest_links(
+    conn: &Connection,
+    corrected: &[super::QuestOverride],
+) -> Result<HashMap<i64, Vec<(LinkKind, i64)>>> {
+    let mut links: HashMap<i64, Vec<(LinkKind, i64)>> = HashMap::new();
+    let mut stmt = conn.prepare("SELECT quest_id,kind,other_id FROM m_quest_link")?;
     for row in stmt.query_map([], |r| {
-        Ok((
-            r.get::<_, i64>(0)?,
-            r.get::<_, String>(1)?,
-            r.get::<_, i64>(2)?,
-            r.get::<_, Option<i64>>(3)?,
-            r.get::<_, Option<i64>>(4)?,
-        ))
+        Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?))
     })? {
-        let (q, kind, other, races, classes) = row?;
+        let (quest, kind, other) = row?;
         let kind = match kind.as_str() {
             "pre_all" => LinkKind::PreAll,
             "pre_any" => LinkKind::PreAny,
@@ -415,45 +410,49 @@ fn links(conn: &Connection, profile: &Profile) -> Result<HashMap<i64, Vec<(LinkK
             "child" => LinkKind::Child,
             _ => LinkKind::Other,
         };
-        links
-            .entry(q)
-            .or_default()
-            .push((kind, other, profile.members_of(races, classes) != 0));
+        let edges = links.entry(quest).or_default();
+        if !edges.contains(&(kind, other)) {
+            edges.push((kind, other));
+        }
     }
-    let mut scope = conn.prepare("SELECT races_mask,classes_mask FROM m_quest WHERE id=?1")?;
-    for correction in &profile.quest_overrides {
+    for correction in corrected {
         for (kind, required) in [
             (LinkKind::PreAll, &correction.pre_all),
             (LinkKind::PreAny, &correction.pre_any),
+            (LinkKind::Exclusive, &correction.exclusive),
+            (LinkKind::Child, &correction.children),
         ] {
             let Some(required) = required else { continue };
-            let alternatives = links.entry(correction.id).or_default();
-            alternatives.retain(|(existing, _, _)| *existing != kind);
-            for id in required {
-                let (races, classes) = scope.query_row([id], |r| Ok((r.get(0)?, r.get(1)?)))?;
-                alternatives.push((kind, *id, profile.members_of(races, classes) != 0));
-            }
+            let edges = links.entry(correction.id).or_default();
+            edges.retain(|(existing, _)| *existing != kind);
+            edges.extend(required.iter().map(|id| (kind, *id)));
         }
     }
-    Ok(links
-        .into_iter()
-        .map(|(quest, alternatives)| {
-            // Use eligible race/class alternatives when present; otherwise keep the original links.
-            let eligible = alternatives
-                .iter()
-                .any(|(kind, _, available)| *kind == LinkKind::PreAny && *available);
-            let mut kept = Vec::new();
-            for (kind, id, _) in alternatives
-                .into_iter()
-                .filter(|(kind, _, available)| *kind != LinkKind::PreAny || *available || !eligible)
-            {
-                if !kept.contains(&(kind, id)) {
-                    kept.push((kind, id));
-                }
-            }
-            (quest, kept)
-        })
-        .collect())
+    Ok(links)
+}
+
+fn links(conn: &Connection, profile: &Profile) -> Result<HashMap<i64, Vec<(LinkKind, i64)>>> {
+    let mut stmt = conn.prepare("SELECT id,races_mask,classes_mask FROM m_quest")?;
+    let scopes = stmt
+        .query_map([], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                (r.get::<_, Option<i64>>(1)?, r.get::<_, Option<i64>>(2)?),
+            ))
+        })?
+        .collect::<rusqlite::Result<HashMap<_, _>>>()?;
+    let eligible = |id: &i64| {
+        let (races, classes) = scopes.get(id).copied().unwrap_or_default();
+        profile.members_of(races, classes) != 0
+    };
+    let mut links = quest_links(conn, &profile.quest_overrides)?;
+    for alternatives in links.values_mut() {
+        let has_eligible = alternatives
+            .iter()
+            .any(|(kind, id)| *kind == LinkKind::PreAny && eligible(id));
+        alternatives.retain(|(kind, id)| *kind != LinkKind::PreAny || !has_eligible || eligible(id));
+    }
+    Ok(links)
 }
 
 fn objective_rows(conn: &Connection) -> Result<ObjectiveRows> {

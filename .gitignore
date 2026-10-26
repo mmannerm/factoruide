@@ -1,6 +1,7 @@
 /target
 # Unpacked copies of the quest databases (`fg` unpacks data/<edition>.sqlite.zst).
 /data/*.sqlite
+/data/cache/
 debug/
 /routes/
 /*Zone.Identifier

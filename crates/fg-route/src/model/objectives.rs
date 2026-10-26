@@ -17,7 +17,7 @@ const BESIDE_GIVER: f64 = 30.0;
 
 /// Objects used right beside the NPC giving or taking back the quest, no elite around them (the
 /// campfire to sit at next to Kaga Wildhoof, The Great Outdoors): the character stands there to
-/// talk to the NPC anyway, so they require no power (`Objective::beside_giver`). The quest's level asked of them
+/// talk to the NPC anyway, so they require no power (`Objective::unopposed`). The quest's level asked of them
 /// otherwise made the character come back a level later, which the route never did.
 fn mark_beside_givers(givers: &Givers, objs: &mut [Objective]) {
     let beside = |o: &Objective| {
@@ -29,9 +29,9 @@ fn mark_beside_givers(givers: &Givers, objs: &mut [Objective]) {
                 .any(|l| l.kind == EntityKind::Npc && l.pos.dist(&o.loc.pos) <= BESIDE_GIVER)
     };
     for o in objs {
-        o.beside_giver = beside(o);
+        o.unopposed |= beside(o);
         for alt in &mut o.alts {
-            alt.beside_giver = beside(alt);
+            alt.unopposed |= beside(alt);
         }
     }
 }
@@ -71,7 +71,7 @@ impl Objective {
             pack: 1.0,
             spots: None,
             guard: Guard::default(),
-            beside_giver: false,
+            unopposed: false,
             item: false,
             alts: vec![],
             after: 0,
@@ -151,6 +151,38 @@ impl QuestBuilder<'_> {
             let elite = o.elite || self.params.allow_elite;
             o.alts.retain(|a| elite || !a.elite);
             self.measure(r, &mut o.alts);
+        }
+        if let Some(object) = self
+            .profile
+            .quest_overrides
+            .iter()
+            .find(|q| q.id == r.id)
+            .and_then(|q| q.stealth_object)
+        {
+            let name = self.sources.entities.name(EntityKind::Object, object);
+            let mut blessing = self.use_at(
+                &quest,
+                EntityKind::Object,
+                object,
+                Some(format!(
+                    "Use {name} for the trial's stealth blessing; renew it as needed"
+                )),
+                Some(1.0),
+            )?;
+            self.measure(r, std::slice::from_mut(&mut blessing));
+            blessing.unopposed = true;
+            for o in &mut objs {
+                // The blessing lets the player pass the guards, rather than fight them.
+                o.after = (o.after << 1) | 1;
+                o.guard = Guard::default();
+                o.unopposed = true;
+                for alt in &mut o.alts {
+                    alt.after = (alt.after << 1) | 1;
+                    alt.guard = Guard::default();
+                    alt.unopposed = true;
+                }
+            }
+            objs.insert(0, blessing);
         }
         mark_beside_givers(givers, &mut objs);
         self.add_dungeon_givers(r, &mut objs);

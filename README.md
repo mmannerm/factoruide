@@ -50,7 +50,8 @@ zones to do, the level to reach before moving on from each, and where the XP is.
   no talent. Forms become available through the quests or trainers of your game version.
 - **Your class spells**: quest rewards and trainer visits determine which spells are known.
   Form attacks need both the form and its learned attack rank. A guide started without a
-  recorded character assumes earlier unlocks are known.
+  recorded character assumes earlier unlocks are known. Forever trains Shred at level 20 and
+  leaves out the removed Tiger's Fury.
 - **XP bonuses (Forever, advanced settings)**: optionally keep the food bonus (+5% kill XP)
   and Sleeping Bag (+3% kill and quest XP) active. Sleeping Bag includes its quest chain and
   starts after the reward, or from the start when the imported profile confirms completion.
@@ -58,7 +59,9 @@ zones to do, the level to reach before moving on from each, and where the XP is.
   ordinary rested XP; exploration XP is unchanged.
 - **Your class quests**: the ones you want to do are kept, even when they are not the fastest.
   Missing unlocks keep their prerequisites, and known unlocks are not repeated. Druids include
-  Moonglade by default.
+  Moonglade by default. Forever's Cat Form trial visits the entrance statue for its temporary
+  stealth blessing before collecting the relics; renew the blessing as needed.
+  Skyborne can use the Rohashi Spires wind bridge during Confront Lorthuna; wait for the wind.
 - **Your play style**: a relaxed, normal or fast pace (time per fight, per loot, per stop), how far
   above your level you take quests and fight mobs, how much grinding you accept, flights or
   walking to save gold, finishing a zone before leaving, staying on one continent, elite quests

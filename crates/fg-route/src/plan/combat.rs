@@ -34,10 +34,10 @@ impl Combat<'_> {
     /// spot (mobs in pairs), two more for an elite, plus `elite_pull_levels` per extra elite
     /// expected in each pull (a camp of elites). Exploring an area or escorting requires
     /// the quest's level; talking and delivering nothing, nor using an object beside the quest's
-    /// giver or turn-in (`Objective::beside_giver`).
+    /// giver or turn-in (`Objective::unopposed`).
     pub fn need(self, q: &Quest, o: &Objective) -> f64 {
-        // Beside the giver: the character stands there to talk to them anyway.
-        if o.beside_giver {
+        // The place is accessible without combat, including a quest-provided stealth blessing.
+        if o.unopposed {
             return 0.0;
         }
         let guard = self.guard_need(&o.guard);
