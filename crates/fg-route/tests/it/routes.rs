@@ -800,7 +800,7 @@ fn gathering_next_to_kills_overlaps_them() {
                 points: vec![point],
             }),
             guard: Guard::default(),
-            beside_giver: false,
+            unopposed: false,
             item: false,
             alts: vec![],
             after: 0,
@@ -2095,7 +2095,7 @@ fn kills_east_of_start(p: &Prepared, dx: f64, kills: f64, mob_level: i64) -> Obj
         pack: 1.0,
         spots: None,
         guard: Guard::default(),
-        beside_giver: false,
+        unopposed: false,
         item: false,
         alts: vec![],
         after: 0,
@@ -2757,7 +2757,7 @@ fn campfire_beside_the_giver_needs_no_power() {
         assert!(q.skill.is_none(), "{id}: an ordinary quest, not a profession's");
         let o = &q.objectives[0];
         assert!(o.text.starts_with("Sit by the Basic Campfire"), "{id}: {}", o.text);
-        assert!(o.beside_giver, "{id}: the campfire is beside {}", q.starts[0].name);
+        assert!(o.unopposed, "{id}: the campfire is beside {}", q.starts[0].name);
         assert!(
             q.starts.iter().any(|l| l.pos.dist(&o.loc.pos) < 30.0),
             "{id}: the giver's own campfire, not another camp's"
@@ -2774,7 +2774,7 @@ fn campfire_beside_the_giver_needs_no_power() {
     // Only objects count as beside the giver: never kills, never among elites.
     let p = prepare("human", "warrior", 30, &["progression=cautious"]);
     for q in &p.model.quests {
-        for o in q.objectives.iter().filter(|o| o.beside_giver) {
+        for o in q.objectives.iter().filter(|o| o.unopposed) {
             assert!(
                 o.kills <= 0.0 && o.loc.kind == EntityKind::Object,
                 "{}: {}",

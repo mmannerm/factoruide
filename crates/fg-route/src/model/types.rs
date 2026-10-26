@@ -197,9 +197,8 @@ pub struct Objective {
     pub pack: f64,
     /// Hostile mobs around where it is done.
     pub guard: Guard,
-    /// An object used right beside the quest's giver or turn-in, no elite around (the campfire
-    /// to sit at next to Kaga Wildhoof): it requires no power, as talking to them.
-    pub beside_giver: bool,
+    /// Accessible without combat: beside the giver, or protected by the quest's blessing.
+    pub unopposed: bool,
     /// An item to bring back: it takes a bag slot until the turn-in.
     pub item: bool,
     /// The other places it can be done (other groups of its mobs or objects), each with what
@@ -552,7 +551,13 @@ pub struct QuestOverride {
     pub id: i64,
     pub pre_all: Option<Vec<i64>>,
     pub pre_any: Option<Vec<i64>>,
+    pub exclusive: Option<Vec<i64>>,
+    pub children: Option<Vec<i64>>,
     pub spells: Option<Vec<i64>>,
+    #[serde(default)]
+    pub disabled: bool,
+    /// Object granting the quest's temporary stealth for its collection objectives.
+    pub stealth_object: Option<i64>,
 }
 
 /// An area that gives XP the first time the character enters it.

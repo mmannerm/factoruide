@@ -35,6 +35,9 @@ impl QuestBuilder<'_> {
     }
 
     pub(super) fn check_rules(&self, r: &QuestRow, skill: QuestSkill) -> Result<(), Skip> {
+        if self.profile.quest_overrides.iter().any(|q| q.id == r.id && q.disabled) {
+            return Err("unavailable in this edition");
+        }
         if self.excluded.contains(&r.id) {
             return Err("excluded by configuration");
         }

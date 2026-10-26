@@ -16,6 +16,11 @@ dungeons, forced dungeons, class quests to keep, professions to level.
 Duplicate prerequisite links from different sources count once. Race and class alternatives
 keep eligible branches when any exist. Edition-specific `quests.toml` can replace `pre_all`
 or `pre_any`; these corrections apply whenever a database is loaded, including after a refresh.
+The same edition file can replace exclusive and child links or disable an unavailable quest.
+For a trial with `stealth_object`, the model adds a visit to the blessing's object before its
+collection objectives and omits their guard fights. The guide asks the player to renew the
+blessing as needed; detection failures and blessing expiry are not simulated.
+See [data corrections](docs/data-corrections.md) for the pinned sources and refresh procedure.
 
 Must-have quests (`PlanRequest.required_quests`, CLI `--required-quest`) resolve by ID or exact
 name for the character or group. Their prerequisites stay in the model outside the usual level

@@ -16,3 +16,46 @@ spells = [768, 1082, 1079, 5215] # Cat Form, Claw 1, Rip 1, Prowl 1
 [[quest]]
 id = 98397
 spells = [768, 1082, 1079, 5215]
+
+# QuestieDB's chain corrections after the bundled cb187df snapshot:
+# https://github.com/Questie/QuestieDB/compare/cb187df...5c094f6
+[[quest]]
+id = 324 # The Lost Ingots
+exclusive = [526]
+
+[[quest]]
+id = 526 # Lightforge Ingots
+pre_any = [321]
+exclusive = [324]
+
+[[quest]]
+id = 1276 # The Black Shield
+pre_any = []
+pre_all = [1273, 1323]
+
+# Fool's Stout is blacklisted; it is not a child step of Zanzil's Mixture.
+# https://github.com/Questie/Questie/commit/9b46e836ccbe3fb9ce394bd6415cf11db9d895fa
+[[quest]]
+id = 1127
+disabled = true
+
+[[quest]]
+id = 1119
+children = []
+
+# The relic trial supplies temporary stealth at the entrance statue. The guards keep
+# their real levels; collecting these relics does not require defeating them.
+# https://www.wowhead.com/forever/quest=98404/the-great-windborne-cat-spirit
+# https://www.wowhead.com/forever/quest=98342/the-great-cat-spirit
+# https://www.wowhead.com/forever/quest=98396/the-great-cat-spirit
+[[quest]]
+id = 98404 # Skyborne, either faction
+stealth_object = 673394
+
+[[quest]]
+id = 98342 # Tauren
+stealth_object = 673394
+
+[[quest]]
+id = 98396 # Night elf
+stealth_object = 673394
