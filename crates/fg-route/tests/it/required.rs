@@ -121,7 +121,7 @@ fn sleeping_bag_option_requires_the_chain_and_recognizes_imported_completion() {
         let mut other = Overrides::load_edition(&repo().join("overrides"), edition).unwrap();
         other.params.sleeping_bag = true;
         let p = job::prepare(&conn, &other, &request("human", "warrior", &[]), &|_| {}).unwrap();
-        assert_eq!(p.profile.required_quests, [] as [i64; 0]);
+        assert!(p.profile.required_quests.is_empty());
     }
 }
 

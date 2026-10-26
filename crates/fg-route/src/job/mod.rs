@@ -33,7 +33,7 @@ pub use overrides::{Overrides, RaceDef};
 pub use paths::{add_walk_paths, route_walks, walk_world};
 pub use race::{optimize, optimize_interruptible};
 pub use reputation::race_base;
-pub use request::{GROUP_MAX, GROUP_MIN_LEVEL, PlanOutcome, PlanRequest, Prepared, RequiredQuest};
+pub use request::{GROUP_MAX, GROUP_MIN_LEVEL, PlanOutcome, PlanRequest, Prepared, QuestChoice, RequiredQuest};
 pub use routes::{
     DATA_ADDON, GUIDE_FORMAT, POLESTAR_SOURCE_FOLDER, add_polestar_source, addon_walks, data_addon_files, guides_lua,
     load_routes, lua_long_string, polestar_source_dir, render_routes, save_route, slug, write_addon_routes,
@@ -212,9 +212,18 @@ pub fn prepare(
     progress: &(dyn Fn(&str) + Sync),
 ) -> Result<Prepared> {
     let (mut profile, mut params) = character::character(conn, overrides, req)?;
-    profile.required_quests = required::resolve(conn, req, &profile)?;
-    if params.edition == crate::xp::Edition::Forever && params.sleeping_bag {
-        profile.required_quests.push(crate::xp::SLEEPING_BAG_QUEST);
+    profile.required_quests = required::resolve(conn, req, &profile, &params)?;
+    if params.edition == crate::xp::Edition::Forever
+        && params.sleeping_bag
+        && !profile
+            .required_quests
+            .iter()
+            .any(|q| q.id == crate::xp::SLEEPING_BAG_QUEST)
+    {
+        profile.required_quests.push(model::QuestRequirement {
+            id: crate::xp::SLEEPING_BAG_QUEST,
+            window: model::CompletionWindow::default(),
+        });
     }
     progress("Loading the world");
     progress(r#"@progress {"phase":"prepare","step":"world"}"#);

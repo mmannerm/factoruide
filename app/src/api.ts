@@ -189,7 +189,7 @@ export interface PlanRequest {
   params?: Params | null;
   required_class_quests?: string[] | null;
   /** Exact quest IDs or names. Prerequisites are included; omission fails generation. */
-  required_quests?: (number | string)[];
+  required_quests?: RequiredQuest[];
   professions?: ProfessionGoal[];
   /** Language of the guide texts (English where a name is not translated). */
   locale?: string | null;
@@ -198,6 +198,8 @@ export interface PlanRequest {
   /** The other players of a group guide, as their addon recorded them (empty: solo). */
   mates?: StartState[];
 }
+
+export type RequiredQuest = number | string | { quest: number | string; min_level?: number | null; max_level?: number | null };
 
 /** A point of a game map (uiMapID, percent coordinates). */
 export interface MapPos {

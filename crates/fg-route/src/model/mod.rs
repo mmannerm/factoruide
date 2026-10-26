@@ -29,8 +29,9 @@ pub use guard::Guards;
 pub use loot::CommonLoot;
 pub use names::Names;
 pub use types::{
-    Dungeon, DungeonDef, EntityKind, ExploreArea, Guard, Initial, Loc, Mate, MateStart, Model, Objective,
-    ObjectiveOrder, ProfessionPlan, Profile, Quest, QuestOverride, Spots, Teleport, TeleportDef, Vendor, race_bit,
+    CompletionWindow, Dungeon, DungeonDef, EntityKind, ExploreArea, Guard, Initial, Loc, Mate, MateStart, Model,
+    Objective, ObjectiveOrder, ProfessionPlan, Profile, Quest, QuestOverride, QuestRequirement, Spots, Teleport,
+    TeleportDef, Vendor, race_bit,
 };
 
 use crate::params::Params;

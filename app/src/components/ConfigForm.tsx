@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api, type CharacterInfo, type Options, type Params, type PlanRequest, type ProfessionGoal, type StartState } from "../api";
+import { api, type CharacterInfo, type Options, type Params, type PlanRequest, type ProfessionGoal, type RequiredQuest, type StartState } from "../api";
 import { MIN_CHOICE_LEVEL, SIMPLE_KEYS, efforts, presets, sections, type Field, type Section } from "../paramSchema";
 import { ClassName } from "./Character";
 import { CharacterPicker } from "./CharacterPicker";
@@ -12,7 +12,7 @@ import { ReputationPanel } from "./ReputationPanel";
 import { WorldMap, type ZoneState } from "./WorldMap";
 import { ZonePanel } from "./ZonePanel";
 import { useGameName, useT } from "../i18n";
-import { requiredQuest } from "../requiredQuest";
+import { questChoice, requiredQuest, requiredQuestLabel } from "../requiredQuest";
 import { IS_WEB } from "../web/mode";
 import { ProfilePaste } from "../web/components/ProfilePaste";
 
@@ -256,8 +256,10 @@ export function ConfigForm({ options, initial, startCharacter, defaultLocale, on
   const locale = initial?.locale ?? defaultLocale;
   const [params, setParams] = useState<Params>({ ...defaults, ...(initial?.params ?? {}) });
   const [classQuests, setClassQuests] = useState<string[] | null>(initial?.required_class_quests ?? null);
-  const [requiredQuests, setRequiredQuests] = useState<(number | string)[]>(initial?.required_quests ?? []);
+  const [requiredQuests, setRequiredQuests] = useState<RequiredQuest[]>(initial?.required_quests ?? []);
   const [newRequiredQuest, setNewRequiredQuest] = useState("");
+  const [questMin, setQuestMin] = useState("");
+  const [questMax, setQuestMax] = useState("");
   const [professions, setProfessions] = useState<ProfessionGoal[]>(initial?.professions ?? []);
   // The other players of a group guide (up to 4), as their addon recorded them.
   const [mates, setMates] = useState<StartState[]>(initial?.mates ?? []);
@@ -545,19 +547,24 @@ export function ConfigForm({ options, initial, startCharacter, defaultLocale, on
         <p className="muted">{t("Ajoutez un ID ou un nom exact. Les prérequis sont inclus et le guide doit terminer ces quêtes, même après le niveau cible.")}</p>
         <div className="chips">
           {requiredQuests.map((quest) => (
-            <button key={`${typeof quest}:${quest}`} className="chip" onClick={() => setRequiredQuests(requiredQuests.filter((q) => q !== quest))}>
-              {quest} ×
+            <button key={`${typeof questChoice(quest)}:${questChoice(quest)}`} className="chip" onClick={() => setRequiredQuests(requiredQuests.filter((q) => q !== quest))}>
+              {requiredQuestLabel(quest)} ×
             </button>
           ))}
         </div>
-        <div className="row">
+        <div className="row quest-entry">
           <input aria-label={t("ID ou nom exact de la quête")} placeholder={t("ID ou nom exact de la quête")} value={newRequiredQuest} onChange={(e) => setNewRequiredQuest(e.target.value)} />
+          <label className="field quest-level"><span>{t("Niveau minimum (facultatif)")}</span><input type="number" min={1} max={options.max_level} placeholder="—" value={questMin} onChange={(e) => setQuestMin(e.target.value)} /></label>
+          <label className="field quest-level"><span>{t("Niveau maximum (facultatif)")}</span><input type="number" min={1} max={options.max_level} placeholder="—" value={questMax} onChange={(e) => setQuestMax(e.target.value)} /></label>
           <button disabled={!newRequiredQuest.trim()} onClick={() => {
-            const quest = requiredQuest(newRequiredQuest);
-            if (!requiredQuests.includes(quest)) setRequiredQuests([...requiredQuests, quest]);
+            const quest = requiredQuest(newRequiredQuest, questMin, questMax);
+            setRequiredQuests([...requiredQuests.filter((q) => questChoice(q) !== questChoice(quest)), quest]);
             setNewRequiredQuest("");
+            setQuestMin("");
+            setQuestMax("");
           }}>{t("Ajouter")}</button>
         </div>
+        <p className="muted">{t("Les niveaux incluent les deux bornes et s'appliquent au rendu, avant l'XP de la récompense. Les prérequis peuvent être faits plus tôt.")}</p>
       </section>
 
       {view === "simple" ? (

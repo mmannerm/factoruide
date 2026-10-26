@@ -5,6 +5,7 @@ mod abilities;
 mod addon;
 mod class_unlocks;
 mod common;
+mod completion;
 mod draft;
 mod edit;
 mod prerequisites;

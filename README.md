@@ -42,7 +42,8 @@ zones to do, the level to reach before moving on from each, and where the XP is.
   quests a few levels ahead.
 - **Your quests**: add a must-have quest by ID or exact name. The guide includes its
   prerequisites and finishes the chain, even past your target level. It cannot be saved with
-  a required quest missing.
+  a required quest missing. Optionally set an inclusive minimum and/or maximum turn-in level,
+  measured before reward XP; prerequisites can be done earlier. Leave both blank for any level.
 - **Your travel spells**: learned Cat Form, Travel Form, Ghost Wolf and Aspect of the Cheetah
   affect walking estimates only for walks entirely outdoors without swimming; few walks currently
   qualify. In Advanced, **Assume movement talents are learned** is on by default. Cheetah needs
