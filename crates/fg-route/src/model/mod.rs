@@ -122,15 +122,19 @@ pub fn load(
     report_skipped_class_quests(&sources, &skipped);
 
     let places = Places::load(conn, world, &sources.entities, profile, &sources.start, params.edition)?;
-    chains::narrow_class_quests_to_spells(&mut quests);
+    chains::narrow_class_quests_to_spells(&mut quests, params.all_class_quests);
     for q in &mut quests {
-        if known_names.contains(&q.name) && !q.required && !q.zone_forced {
+        if !params.all_class_quests && known_names.contains(&q.name) && !q.required && !q.zone_forced {
             q.mandatory = false;
             q.power = None;
         }
     }
     quests.retain(|q| {
-        !known_rewards.contains(&q.id) || sources.class_quest_ids.contains(&q.id) || q.required || q.zone_forced
+        !known_rewards.contains(&q.id)
+            || sources.class_quest_ids.contains(&q.id)
+            || q.required
+            || q.zone_forced
+            || params.all_class_quests && profile.within_levels(q.level, q.min_level, params.max_quest_above)
     });
     chains::require_prerequisites(&mut quests);
     chains::release_impossible_class_quests(&mut quests, &known_prerequisites);

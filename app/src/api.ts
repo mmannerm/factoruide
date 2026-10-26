@@ -79,6 +79,7 @@ export interface Params {
   farm_above: number;
   camp_radius: number;
   allow_elite: boolean;
+  all_class_quests: boolean;
   solo_elite_kills: number;
   shortcuts: boolean;
   elite_kill_factor: number;
