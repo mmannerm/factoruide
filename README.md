@@ -48,6 +48,8 @@ zones to do, the level to reach before moving on from each, and where the XP is.
   Form attacks need both the form and its learned attack rank. A guide started without a
   recorded character assumes earlier unlocks are known.
 - **Your class quests**: the ones you want to do are kept, even when they are not the fastest.
+  Missing unlocks keep their prerequisites, and known unlocks are not repeated. Druids include
+  Moonglade by default.
 - **Your play style**: a relaxed, normal or fast pace (time per fight, per loot, per stop), how far
   above your level you take quests and fight mobs, how much grinding you accept, flights or
   walking to save gold, finishing a zone before leaving, staying on one continent, elite quests

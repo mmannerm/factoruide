@@ -17,6 +17,7 @@ An addon change also goes, in the same words, under Unreleased in that addon's o
 
 ### Guides
 
+- Missing class unlocks keep their prerequisites; known unlocks are not repeated. Druids include Moonglade by default.
 - Class quests teach their spells; form attacks count only after the form and attack rank are learned.
 - Guides complete must-have quests and their prerequisites, even past the target level.
 - Quest prerequisites keep the eligible race and class branches; Sleeping Bag uses your faction's starter.
