@@ -42,8 +42,7 @@ zones to do, the level to reach before moving on from each, and where the XP is.
   quests a few levels ahead.
 - **Your quests**: add a must-have quest by ID or exact name. The guide includes its
   prerequisites and finishes the chain, even past your target level. It cannot be saved with
-  a required quest missing. For the Sleeping Bag in Forever, add **79976** (**This Must Be The
-  Place**); its XP bonus is not simulated.
+  a required quest missing.
 - **Your travel spells**: learned Cat Form, Travel Form, Ghost Wolf and Aspect of the Cheetah
   affect walking estimates only for walks entirely outdoors without swimming; few walks currently
   qualify. In Advanced, **Assume movement talents are learned** is on by default. Cheetah needs
@@ -51,6 +50,11 @@ zones to do, the level to reach before moving on from each, and where the XP is.
 - **Your class spells**: quest rewards and trainer visits determine which spells are known.
   Form attacks need both the form and its learned attack rank. A guide started without a
   recorded character assumes earlier unlocks are known.
+- **XP bonuses (Forever, advanced settings)**: optionally keep the food bonus (+5% kill XP)
+  and Sleeping Bag (+3% kill and quest XP) active. Sleeping Bag includes its quest chain and
+  starts after the reward, or from the start when the imported profile confirms completion.
+  No food costs or eating/resting time are added. The estimate adds the bonuses before
+  ordinary rested XP; exploration XP is unchanged.
 - **Your class quests**: the ones you want to do are kept, even when they are not the fastest.
   Missing unlocks keep their prerequisites, and known unlocks are not repeated. Druids include
   Moonglade by default.
