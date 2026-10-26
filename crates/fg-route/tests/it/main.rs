@@ -3,6 +3,7 @@
 
 mod addon;
 mod common;
+mod completion;
 mod draft;
 mod edit;
 mod prerequisites;

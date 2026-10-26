@@ -5,6 +5,9 @@
 type Entry = Partial<Record<"en" | "de" | "es" | "esMX" | "pt" | "ru" | "ko" | "zhCN" | "zhTW", string>>;
 
 export const CATALOG: Record<string, Entry> = {
+  "Niveau minimum (facultatif)": { en: "Minimum level (optional)" },
+  "Niveau maximum (facultatif)": { en: "Maximum level (optional)" },
+  "Les niveaux incluent les deux bornes et s'appliquent au rendu, avant l'XP de la récompense. Les prérequis peuvent être faits plus tôt.": { en: "Both limits are inclusive and apply at turn-in, before reward XP. Prerequisites can be completed earlier." },
   "Quêtes indispensables": { en: "Must-have quests" },
   "ID ou nom exact de la quête": { en: "Quest ID or exact name" },
   "Ajoutez un ID ou un nom exact. Les prérequis sont inclus et le guide doit terminer ces quêtes, même après le niveau cible.": { en: "Add an ID or exact name. Prerequisites are included, and the guide must finish these quests even after the target level." },

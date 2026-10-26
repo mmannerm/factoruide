@@ -49,6 +49,18 @@ pub struct PlanRequest {
 pub enum RequiredQuest {
     Id(i64),
     Name(String),
+    Window {
+        quest: QuestChoice,
+        #[serde(flatten)]
+        window: model::CompletionWindow,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum QuestChoice {
+    Id(i64),
+    Name(String),
 }
 
 /// Players in a group guide, the character included.
