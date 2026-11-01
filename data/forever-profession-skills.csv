@@ -1,0 +1,16 @@
+Status,ID,SkillLine,Spell,Name,MinSkillLineRank,TrivialSkillLineRankHigh,TrivialSkillLineRankLow,AcquireMethod,Flags
+changed,52639,356,1229745,Fish Bowl,1,20,20,0,0
+changed,52641,129,1230117,First Aid Kit,1,25,20,0,0
+changed,52642,182,1229705,Incense Candle,1,25,20,0,0
+changed,52643,186,1230161,Lodestone,1,25,20,0,0
+changed,52644,393,1229517,Camp Chair,1,25,20,0,0
+removed,54675,171,1251750,Disorienting Smog Potion,1,190,185,0,0
+changed,57016,186,1262975,Rock Garden,1,145,140,0,0
+changed,57017,393,1262985,Field Guide,1,145,140,0,0
+changed,57024,129,1262996,Toxin Study,1,145,140,0,0
+changed,57025,356,1262990,Fishing Rack,1,145,140,0,0
+changed,57026,182,1262980,Greenhouse,1,145,140,0,0
+changed,57036,129,1263001,Plague Doctor's Laboratory,1,300,300,0,0
+changed,57037,356,1262998,Fishing Hut,1,300,300,0,0
+changed,57038,182,1263070,Seed Hybridizer,1,300,300,0,0
+changed,57040,186,1263071,Molten Foundry,1,300,300,0,0

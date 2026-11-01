@@ -128,6 +128,7 @@ pub(super) fn character(conn: &Connection, overrides: &Overrides, req: &PlanRequ
             .get(&class)
             .map(|m| m.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
             .unwrap_or_default(),
+        spell_levels: overrides.spell_levels.clone(),
         dungeons: overrides.dungeons.clone(),
         quest_overrides: overrides.quest_overrides.clone(),
         objective_orders: overrides.objective_orders.clone(),

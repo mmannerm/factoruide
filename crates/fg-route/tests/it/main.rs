@@ -5,6 +5,7 @@
 mod abilities;
 mod addon;
 mod common;
+mod data_corrections;
 mod draft;
 mod edit;
 mod prerequisites;

@@ -29,9 +29,11 @@ pub use givers::{Dropper, UNKNOWN_START_CHANCE, assumed_start_chance};
 pub use guard::Guards;
 pub use loot::CommonLoot;
 pub use names::Names;
+pub(crate) use sources::{LinkKind, quest_links};
 pub use types::{
     Dungeon, DungeonDef, EntityKind, ExploreArea, Guard, Initial, Loc, Mate, MateStart, Model, Objective,
-    ObjectiveOrder, ProfessionPlan, Profile, Quest, QuestOverride, Spots, Teleport, TeleportDef, Vendor, race_bit,
+    ObjectiveOrder, ProfessionPlan, Profile, Quest, QuestOverride, SpellLevel, Spots, Teleport, TeleportDef, Vendor,
+    race_bit,
 };
 
 use crate::params::Params;
@@ -87,15 +89,7 @@ pub fn load(conn: &Connection, world: &World, profile: &Profile, params: &Params
     let (explore, explore_by_zone) = explore::load_explore(conn, world)?;
     let farm = FarmMobs::load(conn, world, &quests)?;
     let abilities = crate::abilities::Abilities::load(conn, profile)?;
-    let power = crate::power::PowerModel::load(
-        conn,
-        profile.class_id,
-        profile.race_id,
-        profile.to_level.max(60),
-        &profile.spell_weights,
-        params,
-        &abilities,
-    )?;
+    let power = crate::power::PowerModel::load(conn, profile, params, &abilities)?;
     // A group's other classes: the spells each one learns (the addon of each player trains its own).
     let mut mate_spells = Vec::new();
     for m in &profile.mates {
@@ -110,10 +104,12 @@ pub fn load(conn: &Connection, world: &World, profile: &Profile, params: &Params
         )?;
         let mate = crate::power::PowerModel::load(
             conn,
-            m.class_id,
-            m.race_id,
-            profile.to_level.max(60),
-            &m.spell_weights,
+            &Profile {
+                class_id: m.class_id,
+                race_id: m.race_id,
+                spell_weights: m.spell_weights.clone(),
+                ..profile.clone()
+            },
             params,
             &abilities,
         )?;

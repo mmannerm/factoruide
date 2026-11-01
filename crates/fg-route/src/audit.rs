@@ -228,7 +228,7 @@ pub fn audit(
         HashSet::new()
     };
     let children = if on("child-quests") {
-        child_links(conn)?
+        child_links(conn, &overrides.quest_overrides)?
     } else {
         Vec::new()
     };
@@ -508,7 +508,10 @@ const GUARD_GAP: i64 = 10;
 fn guarded_givers(world: &World, model: &Model, hostile: &[Hostile]) -> Vec<Finding> {
     let mut findings = Vec::new();
     for q in &model.quests {
-        let places = [("gives", &q.start_guard, &q.starts), ("takes back", &q.end_guard, &q.ends)];
+        let places = [
+            ("gives", &q.start_guard, &q.starts),
+            ("takes back", &q.end_guard, &q.ends),
+        ];
         for (role, guard, locs) in places {
             if guard.level < q.level.max(q.min_level) + GUARD_GAP {
                 continue;
@@ -1270,16 +1273,32 @@ fn timed_quests(model: &Model, untimed: &HashMap<i64, String>) -> Vec<Finding> {
 
 /// (parent, parent's name, child, child's name) of the children the guides hand in on the way
 /// (the repeatable ones, see the model's `LinkKind::Child`).
-fn child_links(conn: &Connection) -> Result<Vec<(i64, String, i64, String)>> {
-    let mut stmt = conn.prepare(
-        "SELECT p.id, p.name, c.id, c.name FROM m_quest_link l
-         JOIN m_quest p ON p.id = l.quest_id JOIN m_quest c ON c.id = l.other_id
-         WHERE l.kind = 'child' AND coalesce(c.special_flags, 0) & 1 != 0 ORDER BY p.id, c.id",
-    )?;
-    let rows = stmt
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
-        .collect::<rusqlite::Result<_>>()?;
-    Ok(rows)
+fn child_links(
+    conn: &Connection,
+    corrected: &[crate::model::QuestOverride],
+) -> Result<Vec<(i64, String, i64, String)>> {
+    let mut stmt = conn.prepare("SELECT id,coalesce(name,''),coalesce(special_flags,0) & 1 != 0 FROM m_quest")?;
+    let quests = stmt
+        .query_map([], |r| {
+            Ok((r.get::<_, i64>(0)?, (r.get::<_, String>(1)?, r.get::<_, bool>(2)?)))
+        })?
+        .collect::<rusqlite::Result<HashMap<_, _>>>()?;
+    let mut children = Vec::new();
+    for (parent, links) in crate::model::quest_links(conn, corrected)? {
+        let Some((parent_name, _)) = quests.get(&parent) else {
+            continue;
+        };
+        for (kind, child) in links {
+            if kind != crate::model::LinkKind::Child {
+                continue;
+            }
+            let Some((child_name, true)) = quests.get(&child) else {
+                continue;
+            };
+            children.push((parent, parent_name.clone(), child, child_name.clone()));
+        }
+    }
+    Ok(children)
 }
 
 /// Planned quests one of whose children has no objective handing it in.
@@ -1384,8 +1403,7 @@ fn contradictory_prerequisites(model: &Model) -> Vec<Finding> {
 
 /// Quests with `pre_all` prerequisites that cannot be had together: two whose races (or classes)
 /// have nothing in common, or one for races (or classes) the quest is not for. A mask of 0 or
-/// none is everyone. The quests whose prerequisites an edition's `quests.toml` replaces are
-/// already corrected.
+/// none is everyone. Edition corrections apply before checking the graph.
 fn exclusive_prerequisites(conn: &Connection, corrected: &[crate::model::QuestOverride]) -> Result<Vec<Finding>> {
     type Masks = (Option<i64>, Option<i64>);
     let mut masks: HashMap<i64, Masks> = HashMap::new();
@@ -1403,20 +1421,17 @@ fn exclusive_prerequisites(conn: &Connection, corrected: &[crate::model::QuestOv
         masks.insert(id, (races, classes));
         names.insert(id, name.unwrap_or_default());
     }
-    let mut needs: BTreeMap<i64, Vec<i64>> = BTreeMap::new();
-    let mut stmt = conn.prepare("SELECT quest_id, other_id FROM m_quest_link WHERE kind = 'pre_all' ORDER BY 1, 2")?;
-    for row in stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))? {
-        let (quest, other) = row?;
-        if !corrected.iter().any(|c| c.id == quest && c.pre_all.is_some()) {
-            needs.entry(quest).or_default().push(other);
-        }
-    }
+    let needs = crate::model::quest_links(conn, corrected)?;
     let apart = |a: Option<i64>, b: Option<i64>| {
         let (a, b) = (a.unwrap_or(0), b.unwrap_or(0));
         a != 0 && b != 0 && a & b == 0
     };
     let mut out = Vec::new();
-    for (quest, others) in needs {
+    for (quest, links) in needs {
+        let others: Vec<_> = links
+            .into_iter()
+            .filter_map(|(kind, id)| (kind == crate::model::LinkKind::PreAll).then_some(id))
+            .collect();
         let Some(&own) = masks.get(&quest) else { continue };
         let mut wrong: Vec<String> = Vec::new();
         for (i, a) in others.iter().enumerate() {
@@ -1471,18 +1486,36 @@ mod tests {
         let mut p = quests_at_start(1);
         let at = p.model.quests[0].starts[0].pos;
         let level = p.model.quests[0].level.max(p.model.quests[0].min_level);
-        let guard = |level| Guard { level, count: 2, elite: true };
+        let guard = |level| Guard {
+            level,
+            count: 2,
+            elite: true,
+        };
         let mobs = |n: usize, level: u8| -> Vec<Hostile> {
             (0..n)
-                .map(|_| Hostile { id: 16383, name: "Flameshocker".into(), level, elite: true, pos: at })
+                .map(|_| Hostile {
+                    id: 16383,
+                    name: "Flameshocker".into(),
+                    level,
+                    elite: true,
+                    pos: at,
+                })
                 .collect()
         };
-        let found = |p: &crate::job::Prepared, mobs: &[Hostile]| guarded_givers(&p.world, &p.model, mobs).len();
+        let found = |p: &job::Prepared, mobs: &[Hostile]| guarded_givers(&p.world, &p.model, mobs).len();
         p.model.quests[0].start_guard = guard(level + GUARD_GAP);
         assert_eq!(found(&p, &mobs(2, (level + GUARD_GAP) as u8)), 1);
-        assert_eq!(found(&p, &mobs(1, (level + GUARD_GAP) as u8)), 0, "one creature is walked around");
+        assert_eq!(
+            found(&p, &mobs(1, (level + GUARD_GAP) as u8)),
+            0,
+            "one creature is walked around"
+        );
         p.model.quests[0].start_guard = guard(level + GUARD_GAP - 1);
-        assert_eq!(found(&p, &mobs(2, (level + GUARD_GAP - 1) as u8)), 0, "not far enough above");
+        assert_eq!(
+            found(&p, &mobs(2, (level + GUARD_GAP - 1) as u8)),
+            0,
+            "not far enough above"
+        );
     }
 
     /// Secure the Mountain's case: a quest left out because an objective has no place, needed
