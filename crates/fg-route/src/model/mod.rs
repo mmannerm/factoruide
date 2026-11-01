@@ -21,6 +21,8 @@ mod required;
 mod rewards;
 mod selection;
 mod sources;
+#[cfg(any(test, feature = "testing"))]
+pub mod testing;
 mod types;
 
 pub(crate) use chains::{class_sort, required_by_name};
@@ -130,7 +132,6 @@ pub fn load(
     chains::drop_unhanded(&mut quests, &mut skipped);
     report_skipped_class_quests(&sources, &skipped);
     let places = Places::load(conn, world, &sources.entities, profile, &sources.start, params.edition)?;
-    chains::narrow_class_quests_to_spells(&mut quests, params.all_class_quests);
     for q in &mut quests {
         if known_names.contains(&q.name) && !q.required && !q.zone_forced {
             q.mandatory = false;
@@ -144,17 +145,13 @@ pub fn load(
             || q.required
             || q.zone_forced
     });
-    // The quests of the dungeons run with all their quests.
-    for q in &mut quests {
-        let forced = |d: usize| params.forced_dungeon_quests.contains(&sources.dungeons[d].area);
-        q.mandatory |= q.objectives.iter().any(|o| o.dungeon.is_some_and(forced));
-    }
-
-    chains::require_prerequisites(&mut quests);
-    chains::release_impossible_class_quests(&mut quests, &known_prerequisites);
-    for q in &mut quests {
-        q.mandatory |= q.required;
-    }
+    settle_quests(
+        &mut quests,
+        &sources.dungeons,
+        params,
+        &known_prerequisites,
+        &profile.completed_quests,
+    );
     let loot = CommonLoot::load(conn, &mut quests)?;
     let levels = dungeon_levels(conn, &profile.dungeons)?;
     let window = (params.dungeon_from, params.dungeon_to);
@@ -165,19 +162,7 @@ pub fn load(
         window,
         params.edition.rules().max_level,
     );
-    // A dungeon holding an objective of a must-have quest is run like a forced one.
-    for q in quests.iter().filter(|q| q.required) {
-        for d in q.objectives.iter().filter_map(|o| o.dungeon) {
-            sources.dungeons[d].needed = true;
-        }
-    }
-    // A forced dungeon is run whenever the route can fit it, past its levels too: they only
-    // tell when it is best to go.
-    for d in &mut sources.dungeons {
-        if d.needed || params.forced_dungeons.contains(&d.area) || params.forced_dungeon_quests.contains(&d.area) {
-            d.max_level = d.max_level.max(profile.to_level);
-        }
-    }
+    settle_dungeons(&mut sources.dungeons, &quests, profile);
     let index: FxHashMap<i64, usize> = quests.iter().enumerate().map(|(i, q)| (q.id, i)).collect();
     let mut teleports = places.teleports;
     teleports.extend(places::quest_teleports(
@@ -201,6 +186,7 @@ pub fn load(
                 class_id: m.class_id,
                 race_id: m.race_id,
                 spell_weights: m.spell_weights.clone(),
+                abilities: Vec::new(),
                 ..profile.clone()
             },
             params,
@@ -283,6 +269,42 @@ pub fn load(
     })
 }
 
+/// What follows from the quests built, without the data: the class quests that teach a spell, the
+/// quests of the dungeons run with all their quests, what a quest needs first, the class quests
+/// that cannot be done, and the must-haves as mandatory.
+pub(crate) fn settle_quests(
+    quests: &mut [Quest],
+    dungeons: &[Dungeon],
+    params: &Params,
+    known: &HashSet<i64>,
+    completed: &HashSet<i64>,
+) {
+    chains::narrow_class_quests_to_spells(quests, params.all_class_quests);
+    for q in quests.iter_mut() {
+        let forced = |d: usize| params.forced_dungeon_quests.contains(&dungeons[d].area);
+        q.mandatory |= q.objectives.iter().any(|o| o.dungeon.is_some_and(forced));
+    }
+    chains::require_prerequisites(quests);
+    chains::release_impossible_class_quests(quests, known, completed);
+    for q in quests.iter_mut() {
+        q.mandatory |= q.required;
+    }
+}
+
+/// A dungeon holding an objective of a must-have quest is run like a forced one, and past its
+/// levels too: the quest asks for it. A dungeon the player forced stays within its levels, the
+/// route being refused when it cannot be run there.
+pub(crate) fn settle_dungeons(dungeons: &mut [Dungeon], quests: &[Quest], profile: &Profile) {
+    for q in quests.iter().filter(|q| q.required) {
+        for d in q.objectives.iter().filter_map(|o| o.dungeon) {
+            dungeons[d].needed = true;
+        }
+    }
+    for d in dungeons.iter_mut().filter(|d| d.needed) {
+        d.max_level = d.max_level.max(profile.to_level);
+    }
+}
+
 /// The spirit healers the character can reach: where one dying respawns.
 fn graveyards(conn: &Connection, world: &World, sources: &Sources) -> Result<Vec<Loc>> {
     let mut stmt = conn.prepare("SELECT id FROM m_npc WHERE name = 'Spirit Healer'")?;
@@ -356,11 +378,10 @@ fn build_quests(
     (quests, skipped)
 }
 
-/// Class quests the planner cannot do are worth knowing about (not the repeatable ones that only
-/// hand an item again, like the paladin's tome).
+/// Class quests the planner cannot do are worth knowing about.
 fn report_skipped_class_quests(sources: &Sources, skipped: &[(i64, String, String)]) {
     for (id, name, reason) in skipped {
-        if sources.class_quest_ids.contains(id) && !sources.repeatable.contains(id) {
+        if sources.class_quest_ids.contains(id) {
             eprintln!("  class quest skipped: {name} ({id}): {reason}");
         }
     }

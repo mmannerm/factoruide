@@ -134,6 +134,50 @@ const ZONE_MOB_LEVEL_MAX: i64 = 70;
 /// A lift of `World::area_lifts`: passage and the indices of its two sides.
 type LiftSides = (usize, usize, usize);
 
+/// Which database file a connection is on: its path, modification time and size. None for a
+/// database in memory (nothing tells it from another).
+pub(crate) fn file_stamp(conn: &Connection) -> Option<u64> {
+    use std::hash::{Hash, Hasher};
+    let Some(path) = conn.path().filter(|p| !p.is_empty()) else {
+        return named_stamp(conn);
+    };
+    let meta = std::fs::metadata(path).ok()?;
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    (path, meta.modified().ok()?, meta.len()).hash(&mut h);
+    Some(h.finish())
+}
+
+/// Say which database a connection in memory holds (`id`: the same for the same bytes), so that
+/// what is worked out from it (the walks, the dungeons' levels) is kept for the next connection
+/// to it. Without it nothing tells a database in memory from another.
+///
+/// # Errors
+///
+/// When the connection cannot be written to (it is read-only).
+pub fn name_database(conn: &Connection, id: u64) -> rusqlite::Result<()> {
+    conn.execute_batch("CREATE TEMP TABLE IF NOT EXISTS fg_database_name (id INTEGER)")?;
+    conn.execute("DELETE FROM temp.fg_database_name", [])?;
+    conn.execute("INSERT INTO temp.fg_database_name VALUES (?1)", [id as i64])?;
+    Ok(())
+}
+
+/// The name given to a database in memory (`name_database`).
+fn named_stamp(conn: &Connection) -> Option<u64> {
+    conn.query_row("SELECT id FROM temp.fg_database_name", [], |r| r.get::<_, i64>(0))
+        .ok()
+        .map(|id| id as u64)
+}
+
+/// Which database file a world is loaded from: its path, modification time and size, with the
+/// faction and drop tier. None for a database in memory (nothing tells it from another).
+fn database_stamp(conn: &Connection, faction: Faction, drop_tier: usize) -> Option<u64> {
+    use std::hash::{Hash, Hasher};
+    let file = file_stamp(conn)?;
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    (file, faction.name(), drop_tier).hash(&mut h);
+    Some(h.finish())
+}
+
 pub struct World {
     zones: HashMap<i64, ZoneRect>,
     pub zone_names: HashMap<i64, String>,
@@ -192,7 +236,36 @@ pub struct World {
     /// Named places of the zone maps (their exploration overlays): to tell which zone a point
     /// belongs to where zone maps overlap, and to name towns.
     landmarks: Vec<Landmark>,
+    /// What the terrain and the passages depend on, once the caller has said all of it
+    /// (`World::stamp`): the walks between passages are then kept for the next world with the same.
+    stamp: Option<u64>,
+    /// The database file the world was loaded from (path, modification time, size), faction and
+    /// drop tier: the start of the stamp.
+    source: Option<u64>,
 }
+
+/// Walks between the passages already computed (`World::add_passes`): they take about a second
+/// and the same ones are asked for again at each plan with the same game data and settings.
+/// Few entries (an edition and a faction each), cleared with the process.
+static PASS_WALKS: std::sync::Mutex<Vec<(u64, PassWalks)>> = std::sync::Mutex::new(Vec::new());
+const PASS_WALKS_MAX: usize = 8;
+/// Held while the walks (or the chain tables) are computed, so that worlds asking at once for
+/// the same compute them once.
+static PASS_COMPUTE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+static LINK_COMPUTE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// The boats' and zeppelins' chain tables already computed (`World::add_links`), as `PASS_WALKS`.
+static LINK_CHAINS: std::sync::Mutex<Vec<(u64, LinkChains)>> = std::sync::Mutex::new(Vec::new());
+
+type LinkChains = std::sync::Arc<Vec<Vec<Vec<f64>>>>;
+
+/// The sides of the passages already worked out (`World::set_pass_sides`), as `PASS_WALKS`.
+static PASS_SIDES: std::sync::Mutex<Vec<(u64, PassSides)>> = std::sync::Mutex::new(Vec::new());
+
+/// For each passage: its sides and the area of each as the terrain labels it.
+type PassSides = std::sync::Arc<Vec<(Vec<(u32, Pos)>, Vec<Option<u32>>)>>;
+
+type PassWalks = std::sync::Arc<(Vec<Vec<f64>>, Vec<Vec<usize>>, Vec<Vec<bool>>, FxHashMap<u8, PassGraph>)>;
 
 /// A named place of a zone map (Ratchet, Valley of Trials...), at the center of its overlay.
 struct Landmark {
@@ -394,6 +467,8 @@ impl World {
             area_passes: FxHashMap::default(),
             area_lifts: FxHashMap::default(),
             walk_id: NEXT_WORLD_ID.fetch_add(1, Ordering::Relaxed),
+            stamp: None,
+            source: database_stamp(conn, faction, drop_tier),
         };
         world.landmarks = world.load_landmarks(conn)?;
         for i in 0..world.taxi_nodes.len() {
@@ -403,6 +478,94 @@ impl World {
         world.taxi_by_x = world.taxi_nodes.iter().enumerate().map(|(i, n)| (n.pos.x, i)).collect();
         world.taxi_by_x.sort_by(|a, b| a.0.total_cmp(&b.0));
         Ok(world)
+    }
+
+    /// A world of flat zones, built by hand: the zones given (AreaTable ID, name, continent, and
+    /// the corner of its square in world yards; a zone is 1000 yards on a side), no flight path,
+    /// passage or link, and terrain without any obstacle.
+    #[cfg(any(test, feature = "testing"))]
+    pub fn flat(
+        zones: &[(i64, &str, i64, f64, f64)],
+        flight_masters: &[(i64, &str, i64, f64, f64)],
+        flight_speed: f64,
+    ) -> Self {
+        let rects = zones
+            .iter()
+            .map(|&(id, _, continent, x, y)| {
+                (
+                    id,
+                    ZoneRect {
+                        ui_map: id,
+                        continent,
+                        min_x: x,
+                        max_x: x + 1000.0,
+                        min_y: y,
+                        max_y: y + 1000.0,
+                    },
+                )
+            })
+            .collect();
+        let mut world = Self {
+            zones: rects,
+            zone_names: zones.iter().map(|&(id, name, ..)| (id, name.to_owned())).collect(),
+            area_parents: HashMap::new(),
+            capitals: std::collections::HashSet::new(),
+            taxi_nodes: Vec::new(),
+            direct: Vec::new(),
+            direct_cost: Vec::new(),
+            taxi_paths: HashMap::new(),
+            links: Vec::new(),
+            link_quests: Vec::new(),
+            link_chains: vec![Vec::new()],
+            passes: Vec::new(),
+            pass_dist: Vec::new(),
+            pass_next: Vec::new(),
+            pass_shortcut: Vec::new(),
+            zone_levels: FxHashMap::default(),
+            zone_gap: 0,
+            band_levels: Vec::new(),
+            pass_closed: FxHashMap::default(),
+            zone_passes: FxHashMap::default(),
+            taxi_by_x: Vec::new(),
+            terrain: crate::terrain::Terrain::empty(),
+            landmarks: Vec::new(),
+            area_passes: FxHashMap::default(),
+            area_lifts: FxHashMap::default(),
+            walk_id: NEXT_WORLD_ID.fetch_add(1, Ordering::Relaxed),
+            stamp: None,
+            source: None,
+        };
+        // Flight masters (id, name, zone, percent coordinates), flown between in a straight line.
+        for &(id, name, zone, x, y) in flight_masters {
+            if let Some(pos) = world.to_world(zone, x, y) {
+                world.taxi_nodes.push(TaxiNode {
+                    id,
+                    name: name.to_owned(),
+                    pos,
+                });
+            }
+        }
+        let n = world.taxi_nodes.len();
+        let seconds = |a: &TaxiNode, b: &TaxiNode| a.pos.dist(&b.pos) / flight_speed;
+        world.direct = (0..n)
+            .map(|i| {
+                (0..n)
+                    .map(|j| {
+                        if i == j {
+                            0.0
+                        } else {
+                            seconds(&world.taxi_nodes[i], &world.taxi_nodes[j])
+                        }
+                    })
+                    .collect()
+            })
+            .collect();
+        world.direct_cost = (0..n)
+            .map(|i| (0..n).map(|j| if i == j { 0.0 } else { 100.0 }).collect())
+            .collect();
+        world.taxi_by_x = world.taxi_nodes.iter().enumerate().map(|(i, n)| (n.pos.x, i)).collect();
+        world.taxi_by_x.sort_by(|a, b| a.0.total_cmp(&b.0));
+        world
     }
 
     /// Zone (AreaTable ID) shown by a UiMap.
@@ -669,8 +832,44 @@ impl World {
 
     /// Named places: one per exploration overlay area of the zone maps, at the overlay's center.
     fn load_landmarks(&self, conn: &Connection) -> Result<Vec<Landmark>> {
+        let rows = map_areas(conn)?;
+        let mut seen = std::collections::HashSet::new();
+        let mut out = Vec::new();
+        for MapArea {
+            id, zone, name, x, y, ..
+        } in rows.iter()
+        {
+            if seen.insert(*id)
+                && let Some(pos) = self.to_world(*zone, *x, *y)
+            {
+                out.push(Landmark {
+                    id: *id,
+                    pos,
+                    zone: *zone,
+                    name: name.clone(),
+                });
+            }
+        }
+        Ok(out)
+    }
+}
+
+/// An area drawn on a zone map (the game's overlay), at its center in percent of the map.
+pub(crate) struct MapArea {
+    pub(crate) id: i64,
+    pub(crate) zone: i64,
+    pub(crate) name: String,
+    /// Experience level of its discovery (0: none).
+    pub(crate) exploration_level: i64,
+    pub(crate) x: f64,
+    pub(crate) y: f64,
+}
+
+/// The areas of the zone maps as the game data has them, read once for a database.
+pub(crate) fn map_areas(conn: &Connection) -> Result<std::sync::Arc<Vec<MapArea>>> {
+    crate::memo::rows(conn, "map areas", 0, || {
         let mut stmt = conn.prepare(
-            "SELECT t.ID, a.AreaID, t.AreaName_lang,
+            "SELECT t.ID, a.AreaID, t.AreaName_lang, coalesce(t.ExplorationLevel, 0),
                     (o.OffsetX + o.TextureWidth / 2.0) * 100.0 / l.LayerWidth,
                     (o.OffsetY + o.TextureHeight / 2.0) * 100.0 / l.LayerHeight
              FROM client_worldmapoverlay o
@@ -680,26 +879,18 @@ impl World {
              JOIN client_uimapassignment a ON a.UiMapID = x.UiMapID AND a.OrderIndex = 0
              JOIN client_areatable t ON t.ID IN (o.AreaID_0, o.AreaID_1, o.AreaID_2, o.AreaID_3)",
         )?;
-        let mut seen = std::collections::HashSet::new();
-        let mut out = Vec::new();
-        for row in stmt.query_map([], |r| {
-            Ok((
-                r.get::<_, i64>(0)?,
-                r.get::<_, i64>(1)?,
-                r.get::<_, String>(2)?,
-                r.get::<_, f64>(3)?,
-                r.get::<_, f64>(4)?,
-            ))
-        })? {
-            let (id, zone, name, x, y) = row?;
-            if seen.insert(id)
-                && let Some(pos) = self.to_world(zone, x, y)
-            {
-                out.push(Landmark { id, pos, zone, name });
-            }
-        }
-        Ok(out)
-    }
+        let rows = stmt.query_map([], |r| {
+            Ok(MapArea {
+                id: r.get(0)?,
+                zone: r.get(1)?,
+                name: r.get(2)?,
+                exploration_level: r.get(3)?,
+                x: r.get(4)?,
+                y: r.get(5)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    })
 }
 
 #[derive(Debug, Clone, Copy, serde::Deserialize)]
@@ -806,9 +997,42 @@ impl World {
         }
         // Beyond the cache key's room, the links of the last quests are always open.
         self.link_quests.truncate(LINK_QUESTS_MAX);
+        // The same tables as an earlier world's (see `PASS_WALKS`).
+        let key = self.stamp.map(|stamp| {
+            use std::hash::{Hash, Hasher};
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            (
+                stamp,
+                format!("{:?}", self.links),
+                walk_speed.to_bits(),
+                &self.link_quests,
+            )
+                .hash(&mut h);
+            h.finish()
+        });
+        // One world computes them while the others wait for the same.
+        let _computing = key.map(|_| LINK_COMPUTE.lock().unwrap_or_else(std::sync::PoisonError::into_inner));
+        let kept = key.and_then(|key| {
+            let cache = LINK_CHAINS.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            cache
+                .iter()
+                .find(|(k, _)| *k == key)
+                .map(|(_, c)| std::sync::Arc::clone(c))
+        });
+        if let Some(chains) = kept {
+            self.link_chains.clone_from(chains.as_ref());
+            return;
+        }
         self.link_chains = (0..1usize << self.link_quests.len())
             .map(|open| self.chain_links(open, walk_speed))
             .collect();
+        if let Some(key) = key {
+            let mut cache = LINK_CHAINS.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            if cache.len() >= PASS_WALKS_MAX {
+                cache.remove(0);
+            }
+            cache.push((key, std::sync::Arc::new(self.link_chains.clone())));
+        }
     }
 
     /// The links' chain table (see `link_chains`) with the links of the quests not in `open`
@@ -972,13 +1196,16 @@ impl World {
     pub fn add_zone_levels(&mut self, conn: &Connection, gap: f64) -> Result<()> {
         let mut levels: FxHashMap<i64, Vec<u8>> = FxHashMap::default();
         if gap > 0.0 {
-            let mut stmt = conn.prepare(
-                "SELECT s.zone_id, coalesce(n.max_level, n.min_level, 1)
-                 FROM m_spawn s JOIN m_npc n ON n.id = s.entity_id
-                 WHERE s.entity_type = 'npc' AND s.x >= 0 AND coalesce(n.friendly_to, '') = ''",
-            )?;
-            for row in stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))? {
-                let (zone, level) = row?;
+            let rows = crate::memo::rows(conn, "mob levels", 0, || {
+                let mut stmt = conn.prepare(
+                    "SELECT s.zone_id, coalesce(n.max_level, n.min_level, 1)
+                     FROM m_spawn s JOIN m_npc n ON n.id = s.entity_id
+                     WHERE s.entity_type = 'npc' AND s.x >= 0 AND coalesce(n.friendly_to, '') = ''",
+                )?;
+                let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))?;
+                Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+            })?;
+            for &(zone, level) in rows.iter() {
                 if (1..=ZONE_MOB_LEVEL_MAX).contains(&level) {
                     levels.entry(zone).or_default().push(level as u8);
                 }
@@ -1095,6 +1322,19 @@ impl World {
         warnings
     }
 
+    /// Says what else the terrain and the passages depend on (the corrections applied to the
+    /// terrain, the passages' definitions, the settings of the walks): `what`, described as text.
+    /// With it, the walks between passages are kept to be taken again by the next world with the
+    /// same source and the same `what`. A world never stamped computes them each time.
+    pub fn stamp(&mut self, what: &str) {
+        use std::hash::{Hash, Hasher};
+        self.stamp = self.source.map(|s| {
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            (s, what).hash(&mut h);
+            h.finish()
+        });
+    }
+
     /// Register passages; subzone positions come from the map exploration overlays.
     pub fn add_passes(&mut self, conn: &Connection, defs: &[PassDef]) -> Result<Vec<String>> {
         // Center of each explorable map area, per zone.
@@ -1152,14 +1392,9 @@ impl World {
         }
         self.area_passes.clear();
         self.area_lifts.clear();
+        self.set_pass_sides();
         for i in 0..self.passes.len() {
-            let areas = self.pass_areas(&self.passes[i].pos);
-            let pass = &mut self.passes[i];
-            pass.raw_areas = areas
-                .iter()
-                .map(|(_, p)| self.terrain.large_areas_of(p).map(|(raw, _)| raw))
-                .collect();
-            pass.areas = areas;
+            let pass = &self.passes[i];
             if pass.shortcut || pass.one_way {
                 continue;
             }
@@ -1179,6 +1414,30 @@ impl World {
             }
         }
         self.walk_id = NEXT_WORLD_ID.fetch_add(1, Ordering::Relaxed);
+        // The same walks as an earlier world's: the same data, the same terrain, the same passages.
+        let key = self.stamp.map(|stamp| {
+            use std::hash::{Hash, Hasher};
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            stamp.hash(&mut h);
+            format!("{:?}", self.passes).hash(&mut h);
+            let mut levels: Vec<_> = self.zone_levels.iter().collect();
+            levels.sort_unstable();
+            (levels, &self.band_levels, self.zone_gap).hash(&mut h);
+            h.finish()
+        });
+        let _computing = key.map(|_| PASS_COMPUTE.lock().unwrap_or_else(std::sync::PoisonError::into_inner));
+        if let Some(key) = key
+            && let Some(walks) = (PASS_WALKS
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .iter())
+            .find(|(k, _)| *k == key)
+            .map(|(_, w)| std::sync::Arc::clone(w))
+        {
+            (self.pass_dist, self.pass_next, self.pass_shortcut, self.pass_closed) =
+                (walks.0.clone(), walks.1.clone(), walks.2.clone(), walks.3.clone());
+            return Ok(warnings);
+        }
         // Walking from a passage to another taken from the zone it leads into, then all-pairs
         // shortest walks (one-way passages: not the same both ways). Between two passages of
         // the same terrain area, over the terrain from their points in it (a passage may stand
@@ -1212,7 +1471,66 @@ impl World {
                     .collect()
             })
             .collect();
+        if let Some(key) = key {
+            let mut kept = PASS_WALKS.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            if kept.len() >= PASS_WALKS_MAX {
+                kept.remove(0);
+            }
+            kept.push((
+                key,
+                std::sync::Arc::new((
+                    self.pass_dist.clone(),
+                    self.pass_next.clone(),
+                    self.pass_shortcut.clone(),
+                    self.pass_closed.clone(),
+                )),
+            ));
+        }
         Ok(warnings)
+    }
+
+    /// The sides of each passage (`Pass::areas`), worked out with walks over the terrain, or
+    /// taken from an earlier world's with the same data, terrain and passages (`PASS_SIDES`).
+    fn set_pass_sides(&mut self) {
+        let key = self.stamp.map(|stamp| {
+            use std::hash::{Hash, Hasher};
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            (stamp, format!("{:?}", self.passes)).hash(&mut h);
+            h.finish()
+        });
+        let _computing = key.map(|_| PASS_COMPUTE.lock().unwrap_or_else(std::sync::PoisonError::into_inner));
+        let kept = key.and_then(|key| {
+            let sides = PASS_SIDES.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            sides
+                .iter()
+                .find(|(k, _)| *k == key)
+                .map(|(_, s)| std::sync::Arc::clone(s))
+        });
+        let sides = kept.unwrap_or_else(|| {
+            let sides: PassSides = std::sync::Arc::new(
+                (self.passes.iter())
+                    .map(|pass| {
+                        let areas = self.pass_areas(&pass.pos);
+                        let raw = areas
+                            .iter()
+                            .map(|(_, p)| self.terrain.large_areas_of(p).map(|(raw, _)| raw))
+                            .collect();
+                        (areas, raw)
+                    })
+                    .collect(),
+            );
+            if let Some(key) = key {
+                let mut kept = PASS_SIDES.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                if kept.len() >= PASS_WALKS_MAX {
+                    kept.remove(0);
+                }
+                kept.push((key, std::sync::Arc::clone(&sides)));
+            }
+            sides
+        });
+        for (pass, (areas, raw)) in self.passes.iter_mut().zip(sides.iter()) {
+            (pass.areas, pass.raw_areas) = (areas.clone(), raw.clone());
+        }
     }
 
     /// The sides of a passage (`Pass::areas`): the large terrain areas around it, its own

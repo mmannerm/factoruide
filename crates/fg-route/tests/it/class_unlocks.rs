@@ -14,6 +14,72 @@ fn request(race: &str, class: &str) -> PlanRequest {
 }
 
 #[test]
+fn known_reward_does_not_put_its_parent_in_the_log() {
+    for edition in Edition::ALL {
+        let conn = database_of(edition.key());
+        let mut overrides = Overrides::load_edition(&repo().join("overrides"), edition).unwrap();
+        overrides.params.all_class_quests = true;
+        for (held, completed) in [(false, false), (true, false), (false, true)] {
+            let mut req = request("tauren", "shaman");
+            req.from_level = 4;
+            req.to_level = 5;
+            req.start = Some(StartState {
+                level: 4,
+                spells: if held { vec![] } else { vec![8071] },
+                completed: if completed { vec![job::QuestId(1521)] } else { vec![] },
+                log: if held {
+                    vec![job::LogQuest {
+                        id: job::QuestId(1521),
+                        complete: false,
+                        objectives: vec![],
+                    }]
+                } else {
+                    vec![]
+                },
+                ..StartState::default()
+            });
+            let p = job::prepare(&conn, &overrides, &req, &|_| {}).unwrap();
+            assert_eq!(p.profile.completed_quests.contains(&1521), completed);
+            if !held && !completed {
+                assert!(!p.model.index.contains_key(&1521));
+            }
+            let child = &p.model.quests[p.model.index[&1462]];
+            assert!(child.pre_held.contains(&1521));
+            assert_eq!(
+                child.mandatory, held,
+                "{edition:?}: Earth Sapta needs Call of Earth in the log"
+            );
+        }
+    }
+}
+
+#[test]
+// The source data makes 4962 and 4963 exclusive children of 1799. This history chose
+// 4962, which Cleansing of the Orb of Orahil (4961) requires.
+fn a_completed_child_keeps_later_class_quests_feasible() {
+    for edition in Edition::ALL {
+        let conn = database_of(edition.key());
+        let mut overrides = Overrides::load_edition(&repo().join("overrides"), edition).unwrap();
+        overrides.params.all_class_quests = true;
+        let mut req = request("orc", "warlock");
+        req.from_level = 35;
+        req.to_level = 41;
+        req.start = Some(StartState {
+            level: 35,
+            completed: vec![job::QuestId(1799), job::QuestId(4962)],
+            ..StartState::default()
+        });
+        let p = job::prepare(&conn, &overrides, &req, &|_| {}).unwrap();
+        let next = &p.model.quests[p.model.index[&4961]];
+        assert!(next.pre_all.contains(&4962));
+        assert!(
+            next.mandatory,
+            "{edition:?}: Cleansing of the Orb of Orahil has its prerequisite done"
+        );
+    }
+}
+
+#[test]
 fn normal_skyborne_druid_planning_completes_the_cat_chain() {
     let conn = database_of("forever");
     let overrides = Overrides::load_edition(&repo().join("overrides"), Edition::Forever).unwrap();

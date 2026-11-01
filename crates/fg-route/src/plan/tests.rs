@@ -62,31 +62,17 @@ pub(crate) fn database_of(edition: &str) -> Connection {
     Connection::open(path).unwrap()
 }
 
-/// The Classic database, unpacked next to the packed one when missing or older.
-fn database() -> Connection {
-    database_of("classic")
-}
-
 /// Level 1 human warrior with only `n` quests of its own: taken and turned in at the start NPC,
 /// nothing to do, no XP (each test sets what it checks). Nothing done on the way.
 pub(crate) fn quests_at_start(n: usize) -> Prepared {
-    let overrides = Overrides::load_edition(&repo().join("overrides"), Edition::Classic).unwrap();
-    let request = PlanRequest {
-        race: "human".into(),
-        class: "warrior".into(),
-        from_level: 1,
-        to_level: 2,
-        name: None,
-        params: Some(overrides.params.clone()),
-        required_class_quests: None,
-        required_quests: vec![],
-        professions: vec![],
-        locale: None,
-        mates: vec![],
-        mate_professions: vec![],
-        start: None,
-    };
-    at_start(job::prepare(&database(), &overrides, &request, &|_| {}).unwrap(), n)
+    use crate::testing::{Q, Scenario};
+    at_start(
+        Scenario::new()
+            .levels(1, 2)
+            .quest(Q::new(900, "Quest").level(1))
+            .build(),
+        n,
+    )
 }
 
 fn at_start(mut p: Prepared, n: usize) -> Prepared {
@@ -108,6 +94,7 @@ fn at_start(mut p: Prepared, n: usize) -> Prepared {
         .collect();
     p.model.index = p.model.quests.iter().enumerate().map(|(i, q)| (q.id, i)).collect();
     (p.model.chain_top, p.model.unlocks, p.model.rewards) = (vec![1; n], vec![0.0; n], vec![(vec![], vec![]); n]);
+    p.model.bundles = vec![Vec::new(); n];
     p.model.initial = Initial {
         abilities: p.model.initial.abilities,
         trained: p.model.initial.trained,
@@ -186,8 +173,6 @@ fn quests_at_hand_are_looked_for_where_the_stop_went() {
         alts: vec![],
         after: 0,
         handed_by: vec![],
-        child: None,
-        child_name: None,
         vendors: vec![],
         auction: vec![],
         slot: None,
@@ -249,8 +234,6 @@ fn objective_started_counts_its_share_at_another_place() {
         alts: vec![],
         after: 0,
         handed_by: vec![],
-        child: None,
-        child_name: None,
         vendors: vec![],
         auction: vec![],
         slot: None,
@@ -322,8 +305,6 @@ fn camp_of_two_objectives() -> Prepared {
         alts: vec![],
         after: 0,
         handed_by: vec![],
-        child: None,
-        child_name: None,
         vendors: vec![],
         auction: vec![],
         slot: None,
@@ -499,8 +480,6 @@ fn road_of_mobs() -> (Prepared, crate::world::Pos, crate::world::Pos) {
         alts: vec![],
         after: 0,
         handed_by: vec![],
-        child: None,
-        child_name: None,
         vendors: vec![],
         auction: vec![],
         slot: None,
@@ -609,8 +588,6 @@ fn greedy_grinds_to_the_mobs_of_a_quest_in_reach() {
         alts: vec![],
         after: 0,
         handed_by: vec![],
-        child: None,
-        child_name: None,
         vendors: vec![],
         auction: vec![],
         slot: None,
@@ -626,7 +603,30 @@ fn greedy_grinds_to_the_mobs_of_a_quest_in_reach() {
 #[test]
 fn trips_fly_to_a_boat_and_from_it() {
     use super::state::Leg;
-    let mut p = quests_at_start(0);
+    use crate::testing::{At, Scenario};
+    let mut p = Scenario::new()
+        .levels(1, 2)
+        .zone(2, "Wetlands")
+        .zone(3, "Dustwallow")
+        .flight_master(1, "Ironforge", 1, 50.0, 50.0)
+        .flight_master(2, "Menethil Harbor", 2, 50.0, 50.0)
+        .flight_master(3, "Theramore", 3, 50.0, 50.0)
+        .boat(
+            "Boat Menethil Harbor - Theramore",
+            At {
+                zone: 2,
+                x: 52.0,
+                y: 50.0,
+            },
+            At {
+                zone: 3,
+                x: 48.0,
+                y: 50.0,
+            },
+            30.0,
+        )
+        .params(|p| p.link_wait = 0.0)
+        .build();
     p.params.gold_weight = 0.0;
     let planner = planner(&p);
     let trips = planner.trips();
@@ -657,7 +657,6 @@ fn trips_fly_to_a_boat_and_from_it() {
         "{leg:?}"
     );
 }
-
 /// A kill's loot fills the bags (`Params::loot_per_kill`) up to the room a level 1 character
 /// has; what no longer fits costs `bag_weight` a slot, and quest items take room too.
 #[test]
@@ -796,8 +795,6 @@ fn timed_quest_taken_once_strong_enough_for_its_objectives() {
         alts: vec![],
         after: 0,
         handed_by: vec![],
-        child: None,
-        child_name: None,
         vendors: vec![],
         auction: vec![],
         slot: Some(1),
@@ -978,7 +975,7 @@ mod movement;
 
 #[test]
 fn an_unbounded_required_quest_stays_in_the_log_when_gray() {
-    let conn = database();
+    let conn = database_of("classic");
     let o = Overrides::load_edition(&repo().join("overrides"), Edition::Classic).unwrap();
     let req=serde_json::from_value(serde_json::json!({"race":"human","class":"warrior","from_level":20,"to_level":21,"required_class_quests":[],"required_quests":[783],"start":{"level":20,"log":[{"id":783,"complete":true}]}})).unwrap();
     let p = job::prepare(&conn, &o, &req, &|_| {}).unwrap();

@@ -30,6 +30,23 @@ fn before_turn(trace: &[Timed], index: usize, from: i64) -> i64 {
 }
 
 #[test]
+fn a_window_includes_the_child_quest_and_its_deadline() {
+    let conn = database_of("forever");
+    let mut req = request(&json!([{"quest":812,"min_level":8,"max_level":10}]));
+    req.race = "orc".into();
+    req.from_level = 8;
+    req.to_level = 10;
+    let prepared = job::prepare(&conn, &overrides(Edition::Forever), &req, &|_| {}).unwrap();
+    let parent = &prepared.model.quests[prepared.model.index[&812]];
+    let child = &prepared.model.quests[prepared.model.index[&813]];
+    assert!(parent.required && child.required);
+    assert_eq!(parent.completion_window.min_level, Some(8));
+    assert_eq!(child.completion_window.min_level, None);
+    assert_eq!(child.priority_deadline, Some(10));
+    assert!(child.pre_held.contains(&812));
+}
+
+#[test]
 fn quest_windows_plan_the_chain_with_prerequisites_before_the_lower_bound() {
     for edition in Edition::ALL {
         let conn = database_of(edition.key());
@@ -63,7 +80,12 @@ fn quest_windows_plan_the_chain_with_prerequisites_before_the_lower_bound() {
 // A nearby optional reward would level the player before the required two-quest chain.
 #[test]
 fn generation_prioritizes_the_deadline_chain_and_reports_a_missed_window() {
-    let conn = database_of("classic");
+    let path = std::env::temp_dir().join(format!("fg-completion-window-{}.sqlite", std::process::id()));
+    let _ = std::fs::remove_file(&path);
+    database_of("classic")
+        .execute("VACUUM INTO ?1", [path.to_str().unwrap()])
+        .unwrap();
+    let conn = rusqlite::Connection::open(&path).unwrap();
     conn.execute_batch(
         "CREATE TEMP TABLE m_quest AS SELECT * FROM main.m_quest WHERE id IN (783,7,33);
          UPDATE m_quest SET xp=0, xp_observed=1;
@@ -109,6 +131,8 @@ fn generation_prioritizes_the_deadline_chain_and_reports_a_missed_window() {
         error.contains("Kobold Camp Cleanup (7)") && error.contains("level 1"),
         "{error}"
     );
+    drop(conn);
+    std::fs::remove_file(&path).ok();
 }
 
 #[test]

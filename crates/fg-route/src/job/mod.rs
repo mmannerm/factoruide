@@ -2,6 +2,7 @@
 //! app.
 
 mod character;
+pub(crate) use character::character;
 mod draft;
 mod edit;
 mod error;
@@ -31,7 +32,7 @@ pub use flights::inferred_flights;
 pub use options::{
     FactionOption, FlightOption, NamedId, Options, RaceOption, ZoneOption, class_quests, options, race_classes,
 };
-pub use overrides::{Overrides, RaceDef};
+pub use overrides::{Overrides, RaceDef, curve_by_level};
 pub use paths::{add_walk_paths, route_walks, walk_world};
 pub use race::{optimize, optimize_interruptible};
 pub use reputation::race_base;
@@ -46,10 +47,13 @@ pub use routes::{
 };
 pub use services::{Place, Service, places, services_lua};
 pub use start::{Bind, LogObjective, LogQuest, MapPos, QuestId, Skill, Standing, StartState};
+#[cfg(any(test, feature = "testing"))]
+pub(crate) use starts::preview_starts_of;
 pub use starts::{StartOption, StartPreview, preview_starts};
 pub use timeline::{InnInfo, Leg, LegMode, NodeInfo, ObjectiveInfo, QuestInfo, StartView, Timeline, TimelineStep};
 
 use crate::export;
+use crate::model::Model;
 use crate::model::{self, Profile};
 use crate::params::Params;
 use crate::plan::Planner;
@@ -129,7 +133,18 @@ pub fn plan_interruptible(
     interrupt: &Interrupt,
     walks: Option<&Arc<Walks>>,
 ) -> Result<PlanOutcome, JobError> {
-    let mut prepared = prepare(conn, overrides, req, progress)?;
+    let prepared = prepare(conn, overrides, req, progress)?;
+    plan_prepared(prepared, req, progress, interrupt, walks).map(|(outcome, _)| outcome)
+}
+
+/// The guide of what `prepare` loaded (see `plan_interruptible`), with it back for the editor.
+pub(crate) fn plan_prepared(
+    mut prepared: Prepared,
+    req: &PlanRequest,
+    progress: &(dyn Fn(&str) + Sync),
+    interrupt: &Interrupt,
+    walks: Option<&Arc<Walks>>,
+) -> Result<(PlanOutcome, Prepared), JobError> {
     if let Some(walks) = walks {
         prepared.world.terrain.share(Arc::clone(walks));
     }
@@ -191,7 +206,7 @@ pub fn plan_interruptible(
     };
     let editor = Editor { prepared };
     editor.set_walks(&mut outcome);
-    Ok(outcome)
+    Ok((outcome, editor.prepared))
 }
 
 /// A guide of no steps, to write by hand in the guide editor: the character starts as `plan`
@@ -215,7 +230,7 @@ pub fn prepare(
     req: &PlanRequest,
     progress: &(dyn Fn(&str) + Sync),
 ) -> Result<Prepared> {
-    let (mut profile, mut params) = character::character(conn, overrides, req)?;
+    let (mut profile, mut params) = character(conn, overrides, req)?;
     profile.required_quests = required::resolve(conn, req, &profile, &params)?;
     if params.edition == crate::xp::Edition::Forever
         && params.sleeping_bag
@@ -242,62 +257,27 @@ pub fn prepare(
         members.clone()
     };
     let mut model = model::load(conn, &world, &profile, &params, &starts)?;
-    // Every dungeon it could run has levels to run it at.
-    if let Some(d) = (model.dungeons.iter()).find(|d| d.min_level != i64::MAX && d.min_level > d.max_level) {
-        return Err(RequestError::NoDungeonLevels {
-            dungeon: d.name.clone(),
-            from: params.dungeon_from,
-            to: params.dungeon_to,
-        }
-        .into());
-    }
+    check_dungeon_levels(&model, &params, &profile)?;
     let mut start_notes = Vec::new();
-    // A member who already chose an exclusive alternative cannot meet an exact requirement.
-    for q in model.quests.iter().filter(|q| q.required) {
-        for (k, member) in members.iter().enumerate() {
-            if q.members & (1 << k) != 0
-                && !member.completed.contains(&QuestId(q.id))
-                && q.exclusive.iter().any(|&id| member.completed.contains(&QuestId(id)))
-            {
-                anyhow::bail!(
-                    "required quest {} ({}) conflicts with an exclusive quest already completed by {}",
-                    q.name,
-                    q.id,
-                    member.name
-                );
-            }
-        }
-    }
+    check_exclusive_choices(&model, &members)?;
     // A group is planned for the member with the least XP.
     let start = members.first().copied().or(req.start.as_ref());
     if let Some(start) = start {
         // Its race's flight paths and those of the towns it did quests in count as learned,
         // unless the list was settled by hand.
         let with_deduced = |s: &StartState| {
-            let mut copy = s.clone();
-            if !s.flights_final {
-                copy.flights.extend(overrides.start_flights(s.race));
-                if let Some(Ok(found)) = s.faction.map(|side| inferred_flights(conn, side, &s.completed)) {
-                    copy.flights.extend(found);
-                }
-                copy.flights.sort_unstable();
-                copy.flights.dedup();
-            }
-            copy
+            let found = if s.flights_final {
+                None
+            } else {
+                s.faction
+                    .and_then(|side| inferred_flights(conn, side, &s.completed).ok())
+            };
+            s.with_deduced_flights(overrides.start_flights(s.race), found)
         };
         let deduced = with_deduced(start);
         let start = &deduced;
-        model.initial = start.initial(&model, &world, &mut params, &mut start_notes);
-        if members.len() > 1 {
-            let mates: Vec<StartState> = members[1..].iter().map(|m| with_deduced(m)).collect();
-            group::join(
-                &mut model,
-                &world,
-                start,
-                &mates.iter().collect::<Vec<_>>(),
-                &mut start_notes,
-            );
-        }
+        let mates: Vec<StartState> = members.iter().skip(1).map(|m| with_deduced(m)).collect();
+        start_from(&mut model, &world, &mut params, start, &mates, &mut start_notes);
         // Quests of the log the model does not have: named from the database, for their abandon.
         for (id, name) in model.initial.log.iter_mut().filter(|(_, name)| name.is_empty()) {
             *name = conn
@@ -332,6 +312,89 @@ pub fn prepare(
     })
 }
 
+/// Every dungeon the character could run has levels to run it at, and a dungeon the player
+/// forced has some left at the level the guide starts from.
+pub(crate) fn check_dungeon_levels(model: &Model, params: &Params, profile: &Profile) -> Result<(), RequestError> {
+    if let Some(d) = (model.dungeons.iter()).find(|d| d.min_level != i64::MAX && d.min_level > d.max_level) {
+        return Err(RequestError::NoDungeonLevels {
+            dungeon: d.name.clone(),
+            from: params.dungeon_from,
+            to: params.dungeon_to,
+        });
+    }
+    let forced = |area: &i64| params.forced_dungeons.contains(area) || params.forced_dungeon_quests.contains(area);
+    match (model.dungeons.iter()).find(|d| {
+        (d.min_level != i64::MAX || d.mob_level > 0)
+            && forced(&d.area)
+            && !params.excluded_dungeons.contains(&d.area)
+            && !d.needed
+            && d.max_level < profile.from_level
+    }) {
+        Some(d) => Err(RequestError::ForcedDungeonTooLow {
+            dungeon: d.name.clone(),
+            ends: d.max_level,
+            from: profile.from_level,
+        }),
+        None => Ok(()),
+    }
+}
+
+/// A member who already chose an exclusive alternative cannot meet an exact requirement.
+pub(crate) fn check_exclusive_choices(model: &Model, members: &[&StartState]) -> Result<()> {
+    for q in model.quests.iter().filter(|q| q.required) {
+        for (k, member) in members.iter().enumerate() {
+            if q.members & (1 << k) != 0
+                && !member.completed.contains(&QuestId(q.id))
+                && q.exclusive.iter().any(|&id| member.completed.contains(&QuestId(id)))
+            {
+                anyhow::bail!(
+                    "required quest {} ({}) conflicts with an exclusive quest already completed by {}",
+                    q.name,
+                    q.id,
+                    member.name
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The model from where `start` stands (what it did, its log, its place), and the other players
+/// of its group joined to it.
+pub(crate) fn start_from(
+    model: &mut Model,
+    world: &World,
+    params: &mut Params,
+    start: &StartState,
+    mates: &[StartState],
+    notes: &mut Vec<String>,
+) {
+    model.initial = start.initial(model, world, params, notes);
+    release_done_dungeons(model, start);
+    if !mates.is_empty() {
+        group::join(model, world, start, &mates.iter().collect::<Vec<_>>(), notes);
+    }
+}
+
+/// A dungeon only needed by must-have quests the character has already turned in, or finished
+/// in its log, is not needed any more: its objectives are done.
+fn release_done_dungeons(model: &mut Model, start: &StartState) {
+    let finished =
+        |i: usize, id: i64| model.initial.turned.contains(&i) || start.log.iter().any(|l| l.id.0 == id && l.complete);
+    let mut needed = vec![false; model.dungeons.len()];
+    for (i, q) in model.quests.iter().enumerate() {
+        if !q.required || finished(i, q.id) {
+            continue;
+        }
+        for d in q.objectives.iter().filter_map(|o| o.dungeon) {
+            needed[d] = true;
+        }
+    }
+    for (d, dungeon) in model.dungeons.iter_mut().enumerate() {
+        dungeon.needed &= needed[d];
+    }
+}
+
 /// Zones and flights of the character's faction, with the walking passages between zones and
 /// the boats, zeppelins and trams.
 fn load_world(
@@ -341,7 +404,33 @@ fn load_world(
     params: &Params,
     progress: &(dyn Fn(&str) + Sync),
 ) -> Result<World> {
-    let mut world = World::load(conn, profile.faction, params.flight_speed, params.drop_tier())?;
+    world_for(conn, overrides, profile.faction, profile.race_id, params, progress)
+}
+
+/// The world of a race, as a plan walks it (the terrain, the zones' levels, the passages, the
+/// boats and portals of its race), with the default settings: for the tools and the tests.
+///
+/// # Errors
+///
+/// When the game data cannot be read.
+pub fn game_world(
+    conn: &Connection,
+    overrides: &Overrides,
+    faction: crate::faction::Faction,
+    race_id: i64,
+) -> Result<World> {
+    world_for(conn, overrides, faction, race_id, &overrides.params, &|_| {})
+}
+
+fn world_for(
+    conn: &Connection,
+    overrides: &Overrides,
+    faction: crate::faction::Faction,
+    race_id: i64,
+    params: &Params,
+    progress: &(dyn Fn(&str) + Sync),
+) -> Result<World> {
+    let mut world = World::load(conn, faction, params.flight_speed, params.drop_tier())?;
     let passes: Vec<_> = overrides
         .passes
         .iter()
@@ -358,24 +447,15 @@ fn load_world(
     for warning in world.add_caves(&overrides.caves) {
         progress(&warning);
     }
+    // What the walks between the passages depend on, besides the database.
+    world.stamp(&format!(
+        "{:?}{:?}{:?}{:?}{:?}{:?}{:?}",
+        overrides.closed, overrides.enclosed, overrides.caves, passes, params.zone_gap, params.detour, params.run_speed
+    ));
     for warning in world.add_passes(conn, &passes)? {
         progress(&warning);
     }
-    // Links kept to some races (the Skyborne's portals): those of the character's race.
-    let links: Vec<_> = (overrides.links.iter())
-        .filter(|l| {
-            l.races.is_empty()
-                || l.races
-                    .iter()
-                    .any(|r| overrides.races.get(r).is_some_and(|d| d.id == profile.race_id))
-        })
-        .cloned()
-        .collect();
-    world.add_links(
-        &links,
-        profile.faction,
-        params.run_speed / params.detour,
-        params.link_wait,
-    );
+    let links = overrides.links_of_race(race_id);
+    world.add_links(&links, faction, params.run_speed / params.detour, params.link_wait);
     Ok(world)
 }

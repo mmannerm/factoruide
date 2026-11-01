@@ -183,6 +183,16 @@ impl Planner<'_> {
     fn nearest_stop(&self, s: &State, pull: Option<i64>) -> Option<Stop> {
         let n = self.model.quests.len() as u32;
         let bound = self.trips().bound(s);
+        // A dungeon the player forced is run once the character reaches the middle of its levels
+        // (Ragefire Chasm, 13 to 19, at 16): left to the weighing of the stops, it would be passed
+        // over for nearer ones until its levels are gone, and the route refused without it.
+        let forced_now = (0..self.model.dungeons.len())
+            .filter(|&d| self.availability().dungeon_forced(d) && s.level >= self.model.dungeons[d].mob_level)
+            .filter_map(|d| self.forced_dungeon_stop(s, d))
+            .find(|&stop| bound.at(&self.places().pos(s, stop)).is_finite());
+        if forced_now.is_some() {
+            return forced_now;
+        }
         // Quest value only decides what is worth accepting. Weights favour finishing what
         // is in the log, and class quests.
         let mut candidates: Vec<Candidate> = Vec::new();
@@ -243,6 +253,9 @@ impl Planner<'_> {
                 continue;
             }
             let class = if self.quest(i).mandatory { 0.6 } else { 1.0 };
+            // A timed parent and its children (the antidote of Need for a Cure: 45 minutes) are
+            // done one after the other, while the clock runs.
+            let class = if self.on_clock(s, i) { class * 0.2 } else { class };
             // Givers and turn-ins among mobs too strong for the character wait.
             let reach = self.params.reach(s.level, s.might());
             let guarded = |g| self.combat().guard_need(g) > reach;
@@ -332,9 +345,7 @@ impl Planner<'_> {
             })
             .min();
         if let Some(deadline) = deadline {
-            candidates.retain(|c| {
-                c.stop.kind != Kind::Accept || self.quest(c.stop.index).priority_deadline == Some(deadline)
-            });
+            candidates.retain(|c| !c.stop.is_quest() || self.quest(c.stop.index).priority_deadline == Some(deadline));
         }
         // Staying in a zone only matters while it has something left to do: with few stops left
         // there, the weight of leaving it fades to nothing (`Params::zone_stay_quests`).
@@ -451,6 +462,17 @@ impl Planner<'_> {
         let mut s = self.start_state(self.planned(route));
         let mut dropped = vec![false; self.model.quests.len()];
         let mut out = Vec::with_capacity(route.len());
+        let deadlines: Vec<_> = self
+            .model
+            .quests
+            .iter()
+            .enumerate()
+            .filter_map(|(i, q)| {
+                let max = q.priority_deadline.filter(|&max| max < self.rules().max_level)?;
+                let at = route.iter().position(|s| *s == Stop::quest(i as u32, Kind::TurnIn))?;
+                Some((i, max, at))
+            })
+            .collect();
         for (pos, &stop) in route.iter().enumerate() {
             let i = stop.index as usize;
             if stop.is_quest() && dropped[i] {
@@ -465,6 +487,18 @@ impl Planner<'_> {
                 break;
             }
             s.at = pos as u32;
+            // Replaying can require more grinding than construction expected. Leave optional
+            // work out when that grinding would pass an unfinished quest's deadline.
+            if stop.is_quest() && !self.quest(stop.index).mandatory {
+                let gate = self.gate_level(&s, stop);
+                let past_deadline = deadlines
+                    .iter()
+                    .any(|&(i, max, at)| !s.turned[i] && !dropped[i] && at >= pos && gate > max);
+                if past_deadline {
+                    dropped[i] = true;
+                    continue;
+                }
+            }
             if stop.kind == Kind::TurnIn
                 && s.accepted[i]
                 && !s.turned[i]
@@ -684,24 +718,128 @@ impl Planner<'_> {
         self.insert_quest_after(route, q, 0)
     }
 
+    /// Quest `i` is, or is a child of, a timed quest being done that hands it an item.
+    fn on_clock(&self, s: &State, i: u32) -> bool {
+        let q = self.quest(i);
+        let ticking = |id: &i64| {
+            self.model
+                .index
+                .get(id)
+                .is_some_and(|&j| s.timers.iter().any(|&(t, _)| t == j as u32))
+        };
+        (q.time_limit.is_some()
+            && s.timers.iter().any(|&(t, _)| t == i)
+            && q.objectives.iter().any(|o| !o.handed_by.is_empty()))
+            || q.pre_held.iter().any(|p| {
+                ticking(p)
+                    && self.model.index.get(p).is_some_and(|&j| {
+                        self.model.quests[j]
+                            .objectives
+                            .iter()
+                            .any(|o| o.handed_by.contains(&q.id))
+                    })
+            })
+    }
+
+    /// Whether a parent quest and its child are put in a route together (`Params::child_glue`):
+    /// a draw from the seed for each pair, the same one every time.
+    fn glued(&self, parent: u32, child: u32) -> bool {
+        let share = self.params.child_glue;
+        if share >= 1.0 {
+            return true;
+        }
+        if share <= 0.0 {
+            return false;
+        }
+        let mut x = self.params.seed ^ (u64::from(parent) << 32 | u64::from(child));
+        x = (x ^ (x >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+        x = (x ^ (x >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+        x ^= x >> 31;
+        (x >> 11) as f64 / (1u64 << 53) as f64 <= share
+    }
+
+    /// Where quest `q`'s stop is in the route.
+    fn position_of(route: &[Stop], q: u32, kind: Kind) -> Option<usize> {
+        route.iter().position(|s| *s == Stop::quest(q, kind))
+    }
+
     /// Insert quest `q` as `insert_quest`, its accept not before `after`. Returns the first index
     /// changed: the accept, or the dungeon run moved after it from earlier in the route. A quest
     /// of the character's log has no accept, nor the objectives it has done.
+    ///
+    /// A child quest and its parent go together (for the pairs `glued` draws): a child with its
+    /// parent out of the route brings the parent in first; a parent hands the item its objective
+    /// asks for with the turn-in of a child out of the route, which is put in right before it.
+    /// A parent already in the route is not moved but for its later stops, behind the child's turn-in.
     pub(crate) fn insert_quest_after(&self, route: &mut Vec<Stop>, q: u32, after: usize) -> usize {
+        self.insert_quest_linked(route, q, after, false)
+    }
+
+    /// `insert_quest_after`; `tight`: every stop right after the one before it, not near its
+    /// place (the child of a timed quest, which cannot wait for a stop that passes nearby). The
+    /// stops of a timed quest are always put so.
+    fn insert_quest_linked(&self, route: &mut Vec<Stop>, q: u32, after: usize, tight: bool) -> usize {
         let quest = self.quest(q);
+        let tight = tight || quest.time_limit.is_some();
+        let place = |route: &[Stop], pos: &Pos, from: usize| {
+            if tight {
+                from.min(route.len())
+            } else {
+                self.insert_near(route, pos, from)
+            }
+        };
         let in_log = self.in_log_at_start(q);
+        let parents: Vec<u32> = (quest.pre_held.iter())
+            .filter_map(|id| self.model.index.get(id).map(|&i| i as u32))
+            .collect();
+        // The parent comes first, with this quest when it hands it an item.
+        let mut after = after;
+        // The first index any partner changed.
+        let touched = std::cell::Cell::new(usize::MAX);
+        for &p in &parents {
+            if Self::position_of(route, p, Kind::Accept).is_none() && !self.in_log_at_start(p) && self.glued(p, q) {
+                let first = self.insert_quest_linked(route, p, after, false);
+                touched.set(touched.get().min(first));
+                if route.iter().any(|s| s.is_quest() && s.index == q) {
+                    return first;
+                }
+            }
+            if let Some(a) = Self::position_of(route, p, Kind::Accept) {
+                after = after.max(a + 1);
+            }
+        }
         // First index the next stop may take.
         let mut next = after;
         let mut first = usize::MAX;
         if !in_log {
-            let at = self.insert_near(route, &quest.starts[0].pos, after);
+            let at = place(route, &quest.starts[0].pos, after);
             route.insert(at, Stop::quest(q, Kind::Accept));
             (first, next) = (at, at + 1);
         }
+        // Children whose turn-in hands an item: before the objective asking for it.
+        let after_children = |route: &mut Vec<Stop>, k: Option<usize>, next: usize| {
+            let mut next = next;
+            let handed = (quest.objectives.iter().enumerate())
+                .filter(|(i, _)| k.is_none_or(|k| k == *i))
+                .flat_map(|(_, o)| o.handed_by.iter())
+                .filter_map(|id| self.model.index.get(id).map(|&i| i as u32))
+                .collect::<Vec<_>>();
+            for c in handed {
+                if Self::position_of(route, c, Kind::TurnIn).is_none() && self.glued(q, c) {
+                    let first = self.insert_quest_linked(route, c, next, quest.time_limit.is_some());
+                    touched.set(touched.get().min(first));
+                }
+                if let Some(t) = Self::position_of(route, c, Kind::TurnIn) {
+                    next = next.max(t + 1);
+                }
+            }
+            next
+        };
         for k in 0..quest.objectives.len() {
             if in_log && self.done_at_start(q, k) {
                 continue;
             }
+            next = after_children(route, Some(k), next);
             if let Some(d) = quest.objectives[k].dungeon {
                 // Done by the dungeon run, which must come after accepting.
                 let run = Stop {
@@ -716,7 +854,7 @@ impl Planner<'_> {
                             first = first.min(p);
                             next -= 1;
                         }
-                        let r = self.insert_near(route, &quest.objectives[k].loc.pos, next).max(next);
+                        let r = place(route, &quest.objectives[k].loc.pos, next).max(next);
                         route.insert(r, run);
                         first = first.min(r);
                         next = r + 1;
@@ -724,14 +862,53 @@ impl Planner<'_> {
                 }
                 continue;
             }
-            let at = self.insert_near(route, &quest.objectives[k].loc.pos, next).max(next);
+            let at = place(route, &quest.objectives[k].loc.pos, next).max(next);
             route.insert(at, Stop::quest(q, Kind::Objective(k as u8)));
             first = first.min(at);
             next = at + 1;
         }
-        let at = self.insert_near(route, &quest.ends[0].pos, next).max(next);
+        next = after_children(route, None, next);
+        let at = place(route, &quest.ends[0].pos, next).max(next);
         route.insert(at, Stop::quest(q, Kind::TurnIn));
-        first.min(at)
+        // This quest is a child of a parent already in the route: the parent's stops after the
+        // ones of its own that hand it items come behind this turn-in.
+        for &p in &parents {
+            let pending = |route: &[Stop]| {
+                let hands = |s: &Stop| match s.kind {
+                    Kind::Objective(k) => self.quest(p).objectives[k as usize]
+                        .handed_by
+                        .iter()
+                        .any(|id| self.model.index.get(id) == Some(&(q as usize))),
+                    Kind::TurnIn => true,
+                    _ => false,
+                };
+                let me = Self::position_of(route, q, Kind::TurnIn)?;
+                let moved: Vec<usize> = (0..me)
+                    .filter(|&i| route[i].is_quest() && route[i].index == p && hands(&route[i]))
+                    .collect();
+                (!moved.is_empty()).then_some((me, moved))
+            };
+            if let Some((me, moved)) = pending(route) {
+                let stops: Vec<Stop> = moved.iter().map(|&i| route[i]).collect();
+                let mut kept: Vec<Stop> = Vec::with_capacity(route.len());
+                let mut inserted_at = 0;
+                for (i, s) in route.iter().enumerate() {
+                    if moved.contains(&i) {
+                        continue;
+                    }
+                    kept.push(*s);
+                    if i == me {
+                        inserted_at = kept.len();
+                    }
+                }
+                kept.splice(inserted_at..inserted_at, stops);
+                first = first.min(moved[0]);
+                *route = kept;
+            }
+        }
+        first
+            .min(touched.get())
+            .min(Self::position_of(route, q, Kind::TurnIn).unwrap_or(usize::MAX))
     }
 
     /// Quest `q` is in the character's log at the start.
@@ -774,15 +951,25 @@ impl Planner<'_> {
             })
             .min_by(|a, b| a.1.total_cmp(&b.1))
             .map(|(p, _)| p);
+        // A child quest or a parent handing items goes in with its partner: as a whole.
+        let linked = !quest.pre_held.is_empty() || quest.objectives.iter().any(|o| !o.handed_by.is_empty());
+        let at = if linked { None } else { at };
         let Some(mut at) = at else {
+            let old = route.clone();
             let first = self.insert_quest(route, q);
-            // Keep levels aligned (approximate: copy the neighbour's level).
+            // Keep levels aligned (approximate: copy the neighbour's level): the stops that came
+            // in, a partner's too.
+            let mut j = 0;
             for p in 0..route.len() {
-                if levels.len() < route.len() && route[p].is_quest() && route[p].index == q {
+                if j < old.len() && route[p] == old[j] {
+                    j += 1;
+                } else if levels.len() < route.len() {
                     let l = level(levels, p);
                     levels.insert(p, l);
                 }
             }
+            let last = levels.last().copied().unwrap_or(1);
+            levels.resize(route.len(), last);
             return first;
         };
         let first = at;
@@ -809,6 +996,20 @@ impl Planner<'_> {
         first
     }
 
+    /// The quest of dungeon `d` to pick up before its run: one that can be accepted at this level
+    /// and is worth it.
+    fn quest_before_dungeon(&self, s: &State, d: usize) -> Option<u32> {
+        self.availability().dungeon_quests(d).find(|&i| {
+            let iu = i as usize;
+            !s.accepted[iu]
+                && !s.turned[iu]
+                && s.log < self.params.quest_log_size
+                && self.quest(i).min_level <= s.level
+                && self.availability().can_accept(s, i)
+                && self.worth().worth_it(s, i, s.level, 0.0)
+        })
+    }
+
     /// A dungeon run worth doing now: some quests of the log need it, and every quest of the
     /// dungeon that can be picked up at this level has been picked up first.
     pub(crate) fn dungeon_ready(&self, s: &State, d: usize) -> Option<Stop> {
@@ -819,23 +1020,52 @@ impl Planner<'_> {
         if s.dungeons & (1u128 << d) != 0 || s.level < dungeon.min_level || s.level > dungeon.max_level {
             return None;
         }
-        let mut needed = false;
-        for i in self.availability().dungeon_quests(d) {
-            let iu = i as usize;
-            if s.accepted[iu] && !s.turned[iu] {
-                needed = true;
-            } else if !s.turned[iu]
-                && s.log < self.params.quest_log_size
-                && self.quest(i).min_level <= s.level
-                && self.availability().can_accept(s, i)
-                && self.worth().worth_it(s, i, s.level, 0.0)
-            {
-                return None; // pick it up first
-            }
+        if self.quest_before_dungeon(s, d).is_some() {
+            return None; // pick it up first
         }
+        let needed = self.availability().dungeon_quests(d).any(|i| {
+            let iu = i as usize;
+            s.accepted[iu] && !s.turned[iu]
+        });
         (needed || self.availability().dungeon_forced(d)).then_some(Stop {
             index: d as u32,
             kind: Kind::Dungeon,
+        })
+    }
+
+    /// The next stop towards the run of forced dungeon `d`, within its levels: a quest of it to
+    /// pick up first (as the weighing of the stops takes it: not guarded, worth the trip), else the
+    /// run.
+    fn forced_dungeon_stop(&self, s: &State, d: usize) -> Option<Stop> {
+        let dungeon = &self.model.dungeons[d];
+        if !self.availability().dungeon_allowed(d)
+            || s.dungeons & (1u128 << d) != 0
+            || s.level < dungeon.min_level
+            || s.level > dungeon.max_level
+        {
+            return None;
+        }
+        let reach = self.params.reach(s.level, s.might());
+        let bound = self.trips().bound(s);
+        let pick_up = self.availability().dungeon_quests(d).find(|&i| {
+            let iu = i as usize;
+            let stop = Stop::quest(i, Kind::Accept);
+            let lower = bound.at(&self.places().pos(s, stop));
+            !s.accepted[iu]
+                && !s.turned[iu]
+                && s.log < self.params.quest_log_size
+                && self.quest(i).min_level <= s.level
+                && self.combat().guard_need(&self.quest(i).start_guard) <= reach
+                && self.availability().can_accept(s, i)
+                && lower.is_finite()
+                && self.worth().worth_it(s, i, s.level, lower)
+        });
+        Some(match pick_up {
+            Some(i) => Stop::quest(i, Kind::Accept),
+            None => Stop {
+                index: d as u32,
+                kind: Kind::Dungeon,
+            },
         })
     }
 }
@@ -843,6 +1073,61 @@ impl Planner<'_> {
 #[cfg(test)]
 mod deadline_tests {
     use super::*;
+
+    #[test]
+    fn an_unscheduled_deadline_does_not_drop_later_optional_work() {
+        let mut p = crate::plan::tests::quests_at_start(2);
+        p.model.quests[0].required = true;
+        p.model.quests[0].mandatory = true;
+        p.model.quests[0].priority_deadline = Some(1);
+        p.model.quests[0].completion_window.max_level = Some(1);
+        p.model.quests[1].min_level = 3;
+        let plan = Planner::new(&p.model, &p.world, &p.params, &p.profile);
+        let route = vec![Stop::quest(1, Kind::Accept), Stop::quest(1, Kind::TurnIn)];
+        assert_eq!(plan.settle_once(&route), route);
+    }
+
+    #[test]
+    fn replay_leaves_out_optional_work_that_grinds_past_a_deadline() {
+        let mut p = crate::plan::tests::quests_at_start(2);
+        p.model.quests[0].required = true;
+        p.model.quests[0].mandatory = true;
+        p.model.quests[0].priority_deadline = Some(1);
+        p.model.quests[0].completion_window.max_level = Some(1);
+        p.model.quests[1].min_level = 3;
+        let plan = Planner::new(&p.model, &p.world, &p.params, &p.profile);
+        let route = vec![
+            Stop::quest(1, Kind::Accept),
+            Stop::quest(1, Kind::TurnIn),
+            Stop::quest(0, Kind::Accept),
+            Stop::quest(0, Kind::TurnIn),
+        ];
+        assert!(plan.simulate(&route, None).is_none());
+        let settled = plan.settle(route);
+        assert_eq!(
+            settled,
+            vec![Stop::quest(0, Kind::Accept), Stop::quest(0, Kind::TurnIn)]
+        );
+        assert!(plan.simulate(&settled, None).is_some());
+    }
+
+    #[test]
+    fn a_nearby_optional_turn_in_does_not_spend_the_deadline_level() {
+        let mut p = crate::plan::tests::quests_at_start(2);
+        p.model.quests[0].required = true;
+        p.model.quests[0].mandatory = true;
+        p.model.quests[0].priority_deadline = Some(1);
+        p.model.quests[0].completion_window.max_level = Some(1);
+        p.model.quests[0].starts[0].pos.x += 10_000.0;
+        p.model.quests[1].xp = 500;
+        p.model.initial.accepted = vec![1];
+        let plan = Planner::new(&p.model, &p.world, &p.params, &p.profile);
+        let route = plan.greedy();
+        assert!(plan.simulate(&route, None).is_some(), "{route:?}");
+        let required = route.iter().position(|s| *s == Stop::quest(0, Kind::TurnIn)).unwrap();
+        let optional = route.iter().position(|s| *s == Stop::quest(1, Kind::TurnIn)).unwrap();
+        assert!(required < optional, "{route:?}");
+    }
 
     #[test]
     fn priority_uses_the_highest_member_still_needing_the_deadline_quest() {

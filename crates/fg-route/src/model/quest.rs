@@ -5,7 +5,7 @@ use super::builder::QuestBuilder;
 use super::givers::Givers;
 use super::selection::QuestSkill;
 use super::sources::{LinkKind, ObjectiveKind, QuestRow, SourceKind};
-use super::types::{CompletionWindow, Objective, Quest};
+use super::types::{CompletionWindow, EntityKind, Objective, Quest};
 
 impl QuestBuilder<'_> {
     pub(super) fn assemble(
@@ -23,7 +23,15 @@ impl QuestBuilder<'_> {
         let (pre_all, pre_any) = self.prerequisites(r.id, &givers.item_pre);
         let guard = |locs: &[super::types::Loc]| {
             locs.iter()
-                .map(|l| self.sources.guards.around(&l.pos))
+                // A creature gives the quest in a town its own side's guards watch; an item is
+                // found where it lies, among the camps of the other side too.
+                .map(|l| {
+                    if l.kind == EntityKind::Item {
+                        self.sources.guards.around_hostile(&l.pos)
+                    } else {
+                        self.sources.guards.around(&l.pos)
+                    }
+                })
                 .fold(super::types::Guard::default(), super::types::Guard::max)
         };
         let (start_guard, end_guard) = (guard(&givers.starts), guard(&givers.ends));
@@ -56,9 +64,7 @@ impl QuestBuilder<'_> {
             mandatory: zone_forced
                 || group_class_quest
                     && (self.profile.required_class_quests.iter().any(|n| n == &r.name)
-                        || self.params.all_class_quests
-                            && r.min_level.unwrap_or(1) <= self.profile.to_level
-                            && !self.sources.repeatable.contains(&r.id)),
+                        || self.params.all_class_quests && r.min_level.unwrap_or(1) <= self.profile.to_level),
             zone_forced,
             required: false,
             completion_window: CompletionWindow::default(),
@@ -146,15 +152,20 @@ impl QuestBuilder<'_> {
         (pre_all, pre_any)
     }
 
-    /// The quests to hold in the log when taking it: those giving a bag that holds an item it
-    /// asks for, unless its own starting item gives it.
+    /// The quests to hold in the log when taking it: its parent when it is a child quest, and
+    /// those giving a bag that holds an item it asks for, unless its own starting item gives it.
     fn pre_held(&self, r: &QuestRow) -> Vec<i64> {
         let own = |item: i64| {
             r.source_item.is_some_and(|s| {
                 s == item || (self.sources.item_origins.get(&item)).is_some_and(|o| o.contains(&(SourceKind::Item, s)))
             })
         };
-        let mut held: Vec<i64> = Vec::new();
+        // A child quest is offered while its parent is in the log.
+        let mut held: Vec<i64> = (self.sources.links.iter())
+            .filter(|(_, links)| links.iter().any(|(k, c)| *k == LinkKind::Child && *c == r.id))
+            .map(|(parent, _)| *parent)
+            .collect();
+        held.sort_unstable();
         for o in self.sources.objectives.get(&r.id).into_iter().flatten() {
             if o.0 != ObjectiveKind::Item {
                 continue;

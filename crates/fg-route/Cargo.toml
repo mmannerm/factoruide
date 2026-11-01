@@ -19,13 +19,25 @@ thiserror = "2"
 toml = "1"
 zstd = "0.14"
 
+[features]
+# Small worlds and models built by hand, for tests (`fg_route::testing`).
+testing = []
+
 [lints]
 workspace = true
 
 [dev-dependencies]
+# The prepare example lists the slow queries (`Connection::profile`).
+rusqlite = { version = "0.40", features = ["bundled", "trace"] }
+# The integration tests build their worlds with `fg_route::testing`.
+fg-route = { path = ".", features = ["testing"] }
 criterion = { version = "0.8.2", default-features = false, features = ["cargo_bench_support"] }
 proptest = { version = "1", default-features = false, features = ["std"] }
 
 [[bench]]
 name = "walks"
+harness = false
+
+[[bench]]
+name = "prepare"
 harness = false

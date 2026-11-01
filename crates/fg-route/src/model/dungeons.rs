@@ -114,12 +114,16 @@ pub(super) fn load_dungeons(
         });
     }
     let mut inside = HashMap::new();
-    let mut stmt = conn.prepare("SELECT DISTINCT entity_type, entity_id, zone_id FROM m_spawn")?;
-    for row in stmt.query_map([], |r| {
-        Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?))
-    })? {
-        let (t, id, zone) = row?;
-        if let (Some(&d), Some(kind)) = (by_area.get(&zone), EntityKind::parse(&t)) {
+    let places = crate::memo::rows(conn, "places of spawns", 0, || {
+        let mut stmt = conn.prepare("SELECT DISTINCT entity_type, entity_id, zone_id FROM m_spawn")?;
+        let rows = stmt.query_map([], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?))
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    })?;
+    for (t, id, zone) in places.iter() {
+        let (id, zone) = (*id, *zone);
+        if let (Some(&d), Some(kind)) = (by_area.get(&zone), EntityKind::parse(t)) {
             inside.insert((kind, id), d);
         }
     }
@@ -166,13 +170,50 @@ pub(super) fn faction_entrances(conn: &Connection, faction: Faction) -> Result<H
 /// with an objective that lives only inside it. The app shows it and the planner runs the dungeon from it
 /// (`Params::dungeon_from`, `Params::dungeon_to`).
 pub fn dungeon_levels(conn: &Connection, defs: &[DungeonDef]) -> Result<HashMap<i64, i64>> {
+    let mut out = filed_levels(conn)?;
+    for def in defs {
+        if let Some([low, high]) = def.levels {
+            out.insert(def.area, (low + high + 1) / 2);
+        }
+    }
+    Ok(out)
+}
+
+/// The median level of the quests filed under, or done only inside, each dungeon: the same at
+/// every plan with the same database, so kept (the query takes a third of a second).
+fn filed_levels(conn: &Connection) -> Result<HashMap<i64, i64>> {
+    static KEPT: std::sync::Mutex<Vec<(u64, HashMap<i64, i64>)>> = std::sync::Mutex::new(Vec::new());
+    let stamp = crate::world::file_stamp(conn);
+    if let Some(stamp) = stamp
+        && let Some((_, levels)) = KEPT
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .iter()
+            .find(|(s, _)| *s == stamp)
+    {
+        return Ok(levels.clone());
+    }
+    let levels = read_filed_levels(conn)?;
+    if let Some(stamp) = stamp {
+        KEPT.lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push((stamp, levels.clone()));
+    }
+    Ok(levels)
+}
+
+fn read_filed_levels(conn: &Connection) -> Result<HashMap<i64, i64>> {
     let mut stmt = conn.prepare(
         "WITH inside(dungeon, zone) AS (
            SELECT area, area FROM dungeon
            UNION SELECT d.area, j.value FROM dungeon d, json_each(coalesce(d.alt_areas, '[]')) j),
          -- What lives only in one dungeon (nowhere outside it).
+         -- Only the creatures and objects with a spawn in a dungeon are looked at.
          within(dungeon, entity_type, entity_id) AS (
-           SELECT min(i.dungeon), s.entity_type, s.entity_id FROM m_spawn s LEFT JOIN inside i ON i.zone = s.zone_id
+           SELECT min(i.dungeon), s.entity_type, s.entity_id
+           FROM (SELECT DISTINCT entity_type, entity_id FROM m_spawn WHERE zone_id IN (SELECT zone FROM inside)) e
+           JOIN m_spawn s ON s.entity_type = e.entity_type AND s.entity_id = e.entity_id
+           LEFT JOIN inside i ON i.zone = s.zone_id
            GROUP BY s.entity_type, s.entity_id HAVING count(i.dungeon) = count(*) AND min(i.dungeon) = max(i.dungeon)),
          filed(dungeon, id, level) AS (
            SELECT i.dungeon, q.id, q.level FROM inside i JOIN m_quest q ON q.zone_or_sort = i.zone
@@ -193,18 +234,12 @@ pub fn dungeon_levels(conn: &Connection, defs: &[DungeonDef]) -> Result<HashMap<
         let (dungeon, level) = row?;
         levels.entry(dungeon).or_default().push(level);
     }
-    let mut out: HashMap<i64, i64> = (levels.into_iter())
+    Ok((levels.into_iter())
         .map(|(dungeon, mut l)| {
             l.sort_unstable();
             (dungeon, l[l.len() / 2])
         })
-        .collect();
-    for def in defs {
-        if let Some([low, high]) = def.levels {
-            out.insert(def.area, (low + high + 1) / 2);
-        }
-    }
-    Ok(out)
+        .collect())
 }
 
 /// Each dungeon's level (`dungeon_levels`, else its planned quests' median) and the window it is
@@ -223,7 +258,12 @@ pub(super) fn set_dungeon_levels(
             .map(|q| q.level)
             .collect();
         if own.is_empty() {
+            // Not planned, but its levels are known when a request forces it (`check_dungeon_levels`).
             dungeon.min_level = i64::MAX;
+            if let Some(&level) = levels.get(&dungeon.area) {
+                dungeon.mob_level = level;
+                dungeon.max_level = (level + window.1).min(max_level);
+            }
             continue;
         }
         own.sort_unstable();
