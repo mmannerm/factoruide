@@ -224,9 +224,9 @@ pub fn prepare(
             .iter()
             .any(|q| q.id == crate::xp::SLEEPING_BAG_QUEST)
     {
-        profile.required_quests.push(crate::model::QuestRequirement {
+        profile.required_quests.push(model::QuestRequirement {
             id: crate::xp::SLEEPING_BAG_QUEST,
-            window: crate::model::CompletionWindow::default(),
+            window: model::CompletionWindow::default(),
         });
     }
     progress("Loading the world");

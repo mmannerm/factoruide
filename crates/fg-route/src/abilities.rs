@@ -76,6 +76,7 @@ impl Abilities {
                 rank: None,
                 requires: 0,
                 quests: vec![],
+                on_accept: false,
                 travel: Some(Travel {
                     bonus: def.bonus,
                     activation: def.activation,

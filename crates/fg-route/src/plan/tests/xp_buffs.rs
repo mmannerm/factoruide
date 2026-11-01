@@ -311,6 +311,7 @@ fn group_exports_each_recipients_quest_reward() {
             name: "Mate".into(),
             race_id: p.profile.race_id,
             class_id: p.profile.class_id,
+            class_name: p.profile.class_name.clone(),
             spell_weights: vec![],
             professions: vec![],
         }];
