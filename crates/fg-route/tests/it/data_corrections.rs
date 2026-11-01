@@ -177,14 +177,14 @@ fn the_blacklisted_fools_stout_is_not_planned_as_a_child() {
         .err()
         .unwrap();
     assert!(format!("{error:#}").contains("unavailable in this edition"));
-    let findings = fg_route::audit::audit(&conn, &o, &["child-quests".into()], &|_| {}).unwrap();
-    assert!(!findings.iter().any(|f| f.key == "quest 1119 child 1127"));
     let p = job::prepare(&conn, &o, &request(&json!([1119])), &|_| {}).unwrap();
+    assert!(p.model.quests[p.model.index[&1119]].required);
+    assert!(!p.model.index.contains_key(&1127));
     assert!(
         p.model.quests[p.model.index[&1119]]
             .objectives
             .iter()
-            .all(|o| o.child != Some(1127))
+            .all(|o| !o.handed_by.contains(&1127))
     );
 }
 
