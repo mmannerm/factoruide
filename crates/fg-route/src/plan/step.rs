@@ -74,7 +74,7 @@ impl Planner<'_> {
         }
         let every = s.level >= s.trained + self.params.train_every;
         let every_late = s.level >= s.trained + self.params.train_every + self.params.train_max_delay;
-        let (due, late) = match self.model.power.as_ref().filter(|p| p.has_spells()) {
+        let (mut due, late) = match self.model.power.as_ref().filter(|p| p.has_spells()) {
             Some(p) => {
                 let gain = p.train_gain(
                     s.trained,
@@ -91,6 +91,14 @@ impl Planner<'_> {
             }
             None => (every, every_late),
         };
+        if self.model.initial.mates.is_empty() {
+            let abilities = &self.model.abilities;
+            let available = s.abilities | abilities.trained(s.abilities, s.level);
+            let gain = abilities.speed(available, s.level, self.params)
+                / abilities.speed(s.abilities, s.level, self.params)
+                - 1.0;
+            due |= gain >= self.params.train_min_gain && gain > 0.0;
+        }
         if !due {
             return;
         }
@@ -156,7 +164,7 @@ impl Planner<'_> {
     pub(crate) fn sell_at(&self, s: &mut State, i: usize, record: &mut impl FnMut(&State, Event)) {
         let vendor = &self.model.vendors[i];
         let detour = (s.landed == Landed::No && s.pos.dist(&vendor.pos) <= self.params.sell_radius)
-            .then(|| 2.0 * self.trips().walk(&s.pos, &vendor.pos, s.level))
+            .then(|| 2.0 * self.trips().at(s).walk(&s.pos, &vendor.pos, s.level))
             .filter(|d| d.is_finite());
         if let Some(detour) = detour {
             s.time += detour;
@@ -177,9 +185,17 @@ impl Planner<'_> {
         let trainer = &self.model.trainers[i];
         // Close as the crow flies, but maybe not on foot (another side of the mountains).
         let detour = (s.landed == Landed::No && s.pos.dist(&trainer.pos) <= self.params.train_radius)
-            .then(|| 2.0 * self.trips().walk(&s.pos, &trainer.pos, s.level))
-            .filter(|d| d.is_finite());
-        if let Some(detour) = detour {
+            .then(|| {
+                let trips = self.trips().at(s);
+                let learned = s.abilities | self.model.abilities.trained(s.abilities, s.level);
+                let outbound = trips.walk(&s.pos, &trainer.pos, s.level);
+                (
+                    outbound,
+                    outbound + trips.with_movement(learned).walk(&s.pos, &trainer.pos, s.level),
+                )
+            })
+            .filter(|(_, total)| total.is_finite());
+        if let Some((_, detour)) = detour {
             s.time += detour;
             s.spent.travel += detour;
         } else {
@@ -192,7 +208,7 @@ impl Planner<'_> {
         let abilities_before = s.abilities;
         s.trained = s.level;
         for (k, tp) in self.model.teleports.iter().enumerate() {
-            if tp.quests.is_empty() && tp.level <= s.level && tp.to.zone == trainer.zone {
+            if tp.ability == 0 && tp.level <= s.level && tp.to.zone == trainer.zone {
                 s.taught |= 1 << k;
             }
         }
@@ -202,6 +218,7 @@ impl Planner<'_> {
             s,
             Event::Train {
                 trainer: i,
+                outbound: detour.map_or(0.0, |(outbound, _)| outbound),
                 since,
                 abilities: s.abilities & !abilities_before,
             },
@@ -315,6 +332,7 @@ impl Planner<'_> {
             self.growth().gather(s, q.starts[0].zone, q.start_kills);
         }
         s.accepted.set(i as usize, true);
+        s.abilities |= self.model.abilities.accepted(q.id);
         s.log += 1;
         s.held += u16::from(q.carried);
         if let Some(limit) = q.time_limit {
@@ -324,15 +342,19 @@ impl Planner<'_> {
 
     /// Turn in quest `i`, wearing its reward items when they are upgrades. Returns the item
     /// picked among the choices.
-    pub(crate) fn turn_in(&self, s: &mut State, i: u32) -> Option<i64> {
+    pub(crate) fn turn_in(&self, s: &mut State, i: u32, rewards: &[i64; crate::job::GROUP_MAX]) -> Option<i64> {
+        if let Some((member, level)) = self.availability().completion_error(s, i) {
+            s.completion_error = Some((i, member, level));
+            return None;
+        }
         let q = self.quest(i);
         self.release(s, i);
         s.timers.retain(|&(q, _)| q != i);
-        s.turned.set(i as usize, true);
         s.log -= 1;
         s.started.retain(|&(q, _, _)| q != i);
         s.required_left = s.required_left.saturating_sub(u32::from(q.required));
-        s.spent.quest_xp += self.growth().reward(s, i);
+        s.spent.quest_xp += self.growth().reward(s, rewards);
+        s.turned.set(i as usize, true);
         self.growth().gain_power(s, i);
         if s.forced_left > 0 {
             let closed = (q.exclusive.iter())
@@ -425,8 +447,23 @@ impl Planner<'_> {
         self.grind_to_gate(s, stop, spot, record);
         let loc = self.arrive(s, stop, spot, record);
         if !(Self::timed(stop.kind) && self.failed_in_time(s, stop.index, record)) {
-            let picked = self.do_stop(s, stop, spot);
-            record(s, Event::Stop { stop, loc });
+            let rewards = if stop.kind == Kind::TurnIn {
+                self.growth().quest_rewards(s, stop.index)
+            } else {
+                [0; crate::job::GROUP_MAX]
+            };
+            let picked = self.do_stop(s, stop, spot, &rewards);
+            if s.completion_error.is_some() {
+                return;
+            }
+            record(
+                s,
+                Event::Stop {
+                    stop,
+                    loc,
+                    reward_xp: rewards,
+                },
+            );
             if let Some(item) = picked {
                 record(
                     s,
@@ -510,43 +547,46 @@ impl Planner<'_> {
         // XP to `target` from (level, xp), and the time it takes alone.
         let combat = self.combat();
         let group = self.params.group_xp_share() * self.params.group_damage();
-        let need = |level: i64, xp: i64| -> (i64, f64) {
-            let (mut l, mut x, mut need, mut time) = (level, xp, 0, 0.0);
+        let need = |level: i64, xp: i64, rested: i64, member: u8| -> (i64, f64, i64) {
+            let (mut l, mut x, mut need, mut time, mut left) = (level, xp, 0, 0.0, rested);
             while at(l, x) < target && l < rules.max_level {
                 let bar = rules.to_next_level(l);
                 let to = ((target - l as f64).min(1.0) * bar as f64).ceil() as i64;
                 let gained = (to - x).max(0);
                 need += gained;
-                time += gained as f64 / (combat.grind_rate(l, s.bonus, &s.pos) / group);
+                let (work, consumed) = growth.kill_work(s, member, gained, left);
+                left -= consumed;
+                time += work / (combat.grind_rate(l, s.bonus, &s.pos) / group);
                 if to >= bar {
                     (l, x) = (l + 1, 0);
                 } else {
                     x = to;
                 }
             }
-            (need, time)
+            (need, time, rested - left)
         };
         let mut members = 0u8;
         let mut seconds = 0.0f64;
-        let (own, t) = need(s.level, s.xp);
+        let (own, t, own_rested) = need(s.level, s.xp, s.rested, s.order[0]);
         if own > 0 {
             members |= 1 << s.order[0];
             seconds = seconds.max(t);
         }
-        let mut gains = [0i64; super::state::MATES];
+        let mut gains = [(0i64, 0i64); super::state::MATES];
         for (k, (m, g)) in s.mates[..n].iter().zip(&mut gains).enumerate() {
-            let (gain, t) = need(m.level, m.xp);
+            let (gain, t, consumed) = need(m.level, m.xp, m.rested, s.order[k + 1]);
             if gain > 0 {
                 members |= 1 << s.order[k + 1];
                 seconds = seconds.max(t);
-                *g = gain;
+                *g = (gain, consumed);
             }
         }
         if members == 0 {
             return;
         }
-        for (k, &gain) in gains.iter().enumerate().take(n) {
+        for (k, &(gain, consumed)) in gains.iter().enumerate().take(n) {
             let m = &mut s.mates[k];
+            m.rested -= consumed;
             m.xp += gain;
             while m.level < rules.max_level && m.xp >= rules.to_next_level(m.level) {
                 m.xp -= rules.to_next_level(m.level);
@@ -554,6 +594,7 @@ impl Planner<'_> {
             }
         }
         if own > 0 {
+            s.rested -= own_rested;
             s.spent.grind_xp += own;
             s.grind_used += own;
             growth.gain(s, own);
@@ -636,12 +677,16 @@ impl Planner<'_> {
                 let q = self.quest(stop.index);
                 let own = q.min_level.max(self.combat().guard_level(&q.start_guard, s.might()));
                 if q.time_limit.is_some() {
-                    own.max(self.timed_gate(q, s))
+                    own.max(self.timed_gate(q, s)).max(self.completion_gate(s, stop.index))
                 } else {
                     own
                 }
             }
-            Kind::TurnIn => self.combat().guard_level(&self.quest(stop.index).end_guard, s.might()),
+            Kind::TurnIn => {
+                let q = self.quest(stop.index);
+                self.completion_gate(s, stop.index)
+                    .max(self.combat().guard_level(&q.end_guard, s.might()))
+            }
             Kind::Objective(k) => self.combat().level_at(
                 self.quest(stop.index),
                 spot.unwrap_or(&self.quest(stop.index).objectives[k as usize]),
@@ -650,6 +695,14 @@ impl Planner<'_> {
             Kind::Dungeon => self.model.dungeons[i].min_level,
             _ => 0,
         }
+    }
+
+    fn completion_gate(&self, s: &State, i: u32) -> i64 {
+        let floor = self.availability().completion_floor(s, i);
+        self.quest(i)
+            .completion_window
+            .min_level
+            .map_or(0, |min| s.level + (min - floor).max(0))
     }
 
     /// Level a timed quest is taken at: the one its objectives and its turn-in need (each at its
@@ -680,6 +733,17 @@ impl Planner<'_> {
         }
         self.grind_at_camps(s, gate, record);
         self.train(s, record);
+        if (stop.kind == Kind::TurnIn || stop.kind == Kind::Accept && self.quest(stop.index).time_limit.is_some())
+            && let Some(min) = self.quest(stop.index).completion_window.min_level
+        {
+            self.keep_lowest(s);
+            // Group members gain different XP from the same kills.
+            while s.time.is_finite() && self.availability().completion_floor(s, stop.index) < min {
+                self.grind_at_camps(s, s.level + 1, record);
+                self.keep_lowest(s);
+                self.train(s, record);
+            }
+        }
     }
 
     /// Travel to the stop, picking up a flight path close to it on the way.
@@ -707,7 +771,12 @@ impl Planner<'_> {
         if s.known & (1u128 << node) != 0 {
             return;
         }
-        let detour = 2.0 * self.trips().walk(&s.pos, &self.world.taxi_nodes[node].pos, s.level) + 5.0;
+        let detour = 2.0
+            * self
+                .trips()
+                .at(s)
+                .walk(&s.pos, &self.world.taxi_nodes[node].pos, s.level)
+            + 5.0;
         if !detour.is_finite() {
             return;
         }
@@ -718,7 +787,13 @@ impl Planner<'_> {
     }
 
     /// What the stop itself does. Returns the reward item picked on a turn-in.
-    fn do_stop(&self, s: &mut State, stop: Stop, spot: Option<&Objective>) -> Option<i64> {
+    fn do_stop(
+        &self,
+        s: &mut State,
+        stop: Stop,
+        spot: Option<&Objective>,
+        rewards: &[i64; crate::job::GROUP_MAX],
+    ) -> Option<i64> {
         let i = stop.index as usize;
         match stop.kind {
             Kind::Accept => self.accept(s, stop.index),
@@ -726,7 +801,7 @@ impl Planner<'_> {
                 let o = spot.unwrap_or(&self.quest(stop.index).objectives[k as usize]);
                 self.complete_objective(s, stop.index, k, o);
             }
-            Kind::TurnIn => return self.turn_in(s, stop.index),
+            Kind::TurnIn => return self.turn_in(s, stop.index, rewards),
             Kind::LearnFlight => {
                 s.known |= 1u128 << i;
                 s.time += 5.0;

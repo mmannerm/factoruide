@@ -10,6 +10,8 @@ use serde::{Deserialize, Serialize};
 pub struct Params {
     /// Running speed in yards/second.
     pub run_speed: f64,
+    /// Assume Feral Swiftness and Improved Ghost Wolf are learned; forms still need unlocking.
+    pub assume_movement_talents: bool,
     /// Level at which the character gets a mount, and its speed bonus.
     pub mount_level: i64,
     pub mount_bonus: f64,
@@ -373,6 +375,10 @@ pub struct Params {
     pub group_sync_max: f64,
     /// Distance from an area's center at which passing by discovers it (exploration XP).
     pub explore_radius: f64,
+    /// Forever: keep the 5% Well Fed kill-XP bonus active, without food or refresh time.
+    pub food_xp: bool,
+    /// Forever: require the Sleeping Bag quest and keep its three-stack XP buff active after it.
+    pub sleeping_bag: bool,
     /// Game version: experience rules, level cap.
     pub edition: crate::xp::Edition,
 }
@@ -445,6 +451,7 @@ impl Default for Params {
     fn default() -> Self {
         Self {
             run_speed: 7.0,
+            assume_movement_talents: true,
             mount_level: 40,
             mount_bonus: 0.6,
             flight_speed: 30.0,
@@ -591,6 +598,8 @@ impl Default for Params {
             group_sync_weight: 1.0,
             group_sync_max: 1.0,
             explore_radius: 250.0,
+            food_xp: false,
+            sleeping_bag: false,
             edition: crate::xp::Edition::Forever,
         }
     }

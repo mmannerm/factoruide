@@ -18,4 +18,5 @@ npx -y @johnnymorganz/stylua-bin@2.5.2 --check addon
 scripts/addon-test.sh >/dev/null
 
 if has shellcheck; then shellcheck scripts/*.sh; else echo "skip: shellcheck"; fi
+python3 -I scripts/test_forever_data.py
 echo "all checks passed"

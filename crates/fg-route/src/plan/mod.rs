@@ -74,7 +74,7 @@ use state::{Flags, Landed, Planned};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use step::{CampIndex, VendorIndex, camp_index, vendor_index};
-use travel::{FlightTables, Legs, Trips};
+use travel::{FlightTables, Grounds, Legs, Trips};
 use worth::Worth;
 
 /// What a planner simulates: its own routes, or an imposed route replayed as it is (no grinding
@@ -97,6 +97,7 @@ pub struct Planner<'a> {
     flights: FlightTables,
     /// Trips already computed (see `travel::Legs`).
     legs: Legs,
+    grounds: Grounds,
     /// Mobs farmed on each walk, by level (see `on_the_way::farm_along`).
     farm_walks: FarmWalks,
     /// The camps nearest to each place grinding starts at (see `camp::camp`).
@@ -166,6 +167,7 @@ impl<'a> Planner<'a> {
             profile,
             flights: FlightTables::default(),
             legs: Legs::default(),
+            grounds: Grounds::default(),
             farm_walks: FarmWalks::default(),
             near_camps: NearCamps::default(),
             farm_all: Cell::new(false),
@@ -309,6 +311,7 @@ impl<'a> Planner<'a> {
             turned: Flags::new(n),
             dropped: Vec::new(),
             objectives: vec![0; n],
+            completion_error: None,
             timers: Vec::new(),
             started: Vec::new(),
             together: state::Together::default(),
@@ -317,8 +320,15 @@ impl<'a> Planner<'a> {
             landed: Landed::No,
             planned: Rc::new(Planned::default()),
             at: 0,
-            class_bonus: 0.0,
-            powers: 0,
+            class_bonus: self
+                .profile
+                .class_powers
+                .iter()
+                .enumerate()
+                .filter(|(k, _)| self.model.known_class_powers & (1 << k) != 0)
+                .map(|(_, (_, power))| Growth::class_power_levels(*power))
+                .sum(),
+            powers: self.model.known_class_powers,
             gear: crate::power::Gear::default(),
             bonus: 0.0,
             gear_bonus: 0.0,
@@ -446,6 +456,8 @@ impl<'a> Planner<'a> {
             model: self.model,
             flights: &self.flights,
             legs: &self.legs,
+            grounds: &self.grounds,
+            abilities: self.model.initial.abilities,
             explicit: self.explicit,
             open_walks: self.open_walks.get(),
         }

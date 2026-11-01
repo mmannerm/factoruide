@@ -93,6 +93,40 @@ fn sleeping_bag_requirements_are_limited_to_forever() {
 }
 
 #[test]
+fn sleeping_bag_option_requires_the_chain_and_recognizes_imported_completion() {
+    let conn = database_of("forever");
+    let mut overrides = Overrides::load_edition(&repo().join("overrides"), Edition::Forever).unwrap();
+    overrides.params.sleeping_bag = true;
+    for (race, class, starter, other) in [
+        ("human", "warrior", 79008, 79007),
+        ("skyborne_horde", "druid", 79007, 79008),
+    ] {
+        let mut req = request(race, class, &[]);
+        req.from_level = 35;
+        req.to_level = 36;
+        let p = job::prepare(&conn, &overrides, &req, &|_| {}).unwrap();
+        for id in [starter, 79192, 79980, 79974, 79975, 79976] {
+            assert!(p.model.quests[p.model.index[&id]].required, "required bag quest {id}");
+        }
+        assert!(!p.model.index.contains_key(&other));
+        req.start = Some(StartState {
+            level: 35,
+            completed: vec![QuestId(79976)],
+            ..StartState::default()
+        });
+        let imported = job::prepare(&conn, &overrides, &req, &|_| {}).unwrap();
+        assert!(imported.model.quests.iter().all(|q| !q.required));
+    }
+    for edition in [Edition::Classic, Edition::Tbc] {
+        let conn = database_of(edition.key());
+        let mut other = Overrides::load_edition(&repo().join("overrides"), edition).unwrap();
+        other.params.sleeping_bag = true;
+        let p = job::prepare(&conn, &other, &request("human", "warrior", &[]), &|_| {}).unwrap();
+        assert!(p.profile.required_quests.is_empty());
+    }
+}
+
+#[test]
 fn required_quest_completed_profile_needs_no_repeat() {
     let conn = database();
     let overrides = Overrides::load_edition(&repo().join("overrides"), Edition::Classic).unwrap();
@@ -425,6 +459,26 @@ fn the_warlocks_gold_bloodrobe_chain_can_be_required() {
     assert!(quest.mandatory);
 }
 
+#[test]
+fn sleeping_bag_option_preserves_an_explicit_completion_window() {
+    let conn = database_of("forever");
+    let o = Overrides::load_edition(&repo().join("overrides"), Edition::Forever).unwrap();
+    let req = serde_json::from_value(serde_json::json!({
+        "race":"human","class":"warrior","from_level":1,"to_level":60,
+        "required_class_quests":[],"required_quests":[{"quest":79976,"min_level":20,"max_level":60}],
+        "params":{"edition":"forever","sleeping_bag":true,"food_xp":true}
+    }))
+    .unwrap();
+    let p = job::prepare(&conn, &o, &req, &|_| {}).unwrap();
+    let choices: Vec<_> = p.profile.required_quests.iter().filter(|q| q.id == 79976).collect();
+    assert_eq!(choices.len(), 1);
+    assert_eq!(choices[0].window.min_level, Some(20));
+    assert_eq!(
+        p.model.quests[p.model.index[&79976]].completion_window.max_level,
+        Some(60)
+    );
+}
+
 /// A must-have quest whose items drop inside a dungeon (Trolls of a Feather, GitHub #73) runs the
 /// dungeon, which was not planned unless the player forced it too.
 #[test]
@@ -436,7 +490,12 @@ fn a_required_quest_inside_a_dungeon_runs_the_dungeon() {
     req.from_level = 40;
     req.to_level = 58;
     let route = job::plan(&conn, &overrides, &req, &|_| {}).unwrap().route;
-    assert!(route.steps.iter().any(|s| s.kind == fg_route::export::StepKind::TurnIn && s.quest == Some(8422)));
+    assert!(
+        route
+            .steps
+            .iter()
+            .any(|s| s.kind == fg_route::export::StepKind::TurnIn && s.quest == Some(8422))
+    );
 }
 
 /// A must-have quest whose child is a repeatable quest (Need for a Cure and Finding the
@@ -450,5 +509,10 @@ fn a_required_quest_with_a_repeatable_child_is_planned() {
     req.from_level = 8;
     req.to_level = 10;
     let route = job::plan(&conn, &overrides, &req, &|_| {}).unwrap().route;
-    assert!(route.steps.iter().any(|s| s.kind == fg_route::export::StepKind::TurnIn && s.quest == Some(812)));
+    assert!(
+        route
+            .steps
+            .iter()
+            .any(|s| s.kind == fg_route::export::StepKind::TurnIn && s.quest == Some(812))
+    );
 }

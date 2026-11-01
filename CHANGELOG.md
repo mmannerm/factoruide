@@ -10,6 +10,8 @@ An addon change also goes, in the same words, under Unreleased in that addon's o
 
 ### App
 
+- Optional Forever food and Sleeping Bag XP bonuses, with the bag's quest chain included.
+- Must-have quests can have an optional minimum and maximum turn-in level.
 - The dungeons' levels are chosen with a slider above their list: from how many levels below their monsters to how many above (the progression profile sets them back to its own). Each dungeon shows the levels it will be run at, and the guide never runs it outside them.
 - A dungeon can be forced with its quests (a click more): the guide takes every quest of it the character can take, even those worth little (GitHub #46).
 - New guide: a block for the guide (name, target level) and one for each player (a recorded character, a pasted export or a new one, its level, race, class and professions); "+ Add a player" makes a group guide, up to 5 players.
@@ -18,17 +20,24 @@ An addon change also goes, in the same words, under Unreleased in that addon's o
 - The web app can send a problem report from its form, like the desktop app (GitHub #80).
 - A search box above the guide's steps marks every step of a quest (typed by name or ID) and goes from one to the next (GitHub #79).
 - In the guide editor, a quest already in the guide says at which step ("already in the guide · step 313"); the number shows that step.
+- Advanced settings let you turn off the assumption that movement talents are learned.
 - In the guide editor, a step that only a zone too strong for the character makes possible (the flight path of Gadgetzan from Thousand Needles at level 34) is accepted, with a warning on the step, instead of being impossible. Computed guides still keep out of those zones.
 - A new guide's character shows the flight paths it knows, by continent, and you can tick or untick them: the game only gives the addon those of the continent where a flight master's map is open, so the others are deduced from the quests done in their towns (marked as such), and what you change is kept for the character.
 - Before a guide is computed for a character already on its way, the app can show a few ways to begin (a zone, a flight, the hearthstone) with their estimated time, steps and quests, and you choose; the fastest is chosen at first. It is only shown when there is really a choice, and can be turned off ("Compare the starts").
 
 ### Guides
 
+- Forever: Cat Form trials use the entrance statue's stealth blessing; keep verified quest, training and wind-bridge corrections outside the bundled database.
+
+- Rested XP reduces pre-grinding and group catch-up work in every edition and is consumed from the character's finite pool. Group kill work is rounded only at the final player reward in every edition. Group guides export each player's quest XP, including its own Sleeping Bag bonus.
 - Death skips (option, off by default, in the play style): up to level 10 and a half, the guide has the character die to respawn at the nearest spirit healer when that is faster (no resurrection sickness before level 11). The guide editor has them as steps ("Die here").
 - Group guides: each player levels its own professions, from its own skill: their profession quests are planned for them, the group goes to the vendor when the fullest bags are, and each player's addon follows its own profession curve.
 - A quest item that rots is looted right before the objective using it: the Fresh Zhevra Carcass (30 minutes) just before Ishamuhale, instead of hours earlier (WoW Forever and Classic).
 - A must-have quest is planned even when its mobs are elites (Forever's Rare Books, whose books drop from Mother Fang and two other elites).
 - A quest item whose name holds a colon ("Picture Book: Fun with Elementals") is looted once, not six times.
+- Missing class unlocks keep their prerequisites; known unlocks are not repeated. Druids include Moonglade by default.
+- Without a combat spell catalog, trainer steps let the addon train all available spells.
+- Learned class movement spells affect walks entirely on exposed ground without swimming; most walks keep the usual estimate.
 - Guides complete must-have quests and their prerequisites, even past the target level.
 - A must-have quest whose objectives are inside a dungeon (Trolls of a Feather, Sunken Temple) runs that dungeon, without having to force it too.
 - WoW Forever: the new dungeons follow the game's level ranges, not their quests' levels: Ruins of Lordaeron 15-20 (was 21-22), Excavation Site 24-29, City of Dalaran 28-33.
@@ -62,6 +71,8 @@ An addon change also goes, in the same words, under Unreleased in that addon's o
 - WoW Forever: the library's rewards ask for ten, twenty and twenty-five different books, not every book, and the guide can take books on its way to earn them (GitHub #56).
 
 ### Addon
+
+- Group guides: quest XP counts each player's own reward, including its Sleeping Bag bonus.
 
 - The addon's separators are a bullet (•), which every client font has: the dot they used was a missing glyph in Russian (GitHub #78).
 - Death skip steps: done once back at the spirit healer.

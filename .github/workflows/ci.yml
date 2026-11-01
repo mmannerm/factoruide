@@ -63,7 +63,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       # The only code with `unsafe` that runs natively: the browser build's allocator.
       - name: Miri
-        run: cargo +nightly miri test -p fg-web --lib alloc::
+        run: "cargo +nightly miri test -p fg-web --lib alloc::"
 
   frontend:
     name: Frontend (tsc, oxlint)
@@ -111,3 +111,5 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - run: shellcheck scripts/*.sh
+      - name: Forever source snapshot
+        run: python3 -I scripts/test_forever_data.py

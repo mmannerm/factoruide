@@ -102,6 +102,8 @@ pub enum Event {
     /// Class training: `since` is the level of the previous training.
     Train {
         trainer: usize,
+        /// Outbound part of a nearby trainer detour; the return can use a newly learned spell.
+        outbound: f64,
         since: i64,
         abilities: u64,
     },
@@ -144,6 +146,8 @@ pub enum Event {
     Stop {
         stop: Stop,
         loc: Loc,
+        /// Quest XP actually awarded before a turn-in changed the character's level.
+        reward_xp: [i64; crate::job::GROUP_MAX],
     },
     /// Quest given up: it can no longer be finished (its dungeon is done or outleveled).
     Abandon {
@@ -279,6 +283,8 @@ pub(crate) struct State {
     pub(crate) dropped: Vec<u32>,
     /// Objectives done of each quest, a bit each.
     pub(crate) objectives: Vec<u8>,
+    /// An attempted turn-in outside its requested window: quest, member, level before reward.
+    pub(crate) completion_error: Option<(u32, u8, i64)>,
     /// Timed quests of the log: (quest, time by which the route must turn it in).
     pub(crate) timers: Vec<(u32, f64)>,
     /// Objectives started before the route (a character met in game), with the share already
@@ -335,6 +341,14 @@ pub(crate) struct State {
 }
 
 impl State {
+    pub(crate) fn member_levels(&self, mates: usize) -> impl Iterator<Item = (u8, i64)> + '_ {
+        std::iter::once((self.order[0], self.level)).chain(
+            self.mates[..mates]
+                .iter()
+                .enumerate()
+                .map(|(k, m)| (self.order[k + 1], m.level)),
+        )
+    }
     /// The group's players in `Profile` order: level and XP into it (empty alone).
     pub(crate) fn party(&self) -> Vec<(i64, i64)> {
         let n = self.mates.iter().take_while(|m| m.level > 0).count();
@@ -365,12 +379,11 @@ impl State {
     /// The class teleport `i` is learned: at its city's trainer (a mage learns Teleport: Ironforge
     /// in Ironforge), or on taking one of the quests teaching it.
     pub(crate) fn knows(&self, i: usize, tp: &crate::model::Teleport) -> bool {
-        tp.level <= self.trained
-            && if tp.quests.is_empty() {
-                self.taught & (1 << i) != 0
-            } else {
-                tp.quests.iter().any(|&q| self.accepted[q] || self.turned[q])
-            }
+        if tp.ability != 0 {
+            self.abilities & tp.ability != 0
+        } else {
+            tp.level <= self.trained && self.taught & (1 << i) != 0
+        }
     }
 }
 

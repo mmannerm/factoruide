@@ -219,7 +219,7 @@ impl Planner<'_> {
         // Shared paths in a hub: standalone costs overestimate the time.
         let mut time: f64 = doable
             .iter()
-            .map(|&i| self.worth().quest_cost(i, s.level, s.bonus))
+            .map(|&i| self.worth().quest_cost(i, s.level, s.bonus, s.abilities))
             .sum::<f64>()
             * 0.6;
         // Carried quests that can progress here are almost free.
@@ -248,7 +248,7 @@ impl Planner<'_> {
     fn work_group(&self, s: &mut State, route: &mut Vec<Stop>, groups: &Groups, g: usize) {
         let group = &groups.list[g];
         loop {
-            if self.ended(s) {
+            if self.ended(s) || self.aborted() || s.completion_error.is_some() {
                 return;
             }
             let mut best: Option<(f64, Stop)> = None;
@@ -335,7 +335,7 @@ impl Planner<'_> {
         // Groups where nothing progressed, ignored until the next level.
         let mut stuck: Vec<bool> = vec![false; groups.list.len()];
         let mut stuck_level = s.level;
-        while !self.ended(&s) && !self.aborted() {
+        while !self.ended(&s) && !self.aborted() && s.completion_error.is_none() {
             if s.level != stuck_level {
                 stuck.fill(false);
                 stuck_level = s.level;
@@ -456,7 +456,7 @@ impl Planner<'_> {
                     q.min_level,
                     self.worth().quest_value(i as u32, s.level),
                     self.model.unlocks[i],
-                    self.worth().quest_cost(i as u32, s.level, s.bonus),
+                    self.worth().quest_cost(i as u32, s.level, s.bonus, s.abilities),
                     starts
                 );
             }
@@ -493,7 +493,8 @@ impl Planner<'_> {
                     root.min_level,
                     self.worth().quest_value(j as u32, root.level),
                     self.model.unlocks[j],
-                    self.worth().quest_cost(j as u32, root.level, 0.0)
+                    self.worth()
+                        .quest_cost(j as u32, root.level, 0.0, self.model.initial.abilities)
                 );
             }
         }
@@ -570,5 +571,37 @@ impl Planner<'_> {
             }
         }
         best
+    }
+}
+
+#[cfg(test)]
+mod window_tests {
+    use super::*;
+
+    #[test]
+    fn a_missed_deadline_stops_group_work_and_remains_invalid() {
+        let mut p = crate::plan::tests::quests_at_start(2);
+        p.profile.to_level = 3;
+        p.model.quests[0].required = true;
+        p.model.quests[0].completion_window.max_level = Some(1);
+        p.model.quests[1].xp = 400;
+        let planner = Planner::new(&p.model, &p.world, &p.params, &p.profile);
+        let mut state = planner.initial_state();
+        let mut route = vec![
+            Stop::quest(1, Kind::Accept),
+            Stop::quest(1, Kind::TurnIn),
+            Stop::quest(0, Kind::Accept),
+        ];
+        for &stop in &route {
+            planner.apply(&mut state, stop, None);
+        }
+
+        let groups = planner.build_groups();
+        planner.work_group(&mut state, &mut route, &groups, 0);
+        assert!(state.completion_error.is_some());
+        assert_eq!(route.len(), 4, "one attempted turn-in, no repeated retry");
+        assert!(planner.validate_required(&route).is_err());
+        planner.work_group(&mut state, &mut route, &groups, 0);
+        assert_eq!(route.len(), 4, "a failed state stops before another attempt");
     }
 }

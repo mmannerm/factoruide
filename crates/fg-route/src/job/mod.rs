@@ -35,7 +35,9 @@ pub use overrides::{Overrides, RaceDef};
 pub use paths::{add_walk_paths, route_walks, walk_world};
 pub use race::{optimize, optimize_interruptible};
 pub use reputation::race_base;
-pub use request::{ClassKey, GROUP_MAX, GROUP_MIN_LEVEL, PlanOutcome, PlanRequest, Prepared, RaceKey, RequiredQuest};
+pub use request::{
+    ClassKey, GROUP_MAX, GROUP_MIN_LEVEL, PlanOutcome, PlanRequest, Prepared, QuestKey, RaceKey, RequiredQuest,
+};
 pub use required::{QuestChoice, quest_choices};
 pub use routes::{
     DATA_ADDON, GUIDE_FORMAT, POLESTAR_SOURCE_FOLDER, add_polestar_source, addon_walks, data_addon_files, guides_lua,
@@ -214,13 +216,32 @@ pub fn prepare(
     progress: &(dyn Fn(&str) + Sync),
 ) -> Result<Prepared> {
     let (mut profile, mut params) = character::character(conn, overrides, req)?;
-    profile.required_quests = required::resolve(conn, req, &profile)?;
+    profile.required_quests = required::resolve(conn, req, &profile, &params)?;
+    if params.edition == crate::xp::Edition::Forever
+        && params.sleeping_bag
+        && !profile
+            .required_quests
+            .iter()
+            .any(|q| q.id == crate::xp::SLEEPING_BAG_QUEST)
+    {
+        profile.required_quests.push(model::QuestRequirement {
+            id: crate::xp::SLEEPING_BAG_QUEST,
+            window: model::CompletionWindow::default(),
+        });
+    }
     progress("Loading the world");
     progress(r#"@progress {"phase":"prepare","step":"world"}"#);
     let world = load_world(conn, overrides, &profile, &params, progress)?;
     progress("Loading quests");
     progress(r#"@progress {"phase":"prepare","step":"quests"}"#);
-    let mut model = model::load(conn, &world, &profile, &params)?;
+
+    let members = req.members(params.edition.rules());
+    let starts: Vec<_> = if members.is_empty() {
+        req.start.iter().collect()
+    } else {
+        members.clone()
+    };
+    let mut model = model::load(conn, &world, &profile, &params, &starts)?;
     // Every dungeon it could run has levels to run it at.
     if let Some(d) = (model.dungeons.iter()).find(|d| d.min_level != i64::MAX && d.min_level > d.max_level) {
         return Err(RequestError::NoDungeonLevels {
@@ -231,7 +252,6 @@ pub fn prepare(
         .into());
     }
     let mut start_notes = Vec::new();
-    let members = req.members(params.edition.rules());
     // A member who already chose an exclusive alternative cannot meet an exact requirement.
     for q in model.quests.iter().filter(|q| q.required) {
         for (k, member) in members.iter().enumerate() {
@@ -298,6 +318,7 @@ pub fn prepare(
     } else {
         model.initial.known = start::flight_bits(&world, overrides.start_flights(profile.race_id));
     }
+    required::check_start(&model, &profile, &members)?;
     model.initial.abilities = model.abilities.initial(start, profile.from_level);
     model.initial.reputation = reputation::starting(conn, &params.reputation_goals, &profile, start, &mut start_notes)?;
     let mut notes = notes::model_notes(&model, &world, progress);
