@@ -28,5 +28,4 @@ those linked above. Review changed facts individually, update the edition's over
 the affected guide tests and `fg audit`. Remove corrections when the new baseline already
 supplies them. Audit acceptance files record reviewed exceptions; they do not fix data.
 
-These corrections affect Forever. Classic/TBC data is unchanged. Production gameplay acceptance
-remains to be checked when servers open; the trial estimate assumes the player maintains the blessing.
+These corrections affect Forever. Classic/TBC data is unchanged. Production gameplay has not been validated; the trial estimate assumes the player maintains the blessing.
