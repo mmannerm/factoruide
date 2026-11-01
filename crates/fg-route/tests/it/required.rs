@@ -106,8 +106,6 @@ fn required_quest_editor_refuses_removal() {
         .unwrap();
 }
 
-/// A must-have quest the character already did needs no repeat, and leaves the other class choices
-/// as they were.
 #[test]
 fn sleeping_bag_option_requires_the_chain_and_recognizes_imported_completion() {
     let conn = database_of("forever");
@@ -142,6 +140,8 @@ fn sleeping_bag_option_requires_the_chain_and_recognizes_imported_completion() {
     }
 }
 
+/// A must-have quest the character already did needs no repeat, and leaves the other class choices
+/// as they were.
 #[test]
 fn required_quest_completed_profile_needs_no_repeat() {
     let scenario = |required: bool| {
