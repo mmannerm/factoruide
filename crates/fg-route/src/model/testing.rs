@@ -419,15 +419,7 @@ impl Scenario {
     ) -> anyhow::Result<Self> {
         let (profile, params) = crate::job::character(conn, overrides, req)?;
         let abilities = crate::abilities::Abilities::load(conn, &profile)?;
-        let power = crate::power::PowerModel::load(
-            conn,
-            profile.class_id,
-            profile.race_id,
-            profile.to_level.max(60),
-            &profile.spell_weights,
-            &params,
-            &abilities,
-        )?;
+        let power = crate::power::PowerModel::load(conn, &profile, &params, &abilities)?;
         let mut scenario = Self::new();
         (scenario.profile, scenario.params) = (profile, params);
         (scenario.start, scenario.mates) = (req.start.clone(), req.mates.clone());
