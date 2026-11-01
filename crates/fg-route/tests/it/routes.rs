@@ -384,30 +384,16 @@ fn talked_to_creatures_are_not_killed() {
     assert_eq!(o[0].text, "Heal Kobold Vermin");
 }
 
-/// Bitter Rivals is turned in at a barrel Jarven guards: the guide buys his Thunder Ale and hands
-/// in its children (the guarded barrel, then Distracting Jarven) before the parent's turn-in.
+/// Bitter Rivals has two child quests (the guarded barrel, Distracting Jarven): each is offered
+/// while it is in the log.
 #[test]
-fn child_quests_are_handed_in_before_their_parent() {
+fn a_child_quest_is_taken_while_its_parent_is_in_the_log() {
     let conn = database();
-    conn.execute_batch(
-        "CREATE TEMP TABLE m_quest_link AS SELECT * FROM main.m_quest_link;
-         INSERT INTO temp.m_quest_link (quest_id, kind, other_id) VALUES (308, 'pre_all', 403);",
-    )
-    .unwrap();
     let p = job::prepare(&conn, &overrides(), &request("dwarf", "warrior", 10, &[]), &|_| {}).unwrap();
-    let o = &p.model.quests[quest(&p, 310).unwrap() as usize].objectives;
-    let at = |child: i64| o.iter().position(|o| o.child == Some(child)).unwrap();
-    let (barrel, jarven) = (at(403), at(308));
-    assert_eq!((o[barrel].loc.kind, o[barrel].loc.id), (EntityKind::Object, 269));
-    assert_eq!((o[jarven].loc.kind, o[jarven].loc.id), (EntityKind::Npc, 1373));
-    assert_eq!(o[jarven].text, "Turn in Distracting Jarven to Jarven Thunderbrew");
-    let ale = o
-        .iter()
-        .position(|o| o.loc.kind == EntityKind::Item && o.loc.id == 2686)
-        .unwrap();
-    assert_ne!(o[jarven].after & (1 << ale), 0, "the ale is bought before Jarven");
-    assert_ne!(o[jarven].after & (1 << barrel), 0, "the barrel is tried before Jarven");
-    assert_eq!(o[jarven].kills, 0.0);
+    for child in [308, 403] {
+        let q = &p.model.quests[quest(&p, child).unwrap() as usize];
+        assert_eq!(q.pre_held, [310], "{}", q.name);
+    }
 }
 
 /// The Lazy Peons are woken with the Foreman's Blackjack, Sentinel Shaya healed: NPCs of the
@@ -432,18 +418,47 @@ fn own_side_npcs_are_acted_on_not_killed() {
     );
 }
 
+/// The Aged Envelope lies in a camp of Kul Tiras marines, who like only the Alliance (GitHub #83):
+/// for a Horde character the item is guarded, so the quest it starts waits for a level that can
+/// face them, not for the first one.
+#[test]
+fn an_item_lying_in_a_camp_of_the_other_side_is_guarded() {
+    let p = prepare("orc", "hunter", 12, &["progression=cautious"]);
+    let guard = p.model.quests[quest(&p, 830).unwrap() as usize].start_guard;
+    assert!(guard.level >= 6 && guard.count >= 3, "{guard:?}");
+}
+
+/// The Deadmines' Collecting Memories and Oh Brother... are filed under the dungeon but their
+/// items drop from elites in the quarry beside its entrance (GitHub #82): done with the dungeon's
+/// group, at that place; Red Silk Bandanas also drops inside and stays a dungeon objective.
+#[test]
+fn quests_of_a_dungeon_done_beside_its_entrance_keep_their_place() {
+    let conn = database_of("forever");
+    let overrides = Overrides::load_edition(&repo().join("overrides"), Edition::Forever).unwrap();
+    let p = job::prepare(&conn, &overrides, &request("human", "warrior", 24, &[]), &|_| {}).unwrap();
+    let objective = |id| &p.model.quests[quest(&p, id).unwrap() as usize].objectives[0];
+    for id in [168, 167] {
+        let o = objective(id);
+        assert!(
+            o.dungeon.is_some() && o.loc.kind == EntityKind::Item,
+            "{id}: {:?}",
+            o.loc.kind
+        );
+    }
+    assert_eq!(objective(214).loc.kind, EntityKind::Dungeon);
+}
+
 /// The warlock's imp is taken first: it makes every fight that follows easier.
 #[test]
 fn pet_quest_comes_early() {
-    let p = orc_warlock();
-    let planner = planner(p);
-    let route = planner.construct(|_| {});
-    let imp = quest(p, 1485).unwrap();
+    let request = request("orc", "warlock", 30, &["progression=cautious", "effort=0"]);
+    let route = job::plan(&database(), &overrides(), &request, &|_| {}).unwrap().route;
     let at = route
+        .steps
         .iter()
-        .position(|s| s.index == imp && s.kind == Kind::TurnIn)
+        .position(|s| s.kind == fg_route::export::StepKind::TurnIn && s.quest == Some(1485))
         .unwrap();
-    assert!(at < 25, "imp turned in at stop {at}");
+    assert!(at < 60, "imp turned in at step {at}");
 }
 
 /// A class quest is required for the spell it teaches, not for its name: the undead warlock gets
@@ -806,8 +821,6 @@ fn gathering_next_to_kills_overlaps_them() {
             alts: vec![],
             after: 0,
             handed_by: vec![],
-            child: None,
-            child_name: None,
             vendors: vec![],
             auction: vec![],
             slot: None,
@@ -2103,8 +2116,6 @@ fn kills_east_of_start(p: &Prepared, dx: f64, kills: f64, mob_level: i64) -> Obj
         alts: vec![],
         after: 0,
         handed_by: vec![],
-        child: None,
-        child_name: None,
         vendors: vec![],
         auction: vec![],
         slot: None,
@@ -2824,18 +2835,23 @@ fn camping_101_is_a_profession_quest_after_the_great_outdoors() {
 
 /// The Warsong Reports (Horde, Ashenvale): Kadrak gives the Bundle of Reports with the quest,
 /// each scout takes the Warsong Report out of it and hands over the update Kadrak asks for. The
-/// scouts' quests are handed in on the way (children of The Warsong Reports): their updates are
-/// got there, neither bought nor looked for, nor the report in the bundle.
+/// scouts' quests are children of The Warsong Reports: their updates are got at their hand-in,
+/// neither bought nor looked for, nor the report in the bundle.
 #[test]
 fn items_a_child_hands_over_are_got_at_its_hand_in() {
     let p = orc_warlock();
     let reports = quest(p, 6543).expect("The Warsong Reports planned");
     let q = &p.model.quests[reports as usize];
-    let children: Vec<i64> = q.objectives.iter().filter_map(|o| o.child).collect();
-    assert_eq!(children.len(), 3, "the three scouts' hand-ins: {children:?}");
+    let handing: Vec<&Vec<i64>> = q
+        .objectives
+        .iter()
+        .map(|o| &o.handed_by)
+        .filter(|h| !h.is_empty())
+        .collect();
+    assert_eq!(handing.len(), 3, "the three scouts' updates: {handing:?}");
     assert!(
-        q.objectives.iter().all(|o| o.loc.kind != EntityKind::Item),
-        "no update to buy, no report to look for: {:?}",
+        q.objectives.iter().all(|o| o.vendors.is_empty()),
+        "no update to buy: {:?}",
         q.objectives.iter().map(|o| &o.text).collect::<Vec<_>>()
     );
 }

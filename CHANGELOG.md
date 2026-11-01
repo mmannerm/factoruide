@@ -39,6 +39,9 @@ An addon change also goes, in the same words, under Unreleased in that addon's o
 - Without a combat spell catalog, trainer steps let the addon train all available spells.
 - Learned class movement spells affect walks entirely on exposed ground without swimming; most walks keep the usual estimate.
 - Guides complete must-have quests and their prerequisites, even past the target level.
+- Deadmines' Collecting Memories and Oh Brother... say they are done outside the dungeon, beside its entrance, with the dungeon's group (GitHub #82).
+- A quest started by an item lying in a camp of the other side (the Aged Envelope among the Kul Tiras marines, for the Horde) waits for a level that can face them, instead of being fetched at level 1 (GitHub #83).
+- Repeatable quests are planned like any other, once. A child quest (Finding the Antidote, for Need for a Cure) is taken while its parent is in the log and turned in before it, with its own accept and turn-in steps; a timed parent and its children are done one after the other (GitHub #74).
 - A must-have quest whose objectives are inside a dungeon (Trolls of a Feather, Sunken Temple) runs that dungeon, without having to force it too.
 - WoW Forever: the new dungeons follow the game's level ranges, not their quests' levels: Ruins of Lordaeron 15-20 (was 21-22), Excavation Site 24-29, City of Dalaran 28-33.
 - WoW Forever: Ruins of Lordaeron's quests started by an item found inside (Crest of Lordaeron, Remember That I Love You) are planned, taken during the run.
@@ -84,6 +87,7 @@ An addon change also goes, in the same words, under Unreleased in that addon's o
 
 ### WoW data
 
+- WoW Forever's Hall of Thanes: An Ancient Grudge is planned (its giver and its objective were missing), and The Restless Dead asks to put Faldrim Anvilmar to rest (GitHub #82).
 - Quest, NPC and spawn data brought up to date, with 51 more contributions from players: WoW Forever gets quests it had wrongly left out or marked unavailable, and corrected XP, races, classes and zones; TBC gets 11 quests it lacked; Classic is unchanged.
 - 206 contributed names, titles, levels and objectives checked against public pages and added: Spanish and French translations that were old or literal, minimum levels, a few objectives.
 

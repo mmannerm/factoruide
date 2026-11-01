@@ -405,8 +405,6 @@ impl StepWriter<'_> {
         step.kind = StepKind::Objective;
         step.objective = Some(k);
         step.slot = Some(o.slot.unwrap_or(0));
-        step.child = o.child;
-        step.child_name.clone_from(&o.child_name);
         step.elite = o.elite;
         step.mob_level = (o.kills > 0.0 && o.mob_level > 0).then_some(o.mob_level);
         for (id, name) in o.mobs.iter().take(4) {
@@ -781,7 +779,13 @@ impl StepWriter<'_> {
                     let o = &q.objectives[k as usize];
                     let text = o.text.strip_prefix(&prefix).unwrap_or(&o.text);
                     let n = o.count.round() as i64;
-                    Arg::Text(if n > 1 { format!("{text} x{n}") } else { text.to_owned() })
+                    let text = if n > 1 { format!("{text} x{n}") } else { text.to_owned() };
+                    // Found beside the entrance (the quarry of the Deadmines), not inside.
+                    Arg::Text(if o.loc.kind == EntityKind::Dungeon {
+                        text
+                    } else {
+                        format!("{text} (outside {}, with the group)", model.dungeons[d].name)
+                    })
                 });
                 step.say = vec![
                     Phrase::new("dungeon.quest")

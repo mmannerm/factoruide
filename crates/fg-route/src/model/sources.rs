@@ -136,7 +136,6 @@ pub(super) struct Sources {
     pub(super) pvp: HashSet<i64>,
     /// Quests whose reward is an item (an item that starts another quest is got there).
     pub(super) reward_of: HashMap<i64, Vec<i64>>,
-    pub(super) repeatable: HashSet<i64>,
     /// Items without any known source that several quests ask for (marks of honor, tokens,
     /// crafted goods): not a gap in the drop data, never approximated by mobs.
     pub(super) tokens: HashSet<i64>,
@@ -167,7 +166,7 @@ impl Sources {
         let links = links(conn, profile)?;
         Ok(Self {
             elites: EliteSpawns::new(&entities, world),
-            guards: super::Guards::load(conn, world)?,
+            guards: super::Guards::load(conn, world, profile.faction)?,
             class_quest_ids: class_quest_ids(
                 &rows,
                 profile,
@@ -182,11 +181,6 @@ impl Sources {
             default_xp: default_xp(conn, params)?,
             pvp: pvp_quests(conn, &rows, &objectives)?,
             reward_of: reward_of(conn)?,
-            repeatable: rows
-                .iter()
-                .filter(|r| r.special.unwrap_or(0) & 1 != 0)
-                .map(|r| r.id)
-                .collect(),
             tokens: tokens(&objectives, &item_origins),
             entities,
             start,
@@ -306,7 +300,6 @@ fn quest_rows(conn: &Connection) -> Result<Vec<QuestRow>> {
             sort: r.get(5)?,
             races: r.get(6)?,
             classes: r.get(7)?,
-            special: r.get(8)?,
             skill: r.get(9)?,
             rep: r.get(10)?,
             spell: r.get(11)?,
@@ -581,7 +574,7 @@ fn tokens(objectives: &ObjectiveRows, item_origins: &HashMap<i64, Vec<(SourceKin
 }
 
 /// A row of `m_quest`.
-#[cfg_attr(test, derive(Default))]
+#[cfg_attr(any(test, feature = "testing"), derive(Default))]
 pub(super) struct QuestRow {
     pub(super) id: i64,
     pub(super) name: String,
@@ -592,7 +585,6 @@ pub(super) struct QuestRow {
     pub(super) sort: Option<i64>,
     pub(super) races: Option<i64>,
     pub(super) classes: Option<i64>,
-    pub(super) special: Option<i64>,
     pub(super) skill: Option<i64>,
     pub(super) skill_value: Option<i64>,
     pub(super) rep: Option<i64>,
