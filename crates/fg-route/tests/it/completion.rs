@@ -30,6 +30,23 @@ fn before_turn(trace: &[Timed], index: usize, from: i64) -> i64 {
 }
 
 #[test]
+fn a_window_includes_the_child_quest_and_its_deadline() {
+    let conn = database_of("forever");
+    let mut req = request(&json!([{"quest":812,"min_level":8,"max_level":10}]));
+    req.race = "orc".into();
+    req.from_level = 8;
+    req.to_level = 10;
+    let prepared = job::prepare(&conn, &overrides(Edition::Forever), &req, &|_| {}).unwrap();
+    let parent = &prepared.model.quests[prepared.model.index[&812]];
+    let child = &prepared.model.quests[prepared.model.index[&813]];
+    assert!(parent.required && child.required);
+    assert_eq!(parent.completion_window.min_level, Some(8));
+    assert_eq!(child.completion_window.min_level, None);
+    assert_eq!(child.priority_deadline, Some(10));
+    assert!(child.pre_held.contains(&812));
+}
+
+#[test]
 fn quest_windows_plan_the_chain_with_prerequisites_before_the_lower_bound() {
     for edition in Edition::ALL {
         let conn = database_of(edition.key());

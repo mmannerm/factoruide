@@ -171,7 +171,7 @@ enum Command {
         /// The guide's name (its id in the apps is made from it)
         #[arg(long)]
         name: String,
-        /// A must-have quest ID or exact name (repeatable); includes its prerequisites
+        /// A must-have quest ID, exact name, or JSON {"quest":21,"min_level":3,"max_level":4} (repeatable); includes prerequisites
         #[arg(long = "required-quest")]
         required_quests: Vec<String>,
         /// Planner parameters, as key=value (repeatable)
