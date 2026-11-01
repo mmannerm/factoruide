@@ -21,6 +21,13 @@ fn class_prepared(conn: &Connection, overrides: &Overrides, req: &PlanRequest) -
 fn late_form_unlock(family: &str, rank: i64, quest_id: i64) {
     let conn = database_of("forever");
     let mut overrides = Overrides::load_edition(&repo().join("overrides"), Edition::Forever).unwrap();
+    // Use common catalog weights for these form-gating scenarios.
+    let catalog = Overrides::load_edition(&repo().join("overrides"), Edition::Classic).unwrap();
+    overrides
+        .spells
+        .get_mut("druid")
+        .unwrap()
+        .insert(family.to_owned(), catalog.spells["druid"][family].clone());
     overrides
         .spells
         .get_mut("druid")
