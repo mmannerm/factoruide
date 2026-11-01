@@ -30,6 +30,7 @@ pub struct Overrides {
     /// Class trainer spells that count for power, by class (spells.toml).
     pub spells: HashMap<String, BTreeMap<String, crate::power::SpellWeight>>,
     pub spell_levels: Vec<crate::model::SpellLevel>,
+    pub abilities: Vec<crate::abilities::MovementDef>,
     pub dungeons: Vec<DungeonDef>,
     /// Objectives done only once others of their quest are (`[[order]]` of objectives.toml).
     pub objective_orders: Vec<crate::model::ObjectiveOrder>,
@@ -178,6 +179,13 @@ impl Overrides {
             power: BTreeMap<String, f64>,
         }
         #[derive(Deserialize, Default)]
+        struct Abilities {
+            #[serde(default)]
+            ability: Vec<crate::abilities::MovementDef>,
+            #[serde(default)]
+            training: BTreeMap<String, i64>,
+        }
+        #[derive(Deserialize, Default)]
         struct Dungeons {
             #[serde(default)]
             dungeon: Vec<DungeonDef>,
@@ -221,6 +229,10 @@ impl Overrides {
         let passes = parse_toml::<Passes>(&file, "passes.toml")?;
         let travel = parse_toml::<Travel>(&file, "travel.toml")?;
         let client = parse_toml::<Client>(&file, "client.toml")?;
+        let mut movement = parse_toml::<Abilities>(&file, "movement.toml")?;
+        for ability in &mut movement.ability {
+            ability.trained_at = movement.training.get(&ability.name).copied();
+        }
         Ok(Self {
             races: parse_toml(&file, "races.toml")?,
             class_powers: class_quests
@@ -230,6 +242,7 @@ impl Overrides {
             class_quests: class_quests.into_iter().map(|(k, v)| (k, v.required)).collect(),
             spells: parse_toml(&file, "spells.toml")?,
             spell_levels: client.spell,
+            abilities: movement.ability,
             class_power: parse_toml(&file, "class_power.toml")?,
             dungeons: parse_toml::<Dungeons>(&file, "dungeons.toml")?.dungeon,
             objective_orders: parse_toml::<Objectives>(&file, "objectives.toml")?.order,

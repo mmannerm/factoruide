@@ -31,6 +31,11 @@ Must-have quests (`PlanRequest.required_quests`, CLI `--required-quest`) resolve
 name for the character or group. Their prerequisites stay in the model outside the usual level
 window; unsupported or conflicting choices are reported. Required quests keep a route running
 past its target level until they are complete. Generated guides and saved edits check completion.
+Entries can include `min_level` and/or `max_level`, inclusive at turn-in before reward XP:
+`--required-quest '{"quest":21,"min_level":3,"max_level":4}'`. IDs and exact names without
+bounds keep their existing meaning. Prerequisites inherit deadline priority, not the lower
+bound. Turn-ins check each member still needing the quest, including after travel; imported
+completion already satisfies the goal. Planning and edited-guide saves reject missed windows.
 
 `world.rs` gives the geography: zone coordinates converted to world coordinates, the passes
 between zones, boats, zeppelins and tram (`overrides/`), and the flight path network.
@@ -59,12 +64,31 @@ level:
   "normal", 50 for "risky"); a fall that hurts costs the time to rest the health back
   (`DROP_COST` in `terrain/mod.rs`, a full heal a minute), so the walk goes round when the way
   down saves less than that.
+  Learned Cat Form, Travel Form, Ghost Wolf and Aspect of the Cheetah are compared with walking
+  and mounts, including activation time (`overrides/movement.toml`). A bonus requires a whole
+  path on known outdoor terrain without swimming. Covered or unknown paths and group guides
+  keep the baseline estimate.
+  Few walks currently qualify. `assume_movement_talents` (on by default) adds Feral Swiftness
+  and Improved Ghost Wolf at the edition's level and rank. Acquisition follows each edition's
+  quests and trainer data. An edition's `movement.toml` can supply missing trainer levels;
+  native records take precedence. Aquatic Form travel is not modeled.
 - **Fights and loot**: kill time grows with the level difference and shrinks with the
   character's **power** (below); elites are slower (or need a group); items to loot take as many
   kills as their drop rate requires.
 - **XP**: quest XP with the level penalty, mob XP with the classic formula (`5 × level + 45`,
   adjusted by the level difference). Level-ups change everything that follows: which quests are
   worth it, how fast mobs die, how much XP they give.
+  Forever's optional `food_xp` and `sleeping_bag` assume continuous buff uptime. The bag requires
+  quest 79976 and activates after its turn-in; imported completion also counts, per group member.
+  Food adds 5% to kill XP and the bag adds 3% to kill and quest XP. The estimate adds the kill
+  bonuses before applying the finite rested pool, including grinding and group catch-up.
+  Pre-grinding estimates and group catch-up consume rested XP in every edition. Group kill
+  work stays fractional until the final member reward is rounded in every edition. Turn-ins
+  carry each player's awarded XP (`party_reward_xp`, Lua `rxp`); the addon selects its own
+  reward. Older guides retain their shared `reward_xp` estimate.
+  Exploration, food costs and buff refresh time are outside this estimate. Effect scopes:
+  [Well Fed](https://www.wowhead.com/forever/spell=1243969/well-fed-xp-boost),
+  [Well-Rested](https://www.wowhead.com/forever/spell=429959/well-rested).
 - **On the way**: class training when the new spells are worth it, the loot sold at a vendor nearby
   once the bags are half full, flight paths picked up nearby,
   dungeon runs, the normal mobs met on foot (`farm_on_way`, mobs near the character's level, up to
@@ -155,13 +179,19 @@ quest whose objectives are far out of reach is not picked up.
   the steps of the name leading to them, not a later quest of the same name (the orc's second
   Vile Familiars, in Durotar, is not the undead warlock's). A quest the route takes and gives up
   costs it `abandon_weight`.
+  Missing unlocks keep their earlier prerequisites; known rewards avoid repeating unlocks.
+  A spell proves a prerequisite only when one eligible quest grants it on completion. Shared
+  rewards need recorded quest history. Moonglade teaches its teleport on acceptance, so its
+  turn-in still gates the next quest. Group knowledge requires every eligible member; explicit
+  must-have quests still need completion.
 - **Class quests** giving a pet or a form (`overrides/class_quests.toml`) add levels of power
   too (a 1.4 times faster fight is 3.2 levels), and count like an upgrade when choosing quests;
   the quest teaching that spell gives it, whatever its name (Piercing the Veil, the undead's
   Imp, like Vile Familiars).
 - The data (item stats, quest rewards, boss loot, trainer spells, base stats by level) comes from
-  VMaNGOS (Classic, Forever). Without it (TBC), power is the level and training follows
-  `train_every`.
+  VMaNGOS (Classic, Forever). TBC uses level-based combat power and `train_every` for
+  combat training; `overrides/tbc/movement.toml` supplies missing movement trainer levels
+  from CMaNGOS without changing the bundled database.
 
 Some content is set apart: a quest filed under a dungeon, or whose mobs, objects, giver or turn-in
 live only inside one, is done in a run of that dungeon (with dungeons on); in the guide, the run

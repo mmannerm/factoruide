@@ -48,6 +48,7 @@ export interface Params {
   /** The zone the route begins in (AreaTable zone), chosen on the starts' preview; 0 or unset: the planner's choice. */
   start_zone?: number;
   run_speed: number;
+  assume_movement_talents: boolean;
   mount_level: number;
   mount_bonus: number;
   flight_speed: number;
@@ -182,6 +183,8 @@ export interface Params {
   group_kill_speed: number;
   group_shared_drops: boolean;
   explore_radius: number;
+  food_xp: boolean;
+  sleeping_bag: boolean;
   edition: Edition;
 }
 
@@ -202,8 +205,8 @@ export interface PlanRequest {
   name?: string | null;
   params?: Params | null;
   required_class_quests?: string[] | null;
-  /** Exact quest IDs or names. Prerequisites are included; omission fails generation. */
-  required_quests?: (number | string)[];
+  /** Exact quest IDs or names, optionally with inclusive turn-in levels,. Prerequisites are included; omission fails generation. */
+  required_quests?: RequiredQuest[];
   professions?: ProfessionGoal[];
   /** Language of the guide texts (English where a name is not translated). */
   locale?: string | null;
@@ -214,6 +217,8 @@ export interface PlanRequest {
   /** The professions each of `mates` levels, in their order. */
   mate_professions?: ProfessionGoal[][];
 }
+
+export type RequiredQuest = number | string | { quest: number | string; min_level?: number | null; max_level?: number | null };
 
 /** A point of a game map (uiMapID, percent coordinates). */
 export interface MapPos {

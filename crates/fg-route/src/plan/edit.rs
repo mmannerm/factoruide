@@ -313,7 +313,7 @@ impl Planner<'_> {
             && stop.kind == Kind::LearnFlight
             && s.landed == Landed::No
             && s.pos.dist(&self.world.taxi_nodes[i].pos) <= self.params.flight_learn_radius)
-            .then(|| 2.0 * self.trips().walk(&s.pos, &self.world.taxi_nodes[i].pos, s.level) + 5.0)
+            .then(|| 2.0 * self.trips().at(s).walk(&s.pos, &self.world.taxi_nodes[i].pos, s.level) + 5.0)
             .filter(|d| d.is_finite());
         if let Some(detour) = detour {
             s.time += detour;
@@ -327,6 +327,11 @@ impl Planner<'_> {
         self.farm_all.set(farm);
         self.apply(s, stop, Some(trace));
         self.farm_all.set(false);
+        if s.completion_error.is_some() {
+            *s = saved;
+            trace.truncate(mark);
+            return Outcome::Invalid("quest completion outside requested level range");
+        }
         if !s.time.is_finite() {
             *s = saved;
             trace.truncate(mark);
@@ -385,7 +390,7 @@ impl Planner<'_> {
         // As a trip taking the flight by itself: the walk to the flight master and the flight
         // count as flying, the walk on to the next stop ends it (`State::landed`).
         let (start, end) = (nodes[from].pos, nodes[to].pos);
-        let walk = self.trips().walk(&s.pos, &start, s.level);
+        let walk = self.trips().at(s).walk(&s.pos, &start, s.level);
         s.time += walk;
         s.spent.flights += walk;
         let seconds = time + self.params.flight_overhead;
@@ -408,7 +413,7 @@ impl Planner<'_> {
         if !ride.is_finite() {
             return Outcome::Invalid("no such crossing");
         }
-        let walk = self.trips().walk(&s.pos, &links[first].from, s.level);
+        let walk = self.trips().at(s).walk(&s.pos, &links[first].from, s.level);
         if !walk.is_finite() {
             return Outcome::Invalid("unreachable");
         }
@@ -503,7 +508,7 @@ impl Planner<'_> {
             let mut learned = Vec::new();
             for t in &edited.trace[step.events.clone()] {
                 let next = match t.event {
-                    Event::Stop { stop, ref loc } => {
+                    Event::Stop { stop, ref loc, .. } => {
                         let farm = matches!(edit, Edit::Stop { stop: own, farm: true, .. } if *own == stop);
                         // Where it was done: replayed there.
                         let spot = match stop.kind {

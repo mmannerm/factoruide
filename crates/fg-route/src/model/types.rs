@@ -19,7 +19,7 @@ pub struct Profile {
     pub required_class_quests: Vec<String>,
     pub quest_overrides: Vec<QuestOverride>,
     /// Exact quests selected by the player.
-    pub required_quests: Vec<i64>,
+    pub required_quests: Vec<QuestRequirement>,
     /// Confirmed completions from the starting profile, never inferred from character level.
     pub completed_quests: HashSet<i64>,
     /// Class quests that make the character stronger: name and power gained.
@@ -27,6 +27,7 @@ pub struct Profile {
     /// Class trainer spells that count for power (see overrides/spells.toml).
     pub spell_weights: Vec<(String, crate::power::SpellWeight)>,
     pub spell_levels: Vec<SpellLevel>,
+    pub abilities: Vec<crate::abilities::MovementDef>,
     /// Dungeon settings (see overrides/dungeons.toml).
     pub dungeons: Vec<DungeonDef>,
     /// The class's teleports that a quest teaches (see overrides/travel.toml).
@@ -44,9 +45,40 @@ pub struct Profile {
     pub player: String,
 }
 
+/// Inclusive levels when a required quest is turned in, before its XP reward.
+#[derive(Debug, Clone, Copy, Default, serde::Serialize, serde::Deserialize)]
+pub struct CompletionWindow {
+    pub min_level: Option<i64>,
+    pub max_level: Option<i64>,
+}
+
+impl CompletionWindow {
+    pub fn contains(self, level: i64) -> bool {
+        self.min_level.is_none_or(|min| level >= min) && self.max_level.is_none_or(|max| level <= max)
+    }
+}
+
+impl std::fmt::Display for CompletionWindow {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match (self.min_level, self.max_level) {
+            (Some(min), Some(max)) => write!(f, "levels {min}–{max}"),
+            (Some(min), None) => write!(f, "level {min} or later"),
+            (None, Some(max)) => write!(f, "level {max} or earlier"),
+            (None, None) => write!(f, "any level"),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct QuestRequirement {
+    pub id: i64,
+    pub window: CompletionWindow,
+}
+
 /// Another player of a group guide.
 #[derive(Debug, Clone)]
 pub struct Mate {
+    pub class_name: String,
     /// "Name-Realm".
     pub name: String,
     pub race_id: i64,
@@ -440,6 +472,9 @@ pub struct Quest {
     pub zone_forced: bool,
     /// Explicit player requirement or a prerequisite selected to reach one.
     pub required: bool,
+    pub completion_window: CompletionWindow,
+    /// Earliest deadline of the requirements this quest helps complete.
+    pub priority_deadline: Option<i64>,
     /// Profession quest: index in `Model::professions` and skill needed to accept it.
     pub skill: Option<(usize, i64)>,
     /// Class quest making the character stronger: index in `Profile::class_powers` (quests of
@@ -472,7 +507,11 @@ impl Quest {
 }
 
 pub struct Model {
+    /// Configured class powers whose reward is already known.
+    pub known_class_powers: u32,
     pub abilities: crate::abilities::Abilities,
+    /// Class prerequisites proven by completion or an unambiguous learned reward.
+    pub known_class_prerequisites: HashSet<i64>,
     pub quests: Vec<Quest>,
     pub dungeons: Vec<Dungeon>,
     pub professions: Vec<ProfessionPlan>,
@@ -537,7 +576,8 @@ pub struct Model {
 pub struct Teleport {
     pub name: String,
     pub level: i64,
-    pub quests: Vec<usize>,
+    /// Quest-taught ability, or zero for a city trainer teleport.
+    pub ability: u64,
     pub to: Loc,
 }
 
@@ -545,6 +585,7 @@ pub struct Teleport {
 /// taking "Moonglade" teaches the druid Teleport: Moonglade.
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct TeleportDef {
+    pub spell: i64,
     pub name: String,
     /// Class file name, lower case (druid).
     pub class: String,
