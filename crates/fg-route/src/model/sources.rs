@@ -418,7 +418,13 @@ pub(crate) fn quest_links(
             edges.push((kind, other));
         }
     }
+    let mut known = conn.prepare("SELECT EXISTS(SELECT 1 FROM m_quest WHERE id=?1)")?;
     for correction in corrected {
+        anyhow::ensure!(
+            known.query_row([correction.id], |row| row.get::<_, bool>(0))?,
+            "unknown quest override {}",
+            correction.id
+        );
         for (kind, required) in [
             (LinkKind::PreAll, &correction.pre_all),
             (LinkKind::PreAny, &correction.pre_any),
@@ -426,6 +432,13 @@ pub(crate) fn quest_links(
             (LinkKind::Child, &correction.children),
         ] {
             let Some(required) = required else { continue };
+            for id in required {
+                anyhow::ensure!(
+                    known.query_row([id], |row| row.get::<_, bool>(0))?,
+                    "quest override {} references unknown quest {id}",
+                    correction.id
+                );
+            }
             let edges = links.entry(correction.id).or_default();
             edges.retain(|(existing, _)| *existing != kind);
             edges.extend(required.iter().map(|id| (kind, *id)));

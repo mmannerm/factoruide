@@ -269,3 +269,35 @@ fn a_new_horde_skyborne_druid_finishes_cat_form_by_twenty_one() {
     assert_eq!(report.errors, 0);
     assert!((20..=21).contains(&report.steps[at - 1].level));
 }
+
+#[test]
+fn trial_blessings_preserve_the_original_relic_objective_indices() {
+    let conn = database_of("forever");
+    let mut old = overrides(Edition::Forever);
+    old.quest_overrides.iter_mut().for_each(|q| q.stealth_object = None);
+    let mut req = druid_at_twenty();
+    req.start = None;
+    let before = job::prepare(&conn, &old, &req, &|_| {}).unwrap();
+    let after = job::prepare(&conn, &overrides(Edition::Forever), &req, &|_| {}).unwrap();
+    let original = &before.model.quests[before.model.index[&98404]].objectives;
+    let current = &after.model.quests[after.model.index[&98404]].objectives;
+    assert_eq!(current.len(), original.len() + 1);
+    for (a, b) in original.iter().zip(current) {
+        assert_eq!((a.loc.kind, a.loc.id, &a.text), (b.loc.kind, b.loc.id, &b.text));
+    }
+    assert_eq!(current.last().unwrap().loc.id, 673394);
+}
+
+#[test]
+fn unknown_override_quests_and_prerequisites_fail_visibly() {
+    for edition in Edition::ALL {
+        let conn = database_of(edition.key());
+        for (id, pre) in [(21, 999_999_999), (999_999_999, 783)] {
+            let mut o = overrides(edition);
+            o.quest_overrides
+                .push(serde_json::from_value(json!({"id":id,"pre_all":[pre]})).unwrap());
+            let error = job::prepare(&conn, &o, &request(&json!([])), &|_| {}).err().unwrap();
+            assert!(format!("{error:#}").contains("999999999"), "{error:#}");
+        }
+    }
+}

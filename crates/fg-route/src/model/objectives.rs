@@ -175,18 +175,23 @@ impl QuestBuilder<'_> {
             )?;
             self.measure(r, std::slice::from_mut(&mut blessing));
             blessing.unopposed = true;
+            let index = objs.len();
+            if index >= 8 {
+                return Err("too many objectives for a trial blessing");
+            }
+            let blessing_bit = 1 << index;
             for o in &mut objs {
                 // The blessing lets the player pass the guards, rather than fight them.
-                o.after = (o.after << 1) | 1;
+                o.after |= blessing_bit;
                 o.guard = Guard::default();
                 o.unopposed = true;
                 for alt in &mut o.alts {
-                    alt.after = (alt.after << 1) | 1;
+                    alt.after |= blessing_bit;
                     alt.guard = Guard::default();
                     alt.unopposed = true;
                 }
             }
-            objs.insert(0, blessing);
+            objs.push(blessing);
         }
         mark_beside_givers(givers, &mut objs);
         self.add_dungeon_givers(r, &mut objs);

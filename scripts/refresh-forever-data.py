@@ -1,76 +1,92 @@
 #!/usr/bin/env python3
-"""Regenerate Forever's reviewed client corrections from pinned source exports."""
+"""Regenerate reviewed Forever corrections; --refresh checks the source facts for changes."""
 
+import argparse
 import csv
+import difflib
 import hashlib
 import io
+import json
 import math
 from pathlib import Path
 from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parents[1]
-BUILD = "1.60.1.70532"
-ATT = "https://raw.githubusercontent.com/ATTWoWAddon/AllTheThings/"
-ATT_PATH = "/.contrib/.db/forever/.config/.wago/SkillLineAbility."
-WAGO = "https://wago.tools/db2/"
-SOURCES = {
-    "TaxiNodes": (WAGO + f"TaxiNodes/csv?build={BUILD}&useHotfixes=1",
-                  "a5f03c3789a70b3a60aba2160055d90a46913ba2d2c7a31766707393ca6a87ea"),
-    "TaxiPath": (WAGO + f"TaxiPath/csv?build={BUILD}&useHotfixes=1",
-                 "5e77fcce0a0af07e4ebc36783ad6ba1d691e4f7157998c358406b980581fecf4"),
-    "TaxiPathNode": (WAGO + f"TaxiPathNode/csv?build={BUILD}&useHotfixes=1",
-                     "795afc11eda0adb49dc69ae973de05110b7e9b6ff83c66c653abc0c424b726fd"),
-    "UiMapAssignment": (WAGO + f"UiMapAssignment/csv?build={BUILD}&useHotfixes=1",
-                        "79267e8be8034e47daab14350411b3acc0b1f64e86efc9d821a217497254ca0a"),
-    "SpellLevels": (WAGO + f"SpellLevels/csv?build={BUILD}&useHotfixes=1",
-                    "04c3a781fee6d13aebb1d07a97f81ed9c932fba2b94104bd3461c6c6e72ecd99"),
-    "SpellName": (WAGO + f"SpellName/csv?build={BUILD}",
-                  "88f0e96ad902ab1a15da366018edfc73ecf0b0ad3e02402c064527bdf9d1a912"),
-    "SkillLineAbility": (ATT + "130b0c906e64d4a67832ee024c9346b3c24d4fae" + ATT_PATH + BUILD + ".csv",
-                         "3ac5edfcdc43a57cf78eee12d5d64142d2ca641d0fa29a4db7fd10dcbb18ff02"),
-    "SkillLineAbility-before": (ATT + "94cb3ab30be5a7357819d6e1869f51b538d42bd6" + ATT_PATH + "1.60.1.70374.csv",
-                                "05c88213477aae7b8e3fed9c710d61ead0b6a6011e76499f576acdb2b398fe9b"),
-}
+SNAPSHOT = ROOT / "data/forever-client-facts.json"
 
 
-def source(name):
-    url, expected = SOURCES[name]
-    path = ROOT / "data/cache" / BUILD / (name + "-" + expected + ".csv")
-    if path.exists():
-        data = path.read_bytes()
-    else:
-        with urlopen(Request(url, headers={"User-Agent": "Mozilla/5.0"}), timeout=60) as response:
-            data = response.read()
-    actual = hashlib.sha256(data).hexdigest()
-    if actual != expected:
-        raise ValueError(f"{url}: SHA256 {actual}, expected {expected}; review source changes before updating the pin")
+def source(name, spec, build):
+    with urlopen(Request(spec["url"], headers={"User-Agent": "Mozilla/5.0"}), timeout=60) as response:
+        data = response.read()
+    digest = hashlib.sha256(data).hexdigest()
+    path = ROOT / "data/cache" / build / f"{name}-{digest}.csv"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(data)
+    print(f"{name}: SHA256 {digest}")
     return list(csv.DictReader(io.StringIO(data.decode("utf-8-sig"))))
 
 
-def main():
-    data = {name: source(name) for name in SOURCES}
-    levels = {int(row["SpellID"]): int(row["SpellLevel"]) for row in data["SpellLevels"]
-              if row["DifficultyID"] == "0"}
-    path = next(row for row in data["TaxiPath"] if row["ID"] == "12018")
-    node = next(row for row in data["TaxiNodes"] if row["ID"] == path["FromTaxiNode"])
-    points = sorted((row for row in data["TaxiPathNode"] if row["PathID"] == path["ID"]),
-                    key=lambda row: int(row["NodeIndex"]))
-    bounds = next(row for row in data["UiMapAssignment"]
-                  if row["UiMapID"] == "2665" and row["MapID"] == node["ContinentID"])
+def client_facts(data):
+    levels = {int(r["SpellID"]): int(r["SpellLevel"]) for r in data["SpellLevels"] if r["DifficultyID"] == "0"}
+    path = next(r for r in data["TaxiPath"] if r["ID"] == "12018")
+    node = next(r for r in data["TaxiNodes"] if r["ID"] == path["FromTaxiNode"])
+    bounds = next(r for r in data["UiMapAssignment"] if r["UiMapID"] == "2665" and r["MapID"] == node["ContinentID"])
+    points = sorted((r for r in data["TaxiPathNode"] if r["PathID"] == path["ID"]), key=lambda r: int(r["NodeIndex"]))
+    return {
+        "spell_levels": {str(spell): levels[spell] for spell in [5221, 18499]},
+        "bridge": {
+            "path": 12018, "from_node": int(path["FromTaxiNode"]), "to_node": int(path["ToTaxiNode"]),
+            "map": int(node["ContinentID"]), "ui_map": 2665, "zone": 16593,
+            "bounds": {f"Region_{k}": float(bounds[f"Region_{k}"]) for k in [0, 1, 3, 4]},
+            "points": [[float(r[f"Loc_{k}"]) for k in range(3)] for r in points],
+        },
+    }
 
-    def position(row):
-        x = (float(bounds["Region_4"]) - float(row["Loc_1"])) / (float(bounds["Region_4"]) - float(bounds["Region_1"])) * 100
-        y = (float(bounds["Region_3"]) - float(row["Loc_0"])) / (float(bounds["Region_3"]) - float(bounds["Region_0"])) * 100
-        return f"{{ zone = 16593, x = {x:.6f}, y = {y:.6f}, z = {float(row['Loc_2']):.6f} }}"
 
-    xyz = [tuple(float(row[f"Loc_{axis}"]) for axis in range(3)) for row in points]
-    seconds = math.ceil(sum(math.dist(a, b) for a, b in zip(xyz, xyz[1:])) / 30)
-    output = [f"# Generated by scripts/refresh-forever-data.py from {BUILD}; source URLs and hashes are in the script.",
+def unchanged(label, expected, actual):
+    if expected != actual:
+        def lines(value):
+            return (value if isinstance(value, str) else json.dumps(value, indent=2, sort_keys=True)).splitlines(True)
+        delta = "".join(difflib.unified_diff(lines(expected), lines(actual), fromfile="reviewed", tofile="source"))
+        raise ValueError(f"{label} changed; review the facts before updating the snapshot:\n{delta}")
+
+
+def profession_reference(data):
+    fields = ["MinSkillLineRank", "TrivialSkillLineRankHigh", "TrivialSkillLineRankLow", "AcquireMethod", "Flags"]
+    old = {r["ID"]: r for r in data["SkillLineAbility-before"]}
+    new = {r["ID"]: r for r in data["SkillLineAbility"]}
+    names = {r["ID"]: r["Name_lang"] for r in data["SpellName"]}
+    professions = {129, 164, 165, 171, 182, 185, 186, 197, 202, 333, 356, 393}
+    output = io.StringIO(newline="")
+    writer = csv.writer(output, lineterminator="\n")
+    writer.writerow(["Status", "ID", "SkillLine", "Spell", "Name", *fields])
+    for key in sorted(old.keys() | new.keys(), key=int):
+        before, after = old.get(key), new.get(key)
+        row = after if after is not None else before
+        if int(row["SkillLine"]) not in professions:
+            continue
+        if before is not None and after is not None and all(before[f] == after[f] for f in fields):
+            continue
+        status = "removed" if after is None else "added" if before is None else "changed"
+        writer.writerow([status, key, row["SkillLine"], row["Spell"], names[row["Spell"]], *[row[f] for f in fields]])
+    return output.getvalue()
+
+
+def corrections(snapshot):
+    facts = snapshot["client"]
+    bridge, bounds = facts["bridge"], facts["bridge"]["bounds"]
+    points = bridge["points"]
+
+    def position(point):
+        x = (bounds["Region_4"] - point[1]) / (bounds["Region_4"] - bounds["Region_1"]) * 100
+        y = (bounds["Region_3"] - point[0]) / (bounds["Region_3"] - bounds["Region_0"]) * 100
+        return f"{{ zone = {bridge['zone']}, x = {x:.6f}, y = {y:.6f}, z = {point[2]:.6f} }}"
+
+    seconds = math.ceil(sum(math.dist(a, b) for a, b in zip(points, points[1:])) / 30)
+    output = [f"# Generated by scripts/refresh-forever-data.py from {snapshot['build']}; reviewed sources: data/forever-client-facts.json.",
               "# Training changes confirmed by Blizzard: https://us.forums.blizzard.com/en/wow/t/2360696/4 and /6."]
-    for spell, name in [(5221, "Shred rank 1"), (18499, "Berserker Rage")]:
-        output.extend([f"\n# {name}", "[[spell]]", f"id = {spell}", f"level = {levels[spell]}"])
+    for spell, name in [(5221, "Shred rank 1"), (18499, "Berserker Rage (reference only; not currently tracked by the planner)")]:
+        output.extend([f"\n# {name}", "[[spell]]", f"id = {spell}", f"level = {facts['spell_levels'][str(spell)]}"])
     output.extend(["\n# Quest path 12018, node 3361: its four hotfixed path points supply the endpoints.",
                    "# Ride estimate at the default flight speed (30 yd/s); the normal transport wait is added.",
                    "# https://www.wowhead.com/forever/npc=256635/peacekeeper"])
@@ -79,30 +95,21 @@ def main():
                        f'faction = "{faction}"', f'races = ["{race}"]',
                        f"from = {position(points[0])}", f"to = {position(points[-1])}",
                        f"seconds = {seconds}", "one_way = true", f"after_quest = {quest}", "while_held = true"])
+    return "\n".join(output) + "\n"
 
-    # Keep recipe changes as source data; the planner's profession goals do not simulate crafting.
-    fields = ["MinSkillLineRank", "TrivialSkillLineRankHigh", "TrivialSkillLineRankLow", "AcquireMethod", "Flags"]
-    old = {row["ID"]: row for row in data["SkillLineAbility-before"]}
-    new = {row["ID"]: row for row in data["SkillLineAbility"]}
-    names = {row["ID"]: row["Name_lang"] for row in data["SpellName"]}
-    professions = {129, 164, 165, 171, 182, 185, 186, 197, 202, 333, 356, 393}
-    recipes = io.StringIO(newline="")
-    writer = csv.writer(recipes, lineterminator="\n")
-    writer.writerow(["Status", "ID", "SkillLine", "Spell", "Name", *fields])
-    count = 0
-    for key in sorted(old.keys() | new.keys(), key=int):
-        before, after = old.get(key), new.get(key)
-        row = after if after is not None else before
-        if int(row["SkillLine"]) not in professions:
-            continue
-        if before is not None and after is not None and all(before[field] == after[field] for field in fields):
-            continue
-        status = "removed" if after is None else "added" if before is None else "changed"
-        writer.writerow([status, key, row["SkillLine"], row["Spell"], names[row["Spell"]], *[row[field] for field in fields]])
-        count += 1
-    (ROOT / "overrides/forever/client.toml").write_text("\n".join(output) + "\n")
-    (ROOT / "data/forever-profession-skills.csv").write_text(recipes.getvalue())
-    print(f"Updated Forever: 2 training levels, 2 quest transport links, {count} profession source changes")
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--refresh", action="store_true", help="download the sources and reject changed reviewed facts")
+    args = parser.parse_args()
+    snapshot = json.loads(SNAPSHOT.read_text())
+    if args.refresh:
+        data = {name: source(name, spec, snapshot["build"]) for name, spec in snapshot["sources"].items()}
+        unchanged("Client facts", snapshot["client"], client_facts(data))
+        unchanged("Profession reference", (ROOT / "data/forever-profession-skills.csv").read_text(), profession_reference(data))
+        print("Reviewed source facts are unchanged")
+    (ROOT / "overrides/forever/client.toml").write_text(corrections(snapshot))
+    print("Regenerated Forever client corrections from the reviewed snapshot")
 
 
 if __name__ == "__main__":
