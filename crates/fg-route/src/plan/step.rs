@@ -355,6 +355,9 @@ impl Planner<'_> {
         s.required_left = s.required_left.saturating_sub(u32::from(q.required));
         s.spent.quest_xp += self.growth().reward(s, rewards);
         s.turned.set(i as usize, true);
+        if q.late_unlock {
+            s.spent.unlock_delay += (s.level - self.profile.from_level).max(0) as f64;
+        }
         self.growth().gain_power(s, i);
         if s.forced_left > 0 {
             let closed = (q.exclusive.iter())
