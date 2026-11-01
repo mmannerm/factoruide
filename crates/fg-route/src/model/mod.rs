@@ -186,6 +186,7 @@ pub fn load(
                 class_id: m.class_id,
                 race_id: m.race_id,
                 spell_weights: m.spell_weights.clone(),
+                abilities: Vec::new(),
                 ..profile.clone()
             },
             params,
