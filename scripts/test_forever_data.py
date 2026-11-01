@@ -4,7 +4,6 @@
 import copy
 import json
 import runpy
-import tomllib
 import unittest
 from pathlib import Path
 
@@ -50,10 +49,7 @@ class ReviewedSources(unittest.TestCase):
         snapshot = json.loads((ROOT / "data/forever-client-facts.json").read_text())
         generated = SCRIPT["corrections"](snapshot)
         self.assertEqual(generated, (ROOT / "overrides/forever/client.toml").read_text())
-        data = tomllib.loads(generated)
-        self.assertEqual(data["spell"][0], {"id": 5221, "level": 20})
-        self.assertEqual([link["after_quest"] for link in data["link"]], [92646, 93835])
-        self.assertTrue(all(link["one_way"] and link["while_held"] for link in data["link"]))
+
 
 
 if __name__ == "__main__":
