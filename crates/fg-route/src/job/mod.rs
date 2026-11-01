@@ -237,7 +237,7 @@ pub fn prepare(
         && !profile
             .required_quests
             .iter()
-            .any(|q| q.id == crate::xp::SLEEPING_BAG_QUEST)
+            .any(|r| r.id == crate::xp::SLEEPING_BAG_QUEST)
     {
         profile.required_quests.push(model::QuestRequirement {
             id: crate::xp::SLEEPING_BAG_QUEST,
@@ -249,7 +249,6 @@ pub fn prepare(
     let world = load_world(conn, overrides, &profile, &params, progress)?;
     progress("Loading quests");
     progress(r#"@progress {"phase":"prepare","step":"quests"}"#);
-
     let members = req.members(params.edition.rules());
     let starts: Vec<_> = if members.is_empty() {
         req.start.iter().collect()

@@ -64,8 +64,8 @@ pub fn load(
                 race_id: m.race_id,
                 class_id: m.class_id,
                 class_name: m.class_name.clone(),
-                abilities: vec![],
                 spell_weights: m.spell_weights.clone(),
+                abilities: Vec::new(),
                 ..profile.clone()
             },
         )?);
@@ -145,6 +145,11 @@ pub fn load(
             || q.required
             || q.zone_forced
     });
+    // Class unlocks kept below the guide's levels give little XP: left to the search they come late.
+    for q in &mut quests {
+        q.late_unlock = sources.class_quest_ids.contains(&q.id)
+            && !profile.within_levels(q.level, q.min_level, params.max_quest_above);
+    }
     settle_quests(
         &mut quests,
         &sources.dungeons,
