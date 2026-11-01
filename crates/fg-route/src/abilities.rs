@@ -62,7 +62,7 @@ impl Abilities {
                     r.get::<_, i64>(0)?,
                     r.get::<_, String>(1)?,
                     r.get::<_, i64>(2)?,
-                    r.get::<_, i64>(3)?,
+                    profile.spell_level(r.get(0)?, r.get(3)?),
                 ))
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;

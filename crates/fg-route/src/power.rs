@@ -329,13 +329,12 @@ impl PowerModel {
     #[expect(clippy::too_many_lines, reason = "items, floor, then spells, in load order")]
     pub fn load(
         conn: &Connection,
-        class: i64,
-        race: i64,
-        max_level: i64,
-        spell_weights: &[(String, SpellWeight)],
+        profile: &crate::model::Profile,
         params: &crate::Params,
         abilities: &crate::abilities::Abilities,
     ) -> rusqlite::Result<Option<Self>> {
+        let (class, race, max_level) = (profile.class_id, profile.race_id, profile.to_level.max(60));
+        let spell_weights = &profile.spell_weights;
         let has: i64 = conn.query_row(
             "SELECT count(*) FROM sqlite_master WHERE name IN ('m_item_stats', 'm_class_spell', 'm_player_stats')",
             [],
@@ -518,7 +517,7 @@ impl PowerModel {
                 id: r.get(7)?,
                 name,
                 rank: r.get(1)?,
-                level: r.get(2)?,
+                level: profile.spell_level(r.get(7)?, r.get(2)?),
                 cost: r.get(3)?,
                 value: r.get(4)?,
                 weapon: r.get::<_, i64>(5)? != 0,

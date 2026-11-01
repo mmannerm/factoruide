@@ -57,6 +57,8 @@ zones to do, the level to reach before moving on from each, and where the XP is.
   recorded spells and completed quests. Without a character profile, earlier class unlocks
   are assumed known; selecting class quests does not change that starting assumption.
 - **Your class quests**: the ones you want to do are kept, even when they are not the fastest.
+  Forever's Cat Form trial uses the entrance statue's stealth blessing to collect the relics.
+  Renew the blessing as needed. Skyborne can use the wind bridge during Confront Lorthuna.
   Missing unlocks keep their prerequisites, and known unlocks are not repeated. Druids include
   Moonglade by default.
 - **Your play style**: a relaxed, normal or fast pace (time per fight, per loot, per stop), how far

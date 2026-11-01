@@ -10,7 +10,6 @@ fn late_form_unlock_does_not_credit_unlearned_attack_ranks() {
         ("Rip", 9492, 98362),
         ("Rake", 1822, 98362),
         ("Shred", 5221, 98362),
-        ("Tiger's Fury", 5217, 98362),
         ("Ferocious Bite", 22568, 98362),
         ("Maul", 6808, 94638),
         ("Swipe", 779, 94638),
@@ -356,4 +355,17 @@ fn higher_rank_and_cosmetic_mage_quests_do_not_gate_basic_training() {
             );
         }
     }
+}
+
+#[test]
+fn verified_training_levels_also_change_form_attack_power() {
+    let conn = database_of("forever");
+    let o = Overrides::load_edition(&repo().join("overrides"), Edition::Forever).unwrap();
+    let req = serde_json::from_value(serde_json::json!({"race":"skyborne_horde","class":"druid","from_level":20,"to_level":21,"required_class_quests":[],"start":{"level":20,"spells":[768]}})).unwrap();
+    let p = job::prepare(&conn, &o, &req, &|_| {}).unwrap();
+    let book = &p.model.abilities;
+    let shred = book.bit(5221).unwrap();
+    let trained = book.trained(p.model.initial.abilities, 20);
+    let power = p.model.power.as_ref().unwrap();
+    assert!(power.spell_bonus(20, 20, trained) > power.spell_bonus(20, 20, trained & !shred));
 }
