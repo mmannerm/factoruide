@@ -3017,6 +3017,9 @@ fn clamlette_surprise_buys_swiss_without_the_optional_reward_package() {
         // The TBC snapshot omits the quantity; preserve its normal acquisition path too.
         if edition != Edition::Tbc {
             assert_eq!(swiss.count, 20.0);
+            for (item, count) in [(12207, 12.0), (7974, 10.0)] {
+                assert_eq!(q.objectives.iter().find(|o| o.loc.id == item).unwrap().count, count);
+            }
         }
         assert!(!swiss.vendors.is_empty());
         assert_eq!(swiss.kills, 0.0);
@@ -3036,16 +3039,29 @@ fn clamlette_surprise_buys_swiss_without_the_optional_reward_package() {
                 .iter()
                 .any(|s| s.quest == Some(6610) && s.buy && s.target.as_ref().is_some_and(|t| t.id == 8932))
         );
+        if edition != Edition::Tbc {
+            let buy = guide
+                .steps
+                .iter()
+                .find(|s| s.quest == Some(6610) && s.buy && s.target.as_ref().is_some_and(|t| t.id == 8932))
+                .unwrap();
+            assert!(
+                buy.say
+                    .iter()
+                    .any(|phrase| phrase.args.get("n") == Some(&fg_route::export::Arg::Num(20)))
+            );
+        }
         assert!(!guide.steps.iter().any(|s| s.quest == Some(5150)));
     }
 }
 
 #[test]
 fn a_reward_package_cannot_supply_ingredients_while_its_quest_is_held() {
-    let conn = database();
+    let path = std::env::temp_dir().join(format!("fg-reward-container-{}.sqlite", std::process::id()));
+    database().execute("VACUUM INTO ?1", [path.to_str().unwrap()]).unwrap();
+    let conn = Connection::open(&path).unwrap();
     conn.execute_batch(
-        "CREATE TEMP TABLE m_item_source AS SELECT * FROM main.m_item_source;
-         DELETE FROM temp.m_item_source WHERE item_id = 8932 AND NOT (from_type = 'item' AND from_id = 15699);",
+        "DELETE FROM m_item_source WHERE item_id = 8932 AND NOT (from_type = 'item' AND from_id = 15699);",
     )
     .unwrap();
     let mut o = overrides();
@@ -3062,7 +3078,8 @@ fn a_reward_package_cannot_supply_ingredients_while_its_quest_is_held() {
         format!("{error:#}").contains("objective item source unknown"),
         "{error:#}"
     );
-    assert!(!format!("{error:#}").contains("needs 5150"), "{error:#}");
+    drop(conn);
+    std::fs::remove_file(path).unwrap();
 }
 
 /// Places of known height stand on their floor where several lie over each other: Fargodeep

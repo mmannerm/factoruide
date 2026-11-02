@@ -99,20 +99,7 @@ impl<'a> QuestBuilder<'a> {
     /// Warsong Reports, holds the Warsong Report each scout's update asks for).
     pub(super) fn bag_quest(&self, quest: i64, item: i64) -> Option<i64> {
         let bags = self.sources.item_origins.get(&item)?;
-        // Ordinary loot and vendor sources are alternatives to a container, not a reason to
-        // hold its quest. A reward package is not supplied while accepting that quest either.
-        if bags.iter().any(|(kind, id)| match kind {
-            SourceKind::Vendor => self.locate(EntityKind::Npc, *id, None).is_some(),
-            SourceKind::Object => self.has_points(EntityKind::Object, *id),
-            SourceKind::Npc => {
-                !self.sources.entities.friendly.contains(id)
-                    && (self.params.allow_elite || !self.sources.entities.is_elite(*id))
-                    && (self.has_points(EntityKind::Npc, *id) || self.dungeon_of(EntityKind::Npc, *id).is_some())
-            }
-            SourceKind::Item => false,
-        }) {
-            return None;
-        }
+        // A reward package is obtained at turn-in, not while holding its quest.
         bags.iter()
             .filter(|(t, _)| *t == SourceKind::Item)
             .find_map(|(_, bag)| {
