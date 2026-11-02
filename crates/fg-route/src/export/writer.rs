@@ -841,6 +841,7 @@ impl StepWriter<'_> {
                 // An item dropped by a mob: named, targeted by the addon's macro, and its other
                 // places.
                 let say = match &q.start_mob {
+                    _ if q.auction_start.is_some() => Phrase::new("accept.item.use"),
                     Some((id, name)) if loc.kind == EntityKind::Item => {
                         step.mobs.push(name.clone());
                         step.mob_ids.push(*id);

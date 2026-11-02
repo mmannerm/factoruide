@@ -26,7 +26,7 @@ impl QuestBuilder<'_> {
                 // A creature gives the quest in a town its own side's guards watch; an item is
                 // found where it lies, among the camps of the other side too.
                 .map(|l| {
-                    if l.kind == EntityKind::Item {
+                    if l.kind == EntityKind::Item && givers.starter != Some(l.id) {
                         self.sources.guards.around_hostile(&l.pos)
                     } else {
                         self.sources.guards.around(&l.pos)

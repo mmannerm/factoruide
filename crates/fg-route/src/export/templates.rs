@@ -68,6 +68,20 @@ pub(super) const TEMPLATES: &[(&str, [&str; 9])] = &[
         ],
     ),
     (
+        "accept.item.use",
+        [
+            "Use {who} to start {quest}",
+            "Utiliser {who} pour commencer {quest}",
+            "{who} benutzen, um {quest} zu beginnen",
+            "Usar {who} para comenzar {quest}",
+            "Use {who} para iniciar {quest}",
+            "Использовать {who}, чтобы начать {quest}",
+            "{who}을(를) 사용해 {quest} 시작",
+            "使用{who}开始{quest}",
+            "使用{who}開始{quest}",
+        ],
+    ),
+    (
         "accept.item.mob",
         [
             "Kill {mob} and loot {who} to start {quest}",

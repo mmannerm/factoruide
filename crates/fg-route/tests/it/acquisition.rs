@@ -59,7 +59,12 @@ fn shipping_label_buys_and_fills_a_crate_before_the_faction_turn_in() {
         assert!(accept.text.contains("auction house"));
         assert!(accept.text.contains("Peacebloom"));
         assert!(accept.text.contains("20"));
+        assert!(accept.text.contains("Use Shipping Label to start Shipping Label"));
         assert_eq!(accept.level, level, "{race}: {:?}, guard {:?}", q.starts, q.start_guard);
+        eprintln!(
+            "{race} auction: {:?}; guard {:?}; accept level {}",
+            q.starts, q.start_guard, accept.level
+        );
         assert!(accept.text.contains("fill the Apprentice Herbs crate"));
         assert!(
             !accept.held,
@@ -180,7 +185,7 @@ fn shipping_label_still_needs_an_accessible_auction_house() {
     first.name = "First".into();
     first.race = 96;
     first.class = "WARRIOR".into();
-    first.faction = "Horde".into();
+    first.faction = Some(fg_route::faction::Faction::Horde);
     let mut second = first.clone();
     second.name = "Second".into();
     second.log.clear();
