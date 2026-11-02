@@ -2987,6 +2987,82 @@ fn items_a_child_hands_over_are_got_at_its_hand_in() {
         "no update to buy: {:?}",
         q.objectives.iter().map(|o| &o.text).collect::<Vec<_>>()
     );
+    for id in [6545, 6546, 6547] {
+        let child = &p.model.quests[p.model.index[&id]];
+        assert!(
+            child.pre_held.contains(&6543),
+            "{} needs the supplied reports",
+            child.name
+        );
+        assert!(child.objectives.iter().all(|o| o.loc.id != 16746));
+    }
+}
+
+#[test]
+fn clamlette_surprise_buys_swiss_without_the_optional_reward_package() {
+    for edition in Edition::ALL {
+        let conn = database_of(edition.key());
+        let mut o = Overrides::load_edition(&repo().join("overrides"), edition).unwrap();
+        o.params.excluded_quests.push(5150);
+        let req: PlanRequest = serde_json::from_value(serde_json::json!({
+            "race":"orc", "class":"shaman", "from_level":45, "to_level":46,
+            "required_class_quests":[], "required_quests":[6610],
+            "professions":[{"key":"cooking","target":225,"milestones":[[35,225]]}]
+        }))
+        .unwrap();
+        let p = job::prepare(&conn, &o, &req, &|_| {}).unwrap();
+        let q = &p.model.quests[p.model.index[&6610]];
+        assert!(!q.pre_held.contains(&5150));
+        let swiss = q.objectives.iter().find(|o| o.loc.id == 8932).unwrap();
+        // The TBC snapshot omits the quantity; preserve its normal acquisition path too.
+        if edition != Edition::Tbc {
+            assert_eq!(swiss.count, 20.0);
+        }
+        assert!(!swiss.vendors.is_empty());
+        assert_eq!(swiss.kills, 0.0);
+        let planner = Planner::new(&p.model, &p.world, &p.params, &p.profile);
+        let route = planner.greedy();
+        planner.validate_required(&route).unwrap();
+        let guide = fg_route::export::build(&planner, &p.profile, &route);
+        assert!(
+            guide
+                .steps
+                .iter()
+                .any(|s| s.quest == Some(6610) && s.kind == fg_route::export::StepKind::TurnIn)
+        );
+        assert!(
+            guide
+                .steps
+                .iter()
+                .any(|s| s.quest == Some(6610) && s.buy && s.target.as_ref().is_some_and(|t| t.id == 8932))
+        );
+        assert!(!guide.steps.iter().any(|s| s.quest == Some(5150)));
+    }
+}
+
+#[test]
+fn a_reward_package_cannot_supply_ingredients_while_its_quest_is_held() {
+    let conn = database();
+    conn.execute_batch(
+        "CREATE TEMP TABLE m_item_source AS SELECT * FROM main.m_item_source;
+         DELETE FROM temp.m_item_source WHERE item_id = 8932 AND NOT (from_type = 'item' AND from_id = 15699);",
+    )
+    .unwrap();
+    let mut o = overrides();
+    o.params.approx_sources = false;
+    o.params.excluded_quests.push(5150);
+    let req: PlanRequest = serde_json::from_value(serde_json::json!({
+        "race":"orc", "class":"shaman", "from_level":45, "to_level":46,
+        "required_class_quests":[], "required_quests":[6610],
+        "professions":[{"key":"cooking","target":225,"milestones":[[35,225]]}]
+    }))
+    .unwrap();
+    let error = job::prepare(&conn, &o, &req, &|_| {}).err().unwrap();
+    assert!(
+        format!("{error:#}").contains("objective item source unknown"),
+        "{error:#}"
+    );
+    assert!(!format!("{error:#}").contains("needs 5150"), "{error:#}");
 }
 
 /// Places of known height stand on their floor where several lie over each other: Fargodeep
