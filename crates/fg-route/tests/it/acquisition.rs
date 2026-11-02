@@ -67,6 +67,11 @@ fn shipping_label_buys_and_fills_a_crate_before_the_faction_turn_in() {
         );
         assert!(accept.text.contains("fill the Apprentice Herbs crate"));
         assert!(
+            accept
+                .text
+                .contains("Each player without a Shipping Label needs their own crate and 20 Peacebloom")
+        );
+        assert!(
             !accept.held,
             "the addon must wait for accepting the quest after filling"
         );
