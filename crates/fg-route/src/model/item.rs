@@ -14,8 +14,8 @@ const AROUND: f64 = 1500.0;
 /// Where an item can be got.
 /// Time to buy an item at an auction house, and the more it takes on an empty server (few
 /// players selling: waiting for one to put it up, or going without).
-const AUCTION_TIME: f64 = 60.0;
-const AUCTION_SCARCE: f64 = 1800.0;
+pub(super) const AUCTION_TIME: f64 = 60.0;
+pub(super) const AUCTION_SCARCE: f64 = 1800.0;
 /// Auctioneers this close (yards) are one auction house (a city's: Stormwind has two groups of
 /// them).
 const AUCTION_HOUSE: f64 = 300.0;
@@ -214,7 +214,7 @@ impl QuestBuilder<'_> {
 
     /// The auction houses the character can buy from: the middle of each group of auctioneers
     /// (a city's), and their IDs and names.
-    fn auction_houses(&self) -> Vec<AuctionHouse> {
+    pub(super) fn auction_houses(&self) -> Vec<AuctionHouse> {
         let entities = &self.sources.entities;
         let mut houses: Vec<AuctionHouse> = Vec::new();
         for &id in entities.auctioneers.iter() {

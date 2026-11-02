@@ -17,6 +17,23 @@ spells = [768, 1082, 1079, 5215] # Cat Form, Claw 1, Rip 1, Prowl 1
 id = 98397
 spells = [768, 1082, 1079, 5215]
 
+# The first filled crate gives the faction's Shipping Label. Buy a known crate and one
+# complete bundle when this introduction is required; random drops have no known rate.
+# https://www.wowhead.com/forever/item=248682/waylaid-crate-apprentice-herbs
+# https://www.wowhead.com/forever/item=280180/shipping-label
+# https://www.wow-professions.com/forever/merchants-favor-durotar-supply-azeroth-commerce
+[[quest]]
+id = 98247 # Alliance
+[quest.auction_start]
+items = [{ id = 248682, name = "Waylaid Crate: Apprentice Herbs", count = 1 }, { id = 2447, name = "Peacebloom", count = 20 }]
+action = "Each player without a Shipping Label needs their own crate and 20 Peacebloom. If you already have a Shipping Label, use it. Otherwise fill the Apprentice Herbs crate with 20 Peacebloom to obtain your first label. Use owned inputs instead of buying them when possible; the estimate assumes purchases and available auction stock."
+
+[[quest]]
+id = 98248 # Horde
+[quest.auction_start]
+items = [{ id = 248682, name = "Waylaid Crate: Apprentice Herbs", count = 1 }, { id = 2447, name = "Peacebloom", count = 20 }]
+action = "Each player without a Shipping Label needs their own crate and 20 Peacebloom. If you already have a Shipping Label, use it. Otherwise fill the Apprentice Herbs crate with 20 Peacebloom to obtain your first label. Use owned inputs instead of buying them when possible; the estimate assumes purchases and available auction stock."
+
 # The library's rewards ask for a number of different books, not all of them: ten for the
 # necklace, then twenty and twenty-five (Greater Friend of the Library, taken one after the other).
 # The sources list every book as needed, which the game does not ask (and some never could be

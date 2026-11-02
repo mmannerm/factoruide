@@ -318,6 +318,12 @@ impl Planner<'_> {
     /// Accept quest `i` (looting first the item that starts it, if any).
     pub(crate) fn accept(&self, s: &mut State, i: u32) {
         let q = self.quest(i);
+        if let Some(purchase) = &q.auction_start {
+            let time = purchase.time(self.params, s.level);
+            s.time += time;
+            s.spent.fighting += time;
+            s.spent.waiting += time - self.params.object_time;
+        }
         if q.start_kills > 0.0 || q.start_uses > 0.0 {
             let work = q.start_kills * self.params.kill_time(s.level, s.bonus, q.start_mob_level)
                 + q.start_uses * self.params.object_time;

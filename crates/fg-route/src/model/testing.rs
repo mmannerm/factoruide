@@ -162,6 +162,7 @@ impl Q {
             start_kills: 0.0,
             start_mob_level: 0,
             start_uses: 0.0,
+            auction_start: None,
             start_mob: None,
             start_spots: None,
             start_dungeon: None,

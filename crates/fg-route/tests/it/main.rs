@@ -3,6 +3,7 @@
 
 #![expect(clippy::unwrap_used, reason = "fixtures that cannot be read fail the test")]
 mod abilities;
+mod acquisition;
 mod addon;
 mod class_unlocks;
 mod common;

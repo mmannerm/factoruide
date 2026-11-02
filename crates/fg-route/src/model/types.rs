@@ -450,6 +450,8 @@ pub struct Quest {
     pub start_kills: f64,
     pub start_mob_level: i64,
     pub start_uses: f64,
+    /// An explicit auction-house purchase and assembly before accepting the item quest.
+    pub auction_start: Option<AuctionStart>,
     /// The mob dropping the item that starts the quest (ID, name), for the guide to name it,
     /// and its spawns (the guide's other places to look for it).
     pub start_mob: Option<(i64, String)>,
@@ -614,6 +616,32 @@ pub struct QuestOverride {
     pub disabled: bool,
     /// Object granting the quest's temporary stealth for its collection objectives.
     pub stealth_object: Option<i64>,
+    pub auction_start: Option<AuctionStart>,
+}
+
+/// A quest starter made from bought inputs. Stock and affordability are assumed, as for
+/// ordinary auction-house objectives; no random-drop rate is inferred.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct AuctionStart {
+    pub items: Vec<AuctionInput>,
+    /// Instructions after buying the inputs, before using the item that starts the quest.
+    pub action: String,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct AuctionInput {
+    pub id: i64,
+    /// English fallback for items absent from the edition's bundled catalog.
+    pub name: String,
+    pub count: u32,
+}
+
+impl AuctionStart {
+    pub(crate) fn time(&self, params: &crate::params::Params, level: i64) -> f64 {
+        self.items.len() as f64
+            * (super::item::AUCTION_TIME + (1.0 - params.crowd_at(level)) * super::item::AUCTION_SCARCE)
+            + params.object_time
+    }
 }
 
 /// An area that gives XP the first time the character enters it.
