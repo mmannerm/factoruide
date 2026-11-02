@@ -4,6 +4,13 @@ The fork uses upstream's bundled databases and applies the edition's corrections
 loading a guide. Corrections remain readable and apply after database refreshes; the database
 archives are not edited.
 
+Selecting Shipping Label (#98247 Alliance, #98248 Horde) as a must-have adds an Auction House
+stop for one Apprentice Herbs crate and 20 Peacebloom, then filling it before accepting the
+quest. The first filled crate supplies the label. Existing items can replace purchases; auction
+stock and affordability are assumed, using the usual auction purchase-time estimate. Random
+drop rates, other crate bundles and repeat deliveries are not modeled. Sources are linked in
+`overrides/forever/quests.toml`.
+
 Forever's bundled import records identify QuestieDB `cb187df` and Questie `ed1f405`. The
 corrections here reconcile the following newer changes:
 

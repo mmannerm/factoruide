@@ -56,6 +56,7 @@ impl QuestBuilder<'_> {
             start_kills: givers.start_work.0,
             start_mob_level: givers.start_work.1,
             start_uses: givers.start_work.2,
+            auction_start: givers.auction_start,
             start_mob: givers.start_mob,
             start_spots: givers.start_spots,
             start_dungeon: givers.start_dungeon,

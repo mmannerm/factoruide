@@ -827,6 +827,17 @@ impl StepWriter<'_> {
                 step.pre_any.clone_from(&q.pre_any);
                 step.pre_need = (q.pre_need > 1).then_some(q.pre_need);
                 step.min_level = Some(q.min_level);
+                if let Some(purchase) = &q.auction_start {
+                    for item in &purchase.items {
+                        step.say.push(
+                            Phrase::new("objective.buy.auction")
+                                .arg("who", Arg::Item(item.id, item.name.clone()))
+                                .arg("n", num(i64::from(item.count))),
+                        );
+                    }
+                    step.say
+                        .push(Phrase::new("objective.text").arg("text", Arg::Text(purchase.action.clone())));
+                }
                 // An item dropped by a mob: named, targeted by the addon's macro, and its other
                 // places.
                 let say = match &q.start_mob {
@@ -837,7 +848,7 @@ impl StepWriter<'_> {
                         step.spots = self.spots(q.start_spots.as_ref(), &loc.pos, loc.zone);
                         Phrase::new("accept.item.mob").arg("mob", Arg::Npc(*id, name.clone()))
                     }
-                    _ if q.held.is_some() => {
+                    _ if q.held.is_some() && q.auction_start.is_none() => {
                         step.held = true;
                         let giver = q.ends.first().map_or_else(|| who.clone(), entity);
                         Phrase::new("accept.held").arg("giver", giver)

@@ -20,6 +20,7 @@ pub(super) struct Givers {
     pub(super) item_pre: Vec<i64>,
     /// The item the giver offers the quest for (`held_item`): looting it is the accept.
     pub(super) held: Option<i64>,
+    pub(super) auction_start: Option<super::types::AuctionStart>,
 }
 
 /// How the item starting a quest is got.
@@ -53,6 +54,7 @@ impl QuestBuilder<'_> {
             start_dungeon: None,
             item_pre: Vec::new(),
             held: None,
+            auction_start: None,
         };
         let mut rare_start = false;
         let relations = self.sources.relations.get(&r.id).map(Vec::as_slice).unwrap_or_default();
@@ -103,6 +105,37 @@ impl QuestBuilder<'_> {
                 ItemStart::Rare => rare_start = true,
                 ItemStart::Nowhere => {}
             }
+        }
+        // Only an explicitly selected requirement authorizes buying its starter's inputs.
+        if givers.starts.is_empty()
+            && self.profile.required_quests.iter().any(|q| q.id == r.id)
+            && let Some(purchase) = self
+                .profile
+                .quest_overrides
+                .iter()
+                .find(|q| q.id == r.id)
+                .and_then(|q| q.auction_start.as_ref())
+            && let Some(item) = relations
+                .iter()
+                .find_map(|(role, kind, id)| (*role == Role::Start && *kind == EntityKind::Item).then_some(*id))
+            && let Some((pos, zone, _)) = self
+                .auction_houses()
+                .into_iter()
+                .filter(|(_, zone, _)| !self.params.excluded_zones.contains(zone))
+                .min_by(|a, b| {
+                    let near = givers.ends.first().map_or(start.pos, |end| end.pos);
+                    a.0.dist(&near).total_cmp(&b.0.dist(&near))
+                })
+        {
+            givers.starts.push(Loc {
+                pos,
+                zone,
+                kind: EntityKind::Item,
+                id: item,
+                name: self.sources.entities.name(EntityKind::Item, item),
+            });
+            givers.held = Some(item);
+            givers.auction_start = Some(purchase.clone());
         }
         givers.starts.retain(|l| !self.params.excluded_zones.contains(&l.zone));
         givers.ends.retain(|l| !self.params.excluded_zones.contains(&l.zone));
