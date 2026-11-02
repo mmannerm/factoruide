@@ -21,14 +21,20 @@ fn shipping_label_buys_and_fills_a_crate_before_the_faction_turn_in() {
     let mut o = Overrides::load_edition(&repo().join("overrides"), Edition::Forever).unwrap();
     o.params.crowded = 1.0;
     o.params.crowd_by_level = vec![1.0];
-    for (race, id, label, ender) in [
-        ("skyborne_horde", 98248, 280180, 256386),
-        ("human", 98247, 280179, 256390),
+    for (race, id, label, ender, level) in [
+        ("skyborne_horde", 98248, 280180, 256386, 10),
+        // Stormwind's existing unknown-faction ambient spawns gate its AH at level 25.
+        ("human", 98247, 280179, 256390, 25),
     ] {
-        let mut p = job::prepare(&conn, &o, &request(race, id), &|_| {}).unwrap();
+        let mut req = request(race, id);
+        req.from_level = level;
+        req.to_level = level + 1;
+        req.start.as_mut().unwrap().level = level;
+        let mut p = job::prepare(&conn, &o, &req, &|_| {}).unwrap();
         let i = p.model.index[&id];
         let q = &p.model.quests[i];
-        assert_eq!(q.held, Some(label));
+        assert_eq!(q.held, None, "the label starts its quest before reaching the camp");
+        assert_eq!(q.starts[0].id, label);
         assert_eq!(q.min_level, 10);
         assert_eq!(q.ends[0].id, ender);
         assert!(
@@ -53,7 +59,8 @@ fn shipping_label_buys_and_fills_a_crate_before_the_faction_turn_in() {
         assert!(accept.text.contains("auction house"));
         assert!(accept.text.contains("Peacebloom"));
         assert!(accept.text.contains("20"));
-        assert!(accept.text.contains("Fill the Apprentice Herbs crate"));
+        assert_eq!(accept.level, level, "{race}: {:?}, guard {:?}", q.starts, q.start_guard);
+        assert!(accept.text.contains("fill the Apprentice Herbs crate"));
         assert!(
             !accept.held,
             "the addon must wait for accepting the quest after filling"
@@ -64,6 +71,15 @@ fn shipping_label_buys_and_fills_a_crate_before_the_faction_turn_in() {
                 .iter()
                 .any(|s| s.quest == Some(id) && s.kind == fg_route::export::StepKind::TurnIn)
         );
+        let turnin = guide
+            .steps
+            .iter()
+            .find(|s| s.quest == Some(id) && s.kind == fg_route::export::StepKind::TurnIn)
+            .unwrap();
+        assert_eq!(turnin.say[0].key, "turnin");
+        let pack = fg_route::export::polestar::pack(&[("shipping".into(), guide.clone())], "test");
+        let lua = &pack.iter().find(|(file, _)| *file == "Guides.lua").unwrap().1;
+        assert_eq!(lua.matches(format!("t = \"accept\", quest = {id}").as_str()).count(), 1);
         // Compare the same route without purchase work: no travel or kill-XP difference.
         p.model.quests[i].auction_start = None;
         let plain_planner = Planner::new(&p.model, &p.world, &p.params, &p.profile);
@@ -136,8 +152,39 @@ fn shipping_label_still_needs_an_accessible_auction_house() {
     let mut o = Overrides::load_edition(&repo().join("overrides"), Edition::Forever).unwrap();
     o.params.excluded_zones = conn.prepare("SELECT DISTINCT s.zone_id FROM m_spawn s JOIN m_npc n ON s.entity_type='npc' AND s.entity_id=n.id WHERE coalesce(n.npc_flags,0) & 4096 != 0").unwrap()
         .query_map([], |row| row.get(0)).unwrap().collect::<Result<Vec<i64>,_>>().unwrap();
-    let error = job::prepare(&conn, &o, &request("skyborne_horde", 98248), &|_| {})
-        .err()
-        .unwrap();
+    let mut req = request("skyborne_horde", 98248);
+    let error = job::prepare(&conn, &o, &req, &|_| {}).err().unwrap();
     assert!(format!("{error:#}").contains("no reachable quest giver"));
+    req.start.as_mut().unwrap().log = vec![job::LogQuest {
+        id: job::QuestId(98248),
+        complete: true,
+        objectives: vec![],
+    }];
+    let p = job::prepare(&conn, &o, &req, &|_| {}).unwrap();
+    let i = p.model.index[&98248];
+    assert!(p.model.quests[i].auction_start.is_none());
+    let planner = Planner::new(&p.model, &p.world, &p.params, &p.profile);
+    let route = [Stop::quest(i as u32, Kind::TurnIn)];
+    planner.validate_required(&route).unwrap();
+    assert!(
+        fg_route::export::build(&planner, &p.profile, &route)
+            .total_time
+            .is_finite()
+    );
+    req.start.as_mut().unwrap().log[0].complete = false;
+    let error = job::prepare(&conn, &o, &req, &|_| {}).err().unwrap();
+    assert!(format!("{error:#}").contains("active item quest is not ready to turn in"));
+    // One ready player's label cannot supply the introduction for a new group member.
+    let first = req.start.as_mut().unwrap();
+    first.log[0].complete = true;
+    first.name = "First".into();
+    first.race = 96;
+    first.class = "WARRIOR".into();
+    first.faction = "Horde".into();
+    let mut second = first.clone();
+    second.name = "Second".into();
+    second.log.clear();
+    req.mates = vec![second];
+    let error = job::prepare(&conn, &o, &req, &|_| {}).err().unwrap();
+    assert!(format!("{error:#}").contains("no reachable quest giver"), "{error:#}");
 }

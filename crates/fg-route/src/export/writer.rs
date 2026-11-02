@@ -848,7 +848,7 @@ impl StepWriter<'_> {
                         step.spots = self.spots(q.start_spots.as_ref(), &loc.pos, loc.zone);
                         Phrase::new("accept.item.mob").arg("mob", Arg::Npc(*id, name.clone()))
                     }
-                    _ if q.held.is_some() && q.auction_start.is_none() => {
+                    _ if q.held.is_some() => {
                         step.held = true;
                         let giver = q.ends.first().map_or_else(|| who.clone(), entity);
                         Phrase::new("accept.held").arg("giver", giver)

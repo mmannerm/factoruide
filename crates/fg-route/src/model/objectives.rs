@@ -118,7 +118,7 @@ impl QuestBuilder<'_> {
         for (slot, row) in rows.into_iter().enumerate() {
             let kind = row.0;
             // The item the quest is offered for: in the bags from the accept on.
-            if kind == ObjectiveKind::Item && row.1.is_some() && row.1 == givers.held {
+            if kind == ObjectiveKind::Item && row.1.is_some() && (row.1 == givers.held || row.1 == givers.starter) {
                 continue;
             }
             if let Some(mut o) = self.objective(&quest, row)? {

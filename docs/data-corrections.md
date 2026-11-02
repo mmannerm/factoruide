@@ -6,8 +6,8 @@ archives are not edited.
 
 Selecting Shipping Label (#98247 Alliance, #98248 Horde) as a must-have adds an Auction House
 stop for one Apprentice Herbs crate and 20 Peacebloom, then filling it before accepting the
-quest. The first filled crate supplies the label. Existing items can replace purchases; auction
-stock and affordability are assumed, using the usual auction purchase-time estimate. Random
+quest. The first filled crate supplies the label. Use owned items instead of buying when possible; the estimate assumes purchases, auction
+stock and affordability, using the usual purchase-time estimate. Random
 drop rates, other crate bundles and repeat deliveries are not modeled. Sources are linked in
 `overrides/forever/quests.toml`.
 

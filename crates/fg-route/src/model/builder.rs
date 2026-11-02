@@ -15,6 +15,7 @@ pub(super) struct QuestBuilder<'a> {
     pub(super) world: &'a World,
     pub(super) profile: &'a Profile,
     pub(super) params: &'a Params,
+    pub(super) starts: &'a [&'a crate::job::StartState],
     pub(super) excluded: HashSet<i64>,
     pub(super) excluded_sorts: HashSet<i64>,
     /// Quest items each group member must loot for themselves (unless drops are shared).
@@ -22,12 +23,19 @@ pub(super) struct QuestBuilder<'a> {
 }
 
 impl<'a> QuestBuilder<'a> {
-    pub(super) fn new(sources: &'a Sources, world: &'a World, profile: &'a Profile, params: &'a Params) -> Self {
+    pub(super) fn new(
+        sources: &'a Sources,
+        world: &'a World,
+        profile: &'a Profile,
+        params: &'a Params,
+        starts: &'a [&'a crate::job::StartState],
+    ) -> Self {
         Self {
             sources,
             world,
             profile,
             params,
+            starts,
             excluded: params.excluded_quests.iter().copied().collect(),
             excluded_sorts: params.excluded_sorts.iter().copied().collect(),
             per_player: if params.group_shared_drops {

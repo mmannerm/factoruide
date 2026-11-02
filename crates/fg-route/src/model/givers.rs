@@ -18,8 +18,10 @@ pub(super) struct Givers {
     pub(super) start_dungeon: Option<usize>,
     /// Quests that must be done first to hold the item that starts this one.
     pub(super) item_pre: Vec<i64>,
-    /// The item the giver offers the quest for (`held_item`): looting it is the accept.
+    /// The item an NPC offers the quest for: looting it is the accept.
     pub(super) held: Option<i64>,
+    /// The item already obtained when accepting an auction-made starter quest.
+    pub(super) starter: Option<i64>,
     pub(super) auction_start: Option<super::types::AuctionStart>,
 }
 
@@ -54,6 +56,7 @@ impl QuestBuilder<'_> {
             start_dungeon: None,
             item_pre: Vec::new(),
             held: None,
+            starter: None,
             auction_start: None,
         };
         let mut rare_start = false;
@@ -118,24 +121,55 @@ impl QuestBuilder<'_> {
             && let Some(item) = relations
                 .iter()
                 .find_map(|(role, kind, id)| (*role == Role::Start && *kind == EntityKind::Item).then_some(*id))
-            && let Some((pos, zone, _)) = self
-                .auction_houses()
-                .into_iter()
-                .filter(|(_, zone, _)| !self.params.excluded_zones.contains(zone))
-                .min_by(|a, b| {
-                    let near = givers.ends.first().map_or(start.pos, |end| end.pos);
-                    a.0.dist(&near).total_cmp(&b.0.dist(&near))
-                })
         {
-            givers.starts.push(Loc {
-                pos,
-                zone,
-                kind: EntityKind::Item,
-                id: item,
-                name: self.sources.entities.name(EntityKind::Item, item),
+            let members = self.profile.members_of(r.races, r.classes);
+            let participants: Vec<_> = self
+                .starts
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| members & (1 << i) != 0)
+                .map(|(_, s)| *s)
+                .collect();
+            let ready = !participants.is_empty()
+                && participants.iter().all(|s| {
+                    s.completed.iter().any(|q| q.0 == r.id) || s.log.iter().any(|q| q.id.0 == r.id && q.complete)
+                });
+            // A recorded unready label quest cannot be made ready just by assuming its
+            // starter is still in the bags. Recover the item and import the character again.
+            let starter_only = self.sources.objectives.get(&r.id).is_some_and(|objectives| {
+                !objectives.is_empty()
+                    && objectives
+                        .iter()
+                        .all(|o| o.0 == ObjectiveKind::Item && o.1 == Some(item))
             });
-            givers.held = Some(item);
-            givers.auction_start = Some(purchase.clone());
+            if starter_only
+                && participants
+                    .iter()
+                    .any(|s| s.log.iter().any(|q| q.id.0 == r.id && !q.complete))
+            {
+                return Err("active item quest is not ready to turn in");
+            }
+            let at = if ready {
+                givers.ends.first().map(|end| (end.pos, end.zone))
+            } else {
+                let near = givers.ends.first().map_or(start.pos, |end| end.pos);
+                self.auction_houses()
+                    .into_iter()
+                    .filter(|(_, zone, _)| !self.params.excluded_zones.contains(zone))
+                    .min_by(|a, b| a.0.dist(&near).total_cmp(&b.0.dist(&near)))
+                    .map(|(pos, zone, _)| (pos, zone))
+            };
+            if let Some((pos, zone)) = at {
+                givers.starts.push(Loc {
+                    pos,
+                    zone,
+                    kind: EntityKind::Item,
+                    id: item,
+                    name: self.sources.entities.name(EntityKind::Item, item),
+                });
+                givers.starter = Some(item);
+                givers.auction_start = (!ready).then(|| purchase.clone());
+            }
         }
         givers.starts.retain(|l| !self.params.excluded_zones.contains(&l.zone));
         givers.ends.retain(|l| !self.params.excluded_zones.contains(&l.zone));
