@@ -23,7 +23,7 @@ fn shipping_label_buys_and_fills_a_crate_before_the_faction_turn_in() {
     o.params.crowd_by_level = vec![1.0];
     for (race, id, label, ender, level) in [
         ("skyborne_horde", 98248, 280180, 256386, 10),
-        // Stormwind's existing unknown-faction ambient spawns gate its AH at level 25.
+        // The auction is available at ten; the Redridge turn-in still needs a reachable trip.
         ("human", 98247, 280179, 256390, 25),
     ] {
         let mut req = request(race, id);
@@ -197,4 +197,24 @@ fn shipping_label_still_needs_an_accessible_auction_house() {
     req.mates = vec![second];
     let error = job::prepare(&conn, &o, &req, &|_| {}).err().unwrap();
     assert!(format!("{error:#}").contains("no reachable quest giver"), "{error:#}");
+}
+
+#[test]
+fn stormwind_shipping_label_inputs_can_be_bought_at_level_ten() {
+    let conn = database_of("forever");
+    let o = Overrides::load_edition(&repo().join("overrides"), Edition::Forever).unwrap();
+    let req = request("human", 98247);
+    let editor = job::Editor::open(&conn, &o, &req, None).unwrap();
+    let names = fg_route::model::Names::load(&conn, "enUS").unwrap();
+    let report = editor.simulate(&[job::RouteStep::Accept { quest: 98247 }], &names);
+    assert_eq!(report.errors, 0);
+    assert_eq!(report.steps[0].level, 10);
+    assert!(
+        report.steps[0]
+            .line
+            .as_ref()
+            .unwrap()
+            .text
+            .contains("fill the Apprentice Herbs crate")
+    );
 }

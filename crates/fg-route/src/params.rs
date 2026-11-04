@@ -190,6 +190,14 @@ pub struct Params {
     /// Items no creature, object or vendor gives (made by a profession) that quests ask for:
     /// bought at the auction house (`overrides/routing.toml`).
     pub auction_items: Vec<i64>,
+    /// Buy there any other such item, quest items aside (Rough Dynamite): for players who use
+    /// the auction house.
+    pub auction_house: bool,
+    /// With professions: a stop at their trainer to learn each profession and, before the skill
+    /// reaches the cap of its rank, each next rank. A trainer close to the route (`train_radius`) is
+    /// a detour; a far one is a trip, once the skill needs the rank. Both count in the route's
+    /// time. No stop for a rank no trainer teaches.
+    pub profession_trainers: bool,
     /// Greedy construction: levels below the character a quest can be without penalty, and
     /// the penalty per level beyond (quests turned in late give less XP).
     pub fit_free_levels: i64,
@@ -539,6 +547,8 @@ impl Default for Params {
             elite_kill_factor: 3.0,
             approx_sources: false,
             auction_items: vec![],
+            auction_house: false,
+            profession_trainers: false,
             fit_free_levels: 2,
             fit_penalty: 0.0,
             fit_above_penalty: 0.4,

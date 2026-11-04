@@ -10,6 +10,35 @@ An addon change also goes, in the same words, under Unreleased in that addon's o
 
 ### App
 
+- A dungeon quest with one objective inside shows its name in the guide ("An Ancient Grudge: Faldrim Anvilmar"), not the dungeon's ("The Hall of Thanes: Faldrim Anvilmar").
+
+### Guides
+
+- "On the way: buy ... at the auction house" comes before the flight, boat or zeppelin that leaves the city, not after it (GitHub #115).
+- WoW Forever: the Orc mage takes the Undercity mage quests (Investigate the Alchemist Shop, Spellfire Robes, Speak with Deino...), the Troll warlock the Voidwalker's Creature of the Void and The Binding, and the High Order Skyborne mage and druid the Human, Gnome and Night Elf quests of their sides, instead of leaving them out of the guide (GitHub #111, #114).
+- Class quests: the guide takes one version of each (the Skyborne shaman's two Call of Fire chains, the human priest's Divine Grace, the warlocks' demons by race...) instead of all of them, and a class quest no version of which can be planned is reported. The races of the class quests follow the quests' pages (the troll warlock gets its Voidwalker and Incubus, Piercing the Veil is the orc and undead warlocks') (GitHub #110, #111, #112, #114).
+- A quest the guide takes and never hands in is grinding in all but name: the time of its kills counts as grinding, in the planner's score and against the grind limit. Guides no longer end on a many-hour step for a quest they never hand in, nor keep quests only for their kills (GitHub #117, #124).
+- Automatic class requirements favor the levels where quests are yellow (orange with the risky profile) or green, without refusing a guide for missing that target. Manually selected must-have quests use the optional completion range you supply; leaving it empty imposes no deadline.
+- A quest started by an item found in a dungeon's object is planned with the run and taken in it: WoW Forever's The Treaty of Understanding, from the Hall of Thanes.
+- Dungeons run above their monsters' level: the level-60 dungeons are run at 60 instead of leaving the guide impossible to make (GitHub #99).
+- "Profession trainer stops" option (under the professions of a player of the new guide, off by default): with professions, the route goes to the trainer to learn each profession and, before the skill reaches the cap of its rank, each next rank. A trainer near the route is a detour, a far one a trip, both counted in the route's time; a rank no trainer teaches has no stop (GitHub #106).
+- "Buy at the auction house" option (advanced settings, off by default): the items a quest asks for that nothing else gives, made by a profession like Rough Dynamite, are bought at the nearest auction house instead of leaving the quest out (GitHub #97).
+
+### Addon
+
+- WoW Forever: the Sleeping Bag XP reminder starts after its reward quest is completed.
+
+### WoW data
+
+- WoW Forever's Hall of Thanes: Underground Map is planned (the Dark Iron Map drops from the Dark Iron Spies and Captain Beld), and Old Ironforge Incursion after it (GitHub #98).
+- WoW Forever: the warlocks' pets and the Theramore Emissaries no longer count as hostile creatures in Stormwind (they kept low-level characters from its auction house), and A Dynamite Plan asks for its 10 Rough Dynamite.
+
+## 0.15.0 (2026-11-01)
+
+Forced dungeons run inside their levels, optional XP buffs and turn-in levels for must-have quests, class unlocks kept and done soon, flights followed one by one in the addon, and the fixes of your reports (GitHub #73 to #88).
+
+### App
+
 - Optional Forever food and Sleeping Bag XP bonuses, with the bag's quest chain included.
 - Must-have quests can have an optional minimum and maximum turn-in level.
 - The dungeons' levels are chosen with a slider above their list: from how many levels below their monsters to how many above (the progression profile sets them back to its own). Each dungeon shows the levels it will be run at, and the guide never runs it outside them.
@@ -18,6 +47,7 @@ An addon change also goes, in the same words, under Unreleased in that addon's o
 - Choose must-have quests at the bottom of the new guide page, searched among your race and class's quests by name, zone, level or ID ("barrens 20").
 - Group guides: in the desktop app too, a player who plays on another computer is added by pasting the export of their character (in game: /fg, "Export my character").
 - The web app can send a problem report from its form, like the desktop app (GitHub #80).
+- Problem reports of a group guide call the players Player 1, Player 2... instead of their characters' names (GitHub #88).
 - A search box above the guide's steps marks every step of a quest (typed by name or ID) and goes from one to the next (GitHub #79).
 - In the guide editor, a quest already in the guide says at which step ("already in the guide · step 313"); the number shows that step.
 - Advanced settings let you turn off the assumption that movement talents are learned.
@@ -65,16 +95,19 @@ An addon change also goes, in the same words, under Unreleased in that addon's o
 - Walks up Mount Hyjal and out of Timbermaw Hold follow Darkwhisper Gorge and the tunnel all the way instead of cutting their last corners.
 - The Affray: the grate is stepped on before Big Will is fought, and timed quests are only taken once the character is strong enough to finish them in time.
 - Mobs, NPCs and objects stand on their real floor: the kobolds inside Fargodeep Mine rather than on the hill above it, Undercity's NPCs down in the city, the watchtower's NPCs on Zephras Isle at its top.
-- Dungeons forced together are all run: the guide goes past a dungeon's levels to fit them in (the Wailing Caverns for the Alliance, with eight others forced) (GitHub #66, #71).
+- Dungeons forced together are all run, each inside its levels (GitHub #66, #71, #84).
 - Warlock quests asking for Soul Shards, Robes of Arcana or Fine Gold Thread (Components for the Enchanted Gold Bloodrobe) can be planned, and items dropped under 3% no longer keep a quest from being planned (GitHub #72, #73).
 - A trip step (flight, boat, hearthstone, teleport, death skip) shows the time its trip takes, instead of the step after it (GitHub #68).
 - Mages learn each city's teleport from its trainer: the guide teleports only to the cities where it has trained (GitHub #75).
 - WoW Forever: the Alliance warlock's The Binding looks for the voidwalker in Stormwind, not Undercity; A Pain in the Neck (Enchanting, Echo Isles) is planned with the trolls' Hexed Pendants (GitHub #69, #76).
 - WoW Forever: the library's rewards ask for ten, twenty and twenty-five different books, not every book, and the guide can take books on its way to earn them (GitHub #56).
+- A forced dungeon is run around the middle of its levels, with its quests first (Ragefire Chasm at 16, not 47). A guide that cannot run every forced dungeon is refused, and so is one that starts after a forced dungeon's levels (GitHub #84).
+- A must-have quest you already handed in, or finished in your log, no longer asks for its dungeon (GitHub #87).
+- A class unlock you lack is done soon, not late, even when its quests are gray (advanced setting "Coût d'un déblocage de classe tardif").
 
 ### Addon
 
-- WoW Forever: the Sleeping Bag XP reminder starts after its reward quest is completed.
+- Two flights in a row: taking the first no longer counts the next one as done; each is done by its own take-off.
 - Group guides: quest XP counts each player's own reward, including its Sleeping Bag bonus.
 - WoW Forever: a guide made with the food or Sleeping Bag XP bonus warns when that buff is missing (out of combat, at most every ten minutes).
 - The addon's separators are a bullet (•), which every client font has: the dot they used was a missing glyph in Russian (GitHub #78).

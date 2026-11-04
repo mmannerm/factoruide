@@ -51,9 +51,13 @@ pub(crate) struct Availability<'v> {
 }
 
 impl Availability<'_> {
-    /// Only members still needing the quest must meet its completion window.
+    /// Only player-supplied windows reject a turn-in, for members still needing the quest.
     pub(crate) fn completion_error(&self, s: &State, i: u32) -> Option<(u8, i64)> {
-        let window = self.quest_at(i).completion_window;
+        let quest = self.quest_at(i);
+        if quest.implicit_window {
+            return None;
+        }
+        let window = quest.completion_window;
         self.completion_members(s, i)
             .find(|&(_, level)| !window.contains(level))
     }

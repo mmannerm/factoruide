@@ -920,9 +920,12 @@ impl<'r> Replay<'r> {
                         push(out, e.time - t, &mut t, [0.0, 0.0, 1.0, 0.0], None);
                     }
                 }
-                Event::Train { .. } | Event::Sell { .. } => {
+                Event::Train { .. } | Event::ProfTrain { .. } | Event::Sell { .. } => {
                     let (p, train) = match e.event {
                         Event::Train { trainer, .. } => (model.trainers[trainer].pos, d(|b| b.training)),
+                        Event::ProfTrain { trainer, .. } => {
+                            (model.profession_trainers[trainer].loc.pos, d(|b| b.training))
+                        }
                         Event::Sell { vendor } => (model.vendors[vendor].pos, d(|b| b.overhead)),
                         _ => unreachable!(),
                     };
@@ -933,7 +936,7 @@ impl<'r> Replay<'r> {
                     } else if !apart(&after.pos, &at) {
                         // Training can make the return faster; other detours retain equal halves.
                         let outbound = match e.event {
-                            Event::Train { outbound, .. } => outbound.min(walk),
+                            Event::Train { outbound, .. } | Event::ProfTrain { outbound, .. } => outbound.min(walk),
                             _ => walk / 2.0,
                         };
                         push(
@@ -1293,7 +1296,7 @@ mod movement_tests {
             "start":{"level":20,"spells":[]}, "required_class_quests":[]
         }))
         .unwrap();
-        let mut editor = Editor::open(&conn, &o, &req, None).unwrap();
+        let mut editor = Editor::from_prepared(crate::plan::tests::class_prepared(&conn, &o, &req));
         let p = &mut editor.prepared;
         let a = Pos {
             continent: 1,
@@ -1307,7 +1310,7 @@ mod movement_tests {
         p.model.trainers[0].pos = Pos { x: -200.0, ..a };
         p.world.terrain = crate::terrain::movement_test_ground(crate::terrain::TestGround::Dry);
         (p.params.run_speed, p.params.detour, p.params.mount_level) = (7.0, 1.0, 40);
-        let names = Names::load(&conn, "enUS").unwrap();
+        let names = Names::new("enUS");
         let p = &editor.prepared;
         let planner = Planner::new(&p.model, &p.world, &p.params, &p.profile).explicit();
         let replay = Replay::run(&editor, &planner, &[Edit::Train { trainer: 0 }], &names, Lines::Events).unwrap();

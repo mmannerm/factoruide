@@ -338,7 +338,13 @@ fn class_quest_ids(
     let mut ids: HashSet<_> = rows
         .iter()
         .filter(|r| profile.class_ids().iter().any(|c| r.of_class(*c)))
-        .filter(|r| profile.required_class_quests.contains(&r.name) || reward_quests.contains(&r.id))
+        .filter(|r| {
+            profile
+                .class_requirements
+                .iter()
+                .any(|c| c.selected && c.quests.contains(&r.id))
+                || reward_quests.contains(&r.id)
+        })
         .filter(|r| !known.contains(&r.id))
         .filter(|r| {
             reward_quests.contains(&r.id)
@@ -422,7 +428,6 @@ pub(crate) fn quest_links(
         for (kind, required) in [
             (LinkKind::PreAll, &correction.pre_all),
             (LinkKind::PreAny, &correction.pre_any),
-            (LinkKind::Exclusive, &correction.exclusive),
             (LinkKind::Child, &correction.children),
         ] {
             let Some(required) = required else { continue };
@@ -455,7 +460,15 @@ fn links(conn: &Connection, profile: &Profile) -> Result<HashMap<i64, Vec<(LinkK
         let (races, classes) = scopes.get(id).copied().unwrap_or_default();
         profile.members_of(races, classes) != 0
     };
-    let mut links = quest_links(conn, &profile.quest_overrides)?;
+    // A small database may omit quests an edition corrects. Audits check the complete list;
+    // planning applies only corrections whose quest is present, still checking their references.
+    let corrected: Vec<_> = profile
+        .quest_overrides
+        .iter()
+        .filter(|q| scopes.contains_key(&q.id))
+        .cloned()
+        .collect();
+    let mut links = quest_links(conn, &corrected)?;
     for alternatives in links.values_mut() {
         let has_eligible = alternatives
             .iter()

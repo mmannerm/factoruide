@@ -63,11 +63,17 @@ pub(crate) fn camp_index(model: &Model, radius: f64) -> CampIndex {
 const TIMED_SHARE: f64 = 0.75;
 
 impl Planner<'_> {
+    /// Training after a step: the class, then the professions.
+    pub(crate) fn train(&self, s: &mut State, record: &mut impl FnMut(&State, Event)) {
+        self.train_class(s, record);
+        self.train_professions(s, record);
+    }
+
     /// Class training: on the way when a trainer is close, or a dedicated trip when late.
     /// With class spell data, training is due when the spells the trainer sells make fights
     /// `train_min_gain` faster, late at `train_trip_gain`; else every `train_every` levels
     /// (and for the other classes of a group).
-    pub(crate) fn train(&self, s: &mut State, record: &mut impl FnMut(&State, Event)) {
+    fn train_class(&self, s: &mut State, record: &mut impl FnMut(&State, Event)) {
         // Nothing left to fight for once at the target level (the guide ends there).
         if self.model.trainers.is_empty() || self.explicit || s.level >= self.profile.to_level {
             return;
@@ -707,6 +713,9 @@ impl Planner<'_> {
     }
 
     fn completion_gate(&self, s: &State, i: u32) -> i64 {
+        if (self.availability().replaying || self.explicit) && self.quest(i).implicit_window {
+            return 0;
+        }
         let floor = self.availability().completion_floor(s, i);
         self.quest(i)
             .completion_window
@@ -952,6 +961,16 @@ impl Planner<'_> {
         let (mut missing, mut zone) = (0, 0);
         for (i, q) in self.model.quests.iter().enumerate() {
             if q.mandatory && !s.rewarded(i) && !self.availability().alternative_done(s, q) {
+                // Versions of one quest (the two letters of the Felsteed) are missing once, at the first.
+                let version_before = q.exclusive.iter().any(|id| {
+                    self.model
+                        .index
+                        .get(id)
+                        .is_some_and(|&j| j < i && self.model.quests[j].mandatory)
+                });
+                if version_before {
+                    continue;
+                }
                 if q.zone_forced { zone += 1 } else { missing += 1 }
             }
         }
@@ -967,6 +986,7 @@ impl Planner<'_> {
             .count();
         s.spent.missing_dungeons = dungeons as u32;
         s.spent.reputation_missing = self.reputation_missing(s);
+        self.count_unfinished_as_grind(s);
         s.spent.total = s.time;
         // Optimizer score: grinding and flights weigh more than their real time, gold spent on
         // flights and missing goals cost.
@@ -975,6 +995,31 @@ impl Planner<'_> {
             + (missing + zone + dungeons + self.reputation_goals_unmet(s)) as f64 * self.params.mandatory_penalty
             + s.spent.reputation_missing * self.params.reputation_weight
             + f64::from(s.spent.missing_profession_quests) * self.params.profession_quest_weight
+    }
+
+    /// A quest the route took and never turned in is grinding in all but name (kills for XP, no
+    /// reward): the time its done objectives took counts as grinding, in the optimizer's score and
+    /// against the grind cap, instead of as a quest's fighting.
+    fn count_unfinished_as_grind(&self, s: &mut State) {
+        let mut work = 0.0;
+        for i in s.accepted.and_not(&s.turned) {
+            let q = &self.model.quests[i];
+            for (k, o) in q.objectives.iter().enumerate().take(8) {
+                if s.objectives[i] & (1 << k) != 0 {
+                    work += o.kills * self.params.kill_time(q.level, 0.0, o.mob_level)
+                        + o.uses * self.params.object_time
+                        + o.extra;
+                }
+            }
+        }
+        let work = work.min(s.spent.fighting.max(0.0));
+        if work <= 0.0 {
+            return;
+        }
+        let allowed = (self.params.grind_cap * s.time - s.spent.grinding).max(0.0);
+        s.spent.fighting -= work;
+        s.spent.grinding += work;
+        s.spent.grind_over += (work - allowed).max(0.0);
     }
 
     /// Quests of the leveled professions the route does not turn in, though the profession's

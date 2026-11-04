@@ -468,7 +468,12 @@ impl Planner<'_> {
             .iter()
             .enumerate()
             .filter_map(|(i, q)| {
-                let max = q.priority_deadline.filter(|&max| max < self.rules().max_level)?;
+                // Only the player's turn-in bounds justify dropping optional work. Class targets
+                // also propagate priority to prerequisites, but do not tighten a hard window.
+                let max = q
+                    .completion_window
+                    .max_level
+                    .filter(|&max| !q.implicit_window && max < self.rules().max_level)?;
                 let at = route.iter().position(|s| *s == Stop::quest(i as u32, Kind::TurnIn))?;
                 Some((i, max, at))
             })
@@ -488,7 +493,7 @@ impl Planner<'_> {
             }
             s.at = pos as u32;
             // Replaying can require more grinding than construction expected. Leave optional
-            // work out when that grinding would pass an unfinished quest's deadline.
+            // work out when that grinding would pass an unfinished player-specified deadline.
             if stop.is_quest() && !self.quest(stop.index).mandatory {
                 let gate = self.gate_level(&s, stop);
                 let past_deadline = deadlines
@@ -671,7 +676,7 @@ impl Planner<'_> {
     }
 
     /// How many quests come before each one in its chain (prerequisites of prerequisites...).
-    fn chain_depths(&self) -> Vec<u32> {
+    pub(super) fn chain_depths(&self) -> Vec<u32> {
         fn of(
             i: usize,
             quests: &[crate::model::Quest],
@@ -759,7 +764,7 @@ impl Planner<'_> {
     }
 
     /// Where quest `q`'s stop is in the route.
-    fn position_of(route: &[Stop], q: u32, kind: Kind) -> Option<usize> {
+    pub(super) fn position_of(route: &[Stop], q: u32, kind: Kind) -> Option<usize> {
         route.iter().position(|s| *s == Stop::quest(q, kind))
     }
 
@@ -1109,6 +1114,44 @@ mod deadline_tests {
             vec![Stop::quest(0, Kind::Accept), Stop::quest(0, Kind::TurnIn)]
         );
         assert!(plan.simulate(&settled, None).is_some());
+    }
+
+    #[test]
+    fn an_advisory_class_target_does_not_drop_optional_work_before_a_late_turn_in() {
+        let mut p = crate::plan::tests::quests_at_start(2);
+        p.model.quests[0].mandatory = true;
+        p.model.quests[0].implicit_window = true;
+        p.model.quests[0].priority_deadline = Some(1);
+        p.model.quests[0].completion_window.max_level = Some(1);
+        p.model.quests[1].min_level = 3;
+        let plan = Planner::new(&p.model, &p.world, &p.params, &p.profile);
+        let route = vec![
+            Stop::quest(1, Kind::Accept),
+            Stop::quest(1, Kind::TurnIn),
+            Stop::quest(0, Kind::Accept),
+            Stop::quest(0, Kind::TurnIn),
+        ];
+        assert_eq!(plan.settle_once(&route), route);
+        assert!(plan.simulate(&route, None).is_some());
+    }
+
+    #[test]
+    fn an_earlier_class_priority_does_not_tighten_a_players_completion_window() {
+        let mut p = crate::plan::tests::quests_at_start(2);
+        p.model.quests[0].required = true;
+        p.model.quests[0].mandatory = true;
+        p.model.quests[0].priority_deadline = Some(1);
+        p.model.quests[0].completion_window.max_level = Some(4);
+        p.model.quests[1].min_level = 3;
+        let plan = Planner::new(&p.model, &p.world, &p.params, &p.profile);
+        let route = vec![
+            Stop::quest(1, Kind::Accept),
+            Stop::quest(1, Kind::TurnIn),
+            Stop::quest(0, Kind::Accept),
+            Stop::quest(0, Kind::TurnIn),
+        ];
+        assert_eq!(plan.settle_once(&route), route);
+        assert!(plan.simulate(&route, None).is_some());
     }
 
     #[test]
