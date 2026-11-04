@@ -648,11 +648,8 @@ pub struct QuestOverride {
     pub pre_any: Option<Vec<i64>>,
     /// How many of `pre_any` the quest needs done (default one).
     pub pre_count: Option<usize>,
-    pub exclusive: Option<Vec<i64>>,
     pub children: Option<Vec<i64>>,
     pub spells: Option<Vec<i64>>,
-    #[serde(default)]
-    pub disabled: bool,
     /// Object granting the quest's temporary stealth for its collection objectives.
     pub stealth_object: Option<i64>,
     pub auction_start: Option<AuctionStart>,

@@ -17,7 +17,7 @@ Duplicate prerequisite links from different sources count once. Race and class a
 keep eligible branches when any exist. Edition-specific `quests.toml` can replace `pre_all`
 or `pre_any`, and list the `spells` a quest grants. These corrections apply whenever a database
 is loaded, including after a refresh.
-The same edition file can replace exclusive and child links or disable an unavailable quest.
+The same edition file can replace child links. Availability and exclusivity come from the database.
 For a trial with `stealth_object`, the model adds a visit to the blessing's object before its
 collection objectives and omits their guard fights. The guide asks the player to renew the
 blessing as needed; detection failures and blessing expiry are not simulated.
@@ -33,7 +33,8 @@ window; unsupported or conflicting choices are reported. Required quests keep a 
 past its target level until they are complete. Generated guides and saved edits check completion.
 Entries can include `min_level` and/or `max_level`, inclusive at turn-in before reward XP:
 `--required-quest '{"quest":21,"min_level":3,"max_level":4}'`. IDs and exact names without
-bounds keep their existing meaning. Prerequisites and child quests inherit deadline priority,
+bounds remain unbounded. Automatic class requirements use upstream's default yellow-to-green
+completion window. Prerequisites and child quests inherit deadline priority,
 not the lower bound. Near a deadline, the chain's available quest work takes priority, though
 forced and must-have dungeons (their quest pickups and runs) can come first. Replay omits optional
 work needing grinding beyond a scheduled deadline. Turn-ins check each member

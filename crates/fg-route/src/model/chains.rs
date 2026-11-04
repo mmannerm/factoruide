@@ -266,10 +266,8 @@ pub(super) fn settle_class_quest_versions(quests: &mut [Quest], versions: &[(Cla
     }
 }
 
-/// The levels a must-have quest is done at when its window says nothing: while the game shows it
-/// yellow (orange when the progression is risky) or green, not before (too hard) nor once it is
-/// gray (no XP). A must-have is a quest the player asked for or a class requirement; a quest
-/// already gray when the guide starts has no limit, nothing could be done about it.
+/// Automatic class requirements are done while yellow (orange with risky progression) or
+/// green. Explicit quest choices use only the completion bounds the player supplied.
 pub(super) fn default_completion_windows(quests: &mut [Quest], profile: &Profile, params: &Params) {
     let above = match params.progression {
         crate::params::Progression::Risky => 4,
@@ -281,7 +279,7 @@ pub(super) fn default_completion_windows(quests: &mut [Quest], profile: &Profile
         .collect();
     for q in quests.iter_mut() {
         let asked = profile.required_quests.iter().any(|r| r.id == q.id);
-        let must_have = q.mandatory && (asked || required_by_class.contains(&q.id));
+        let must_have = q.mandatory && !asked && required_by_class.contains(&q.id);
         if !must_have || q.completion_window.min_level.is_some() || q.completion_window.max_level.is_some() {
             continue;
         }

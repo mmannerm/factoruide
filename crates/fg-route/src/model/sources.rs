@@ -428,7 +428,6 @@ pub(crate) fn quest_links(
         for (kind, required) in [
             (LinkKind::PreAll, &correction.pre_all),
             (LinkKind::PreAny, &correction.pre_any),
-            (LinkKind::Exclusive, &correction.exclusive),
             (LinkKind::Child, &correction.children),
         ] {
             let Some(required) = required else { continue };

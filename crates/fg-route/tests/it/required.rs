@@ -691,11 +691,10 @@ fn class_quests_are_open_to_the_races_new_to_a_class_of(race: &str, class: &str,
     }
 }
 
-/// A must-have quest with no window of its own is done while the game shows it yellow (orange for
-/// a risky character) or green: not before, not once it is gray; a quest already gray at the start
-/// has no limit. A window the player set stays as it is.
+/// Automatic class requirements keep their default window; a quest already gray at the start
+/// has no limit. Explicit player choices are tested separately.
 #[test]
-fn a_must_have_quest_is_done_while_it_is_not_too_hard_nor_gray() {
+fn an_automatic_class_quest_is_done_while_it_is_not_too_hard_nor_gray() {
     let window = |progression: Option<&str>, level: i64, from: i64| {
         let s = Scenario::new()
             .levels(from, 40)
@@ -704,13 +703,15 @@ fn a_must_have_quest_is_done_while_it_is_not_too_hard_nor_gray() {
                     p.progression = fg_route::params::Progression::Risky;
                 }
             })
+            .requirement("Quest", &[1])
             .quest(
                 Q::new(1, "Quest")
+                    .mandatory()
                     .level(level)
                     .giver(1, 40.0, 40.0)
                     .kill("Mob", level, 2, 1, 45.0, 45.0),
             );
-        let p = s.required(1).build();
+        let p = s.build();
         let w = p.model.quests[0].completion_window;
         (w.min_level, w.max_level)
     };
@@ -746,4 +747,24 @@ fn class_quests_are_open_to_the_skyborne_mage() {
 #[test]
 fn class_quests_are_open_to_the_skyborne_druid() {
     class_quests_are_open_to_the_races_new_to_a_class_of("skyborne", "druid", &[26, 29, 5061, 6123, 6124, 6125]);
+}
+
+#[test]
+fn explicit_quest_choices_without_bounds_stay_unbounded() {
+    for class_requirement in [false, true] {
+        let mut s = Scenario::new()
+            .levels(1, 60)
+            .quest(Q::new(1, "Quest").level(30).mandatory().giver(1, 40.0, 40.0))
+            .required(1);
+        if class_requirement {
+            s = s.requirement("Quest", &[1]);
+        }
+        let p = s.build();
+        let q = &p.model.quests[0];
+        assert!(q.required);
+        assert_eq!(q.completion_window.min_level, None);
+        assert_eq!(q.completion_window.max_level, None);
+        assert!(!q.implicit_window);
+        assert_eq!(q.priority_deadline, None);
+    }
 }
