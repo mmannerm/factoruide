@@ -12,13 +12,14 @@ and affordability, using the usual purchase-time estimate. Random drop rates, ot
 bundles and repeat deliveries are not modeled. Sources are linked in
 `overrides/forever/quests.toml`.
 
-Forever's bundled import records identify QuestieDB `cb187df` and Questie `ed1f405`. The
-corrections here reconcile the following newer changes:
+Forever's bundled import records identify QuestieDB `8f55e69`, Questie `854582a` and
+AllTheThings `816a63e`. The baseline now includes the ingot alternatives, both Black Shield
+prerequisites and the removal of Fool's Stout; their duplicate runtime overrides are removed.
+The remaining model corrections and reference data use these sources:
 
 | Source | Applied rules |
 | --- | --- |
-| [QuestieDB cb187df…5c094f6](https://github.com/Questie/QuestieDB/compare/cb187dffa957157d3c93a4696000b62ea4539dd9...5c094f6e9a264f0dc54e2fde9731a37a97ed197c) | The Lost Ingots and Lightforge Ingots are alternatives; Lightforge Ingots follows Lightforge Iron. The Black Shield needs both reports. Fool's Stout is not a child quest. |
-| [Questie 9b46e83](https://github.com/Questie/Questie/commit/9b46e836ccbe3fb9ce394bd6415cf11db9d895fa) | Fool's Stout is unavailable. |
+| [QuestieDB cb187df…5c094f6](https://github.com/Questie/QuestieDB/compare/cb187dffa957157d3c93a4696000b62ea4539dd9...5c094f6e9a264f0dc54e2fde9731a37a97ed197c) | Remove the stale Fool's Stout child link from Zanzil's Mixture. The other chain corrections are in the bundled baseline. |
 | [Cat relic trial](https://www.wowhead.com/forever/quest=98404/the-great-windborne-cat-spirit), [Tauren](https://www.wowhead.com/forever/quest=98342/the-great-cat-spirit), [Night elf](https://www.wowhead.com/forever/quest=98396/the-great-cat-spirit) | Use the entrance statue's temporary stealth to collect the relics. NPC levels stay unchanged. |
 | [Blizzard October 1](https://us.forums.blizzard.com/en/wow/t/2360696/4), [October 15](https://us.forums.blizzard.com/en/wow/t/2360696/6), [build 70532 spell levels](https://wago.tools/db2/SpellLevels?build=1.60.1.70532&useHotfixes=1) | Shred rank 1 at level 20; Tiger's Fury removed from training estimates. Berserker Rage at level 30 is recorded for reference only; the planner does not currently track this ability. |
 | [Build 70532 taxi paths](https://wago.tools/db2/TaxiPathNode?build=1.60.1.70532&useHotfixes=1), [Peacekeeper](https://www.wowhead.com/forever/npc=256635/peacekeeper) | Wind bridge path 12018: one way, while the faction's Confront Lorthuna is held. Wait for the wind before crossing. |
@@ -35,6 +36,11 @@ The hotfix overlay is required: the base client export lacks the wind bridge. It
 estimated at the default flight speed, plus the normal transport wait; event downtime and
 actual crossing time remain unverified in production.
 
+Import corrections belong in `overrides/database/`, which upstream's database builder reapplies
+at each build. Its builder is not included in this checkout. Runtime overlays here add planner
+behavior the importer format does not express: granted spell lists, blessing steps, Shipping
+Label acquisition and client transport rules.
+
 For a refresh, read `import_run` in the new database and compare the source revisions with
 those linked above. Review changed facts individually, update the edition's overrides and run
 the affected guide tests and `fg audit`. Remove corrections when the new baseline already
@@ -43,4 +49,6 @@ supplies them. Audit acceptance files record reviewed exceptions; they do not fi
 Trial blessing steps are appended so the original relic objective indices remain stable. Older
 fork guides that already used the inserted blessing layout should be recomputed before editing.
 
-These corrections affect Forever. Classic/TBC data is unchanged. Production gameplay has not been validated; the trial estimate assumes the player maintains the blessing.
+The fork-specific corrections apply to Forever; every edition retains upstream's bundled
+archive. Production gameplay has not been validated; the trial estimate assumes the player
+maintains the blessing.

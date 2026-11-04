@@ -23,8 +23,7 @@ fn shipping_label_buys_and_fills_a_crate_before_the_faction_turn_in() {
     o.params.crowd_by_level = vec![1.0];
     for (race, id, label, ender, level) in [
         ("skyborne_horde", 98248, 280180, 256386, 10),
-        // Stormwind's existing unknown-faction ambient spawns gate its AH at level 25.
-        ("human", 98247, 280179, 256390, 25),
+        ("human", 98247, 280179, 256390, 10),
     ] {
         let mut req = request(race, id);
         req.from_level = level;

@@ -21,7 +21,7 @@
 
 use super::farm::MobRow;
 use super::{
-    Dungeon, EntityKind, Guard, Initial, Loc, Mate, Model, Names, Objective, Profile, Quest, chains, required,
+    Dungeon, EntityKind, Guard, Initial, Loc, Mate, Model, Names, Objective, Profile, Quest, Vendor, chains, required,
     sources::QuestRow,
 };
 use crate::faction::Faction;
@@ -59,6 +59,9 @@ pub struct Obj {
     pub after: Vec<usize>,
     /// Seconds what the objective gets lasts (a carcass that rots).
     pub lasts: Option<f64>,
+    /// An item bought: the auction house it can be bought at too (the vendor is `at`; its
+    /// supply is limited).
+    pub auction: Option<At>,
 }
 
 impl Obj {
@@ -75,6 +78,7 @@ impl Obj {
             handed_by: Vec::new(),
             after: Vec::new(),
             lasts: None,
+            auction: None,
         }
     }
 
@@ -91,7 +95,23 @@ impl Obj {
             handed_by: Vec::new(),
             after: Vec::new(),
             lasts: None,
+            auction: None,
         }
+    }
+
+    /// Buy `count` of an item of limited supply at a vendor at `at`, or at an auction house at
+    /// `auction`.
+    pub fn bought(name: &str, count: u32, at: At, auction: At) -> Self {
+        Self {
+            auction: Some(auction),
+            ..Self::visit(&format!("Buy {name}"), at)
+        }
+        .counting(count)
+    }
+
+    fn counting(mut self, count: u32) -> Self {
+        self.uses = f64::from(count);
+        self
     }
 
     /// Elite creatures.
@@ -131,6 +151,7 @@ pub struct Q {
     quest: Quest,
     giver: At,
     turn_in: At,
+    ender: Option<i64>,
     objectives: Vec<Obj>,
     excluded: bool,
 }
@@ -173,10 +194,12 @@ impl Q {
             zone_forced: false,
             required: false,
             completion_window: super::CompletionWindow::default(),
+            implicit_window: false,
             priority_deadline: None,
             skill: None,
             power: None,
             reward_spell: None,
+            reward_items: Vec::new(),
             start_guard: Guard::default(),
             end_guard: Guard::default(),
             reputation: Vec::new(),
@@ -186,6 +209,7 @@ impl Q {
             quest,
             giver: here,
             turn_in: here,
+            ender: None,
             objectives: Vec::new(),
             excluded: false,
         }
@@ -225,6 +249,24 @@ impl Q {
 
     pub fn turn_in_at(mut self, zone: i64, x: f64, y: f64) -> Self {
         self.turn_in = At { zone, x, y };
+        self
+    }
+
+    /// Turned in to this NPC (else one of its own).
+    pub fn ended_by(mut self, npc: i64) -> Self {
+        self.ender = Some(npc);
+        self
+    }
+
+    /// Its turn-in teaches this spell.
+    pub fn teaches(mut self, spell: i64) -> Self {
+        self.quest.reward_spell = Some(spell);
+        self
+    }
+
+    /// Its turn-in gives these items.
+    pub fn rewards(mut self, items: &[i64]) -> Self {
+        self.quest.reward_items = items.to_vec();
         self
     }
 
@@ -287,6 +329,11 @@ impl Q {
         self
     }
 
+    pub fn zone_forced(mut self) -> Self {
+        self.quest.zone_forced = true;
+        self
+    }
+
     pub fn mandatory(mut self) -> Self {
         self.quest.mandatory = true;
         self
@@ -312,7 +359,8 @@ impl Q {
     fn finish(mut self, world: &World) -> Quest {
         let id = self.quest.id;
         self.quest.starts = vec![Self::at(self.giver, 100_000 + id, "Giver", world)];
-        self.quest.ends = vec![Self::at(self.turn_in, 100_000 + id, "Giver", world)];
+        let ender = self.ender.unwrap_or(100_000 + id);
+        self.quest.ends = vec![Self::at(self.turn_in, ender, "Giver", world)];
         self.quest.objectives = self
             .objectives
             .iter()
@@ -322,13 +370,39 @@ impl Q {
                 let loc = Loc {
                     kind: if o.kills > 0.0 {
                         EntityKind::Npc
+                    } else if o.auction.is_some() {
+                        EntityKind::Item
                     } else {
                         EntityKind::Object
                     },
                     id: loc_id,
                     ..Self::at(o.at, 0, &o.text, world)
                 };
+                let (vendors, alts, auction, item) = match o.auction {
+                    Some(auction) => {
+                        let vendor = Vendor {
+                            id: loc_id,
+                            name: "Vendor".to_owned(),
+                            zone: loc.zone,
+                            zone_name: String::new(),
+                            pos: loc.pos,
+                            stock: Some((5, 3600.0)),
+                        };
+                        let house = Self::at(auction, loc_id + 1, "Auction House", world);
+                        let alt = Objective {
+                            vendors: vec![vendor.clone()],
+                            auction: vec![(house.id, house.name.clone())],
+                            ..Objective::plain(house, o.text.clone(), 0.0)
+                        };
+                        (vec![vendor], vec![alt], Vec::new(), true)
+                    }
+                    None => (Vec::new(), Vec::new(), Vec::new(), false),
+                };
                 Objective {
+                    vendors,
+                    alts,
+                    auction,
+                    item,
                     kills: o.kills,
                     mob_level: o.mob_level,
                     uses: o.uses,
@@ -355,6 +429,7 @@ impl Q {
 }
 
 /// A character, a few zones and quests, and the settings of the plan.
+#[derive(Clone)]
 pub struct Scenario {
     zones: Vec<(i64, &'static str)>,
     quests: Vec<Q>,
@@ -376,6 +451,8 @@ pub struct Scenario {
     graveyards: Vec<At>,
     /// Boats between two places (name, ends, seconds), both ways.
     boats: Vec<(&'static str, At, At, f64)>,
+    /// The class requirements of the guide (`Scenario::requirement`).
+    requirements: Vec<super::ClassRequirement>,
     /// The class's spells and power as the database has them (`Scenario::of_class`).
     class: Option<(crate::abilities::Abilities, Option<crate::power::PowerModel>)>,
 }
@@ -408,6 +485,7 @@ impl Scenario {
             graveyards: Vec::new(),
             boats: Vec::new(),
             class: None,
+            requirements: Vec::new(),
         }
     }
 
@@ -484,6 +562,12 @@ impl Scenario {
         self
     }
 
+    /// The same character before it was met in game: nothing known but its class's spells.
+    pub fn without_start(mut self) -> Self {
+        self.start = None;
+        self
+    }
+
     /// A character met in game: what it did, its log, its level (`StartState`).
     pub fn start(mut self, start: StartState) -> Self {
         self.profile.from_level = start.level;
@@ -516,6 +600,20 @@ impl Scenario {
 
     pub fn quest(mut self, quest: Q) -> Self {
         self.quests.push(quest);
+        self
+    }
+
+    /// A class requirement of the guide: the route does one of its quests (the last of each version).
+    pub fn requirement(mut self, name: &str, quests: &[i64]) -> Self {
+        self.requirements.push(super::ClassRequirement {
+            class_id: 1,
+            name: name.to_owned(),
+            spell: None,
+            max_level: None,
+            quests: quests.to_vec(),
+            quest_names: Vec::new(),
+            selected: true,
+        });
         self
     }
 
@@ -616,6 +714,7 @@ impl Scenario {
                 quests.push(built);
             }
         }
+        self.profile.class_requirements = std::mem::take(&mut self.requirements);
         self.profile.required_quests = self
             .required
             .iter()
@@ -697,13 +796,7 @@ impl Scenario {
                     .within_levels(q.level, q.min_level, self.params.max_quest_above)
         });
         required::apply(&mut quests, &rows, &HashSet::new(), &[], &self.profile, &self.params)?;
-        super::settle_quests(
-            &mut quests,
-            &dungeons,
-            &self.params,
-            &HashSet::new(),
-            &self.profile.completed_quests,
-        );
+        super::settle_quests(&mut quests, &dungeons, &self.params, &HashSet::new(), &self.profile);
         let mut dungeons = dungeons;
         super::dungeons::set_dungeon_levels(
             &mut dungeons,
@@ -870,6 +963,7 @@ pub fn profile(faction: Faction, from: i64, to: i64) -> Profile {
         required_quests: Vec::new(),
         completed_quests: HashSet::new(),
         class_powers: Vec::new(),
+        class_requirements: Vec::new(),
         spell_weights: Vec::new(),
         spell_levels: Vec::new(),
         abilities: Vec::new(),
@@ -908,6 +1002,7 @@ pub fn bare(quests: Vec<Quest>, dungeons: Vec<Dungeon>, start: Loc, params: &Par
         unlocks,
         chain_top,
         trainers: Vec::new(),
+        profession_trainers: Vec::new(),
         inns: vec![start],
         vendors: Vec::new(),
         start_inn: 0,

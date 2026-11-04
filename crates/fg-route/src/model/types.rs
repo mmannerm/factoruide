@@ -15,8 +15,12 @@ pub struct Profile {
     pub start_npc: i64,
     pub from_level: i64,
     pub to_level: i64,
-    /// Names of class quests that must be done (see overrides/class_quests.toml).
+    /// Names of the class requirements the guide includes (`ClassRequirement::name`, or the name
+    /// of one of its quests: the guides saved before the requirements).
     pub required_class_quests: Vec<String>,
+    /// The class requirements of every class of the group (`m_class_requirement`): those of
+    /// `required_class_quests` are `selected`.
+    pub class_requirements: Vec<ClassRequirement>,
     pub quest_overrides: Vec<QuestOverride>,
     /// Exact quests selected by the player.
     pub required_quests: Vec<QuestRequirement>,
@@ -43,6 +47,24 @@ pub struct Profile {
     pub mates: Vec<Mate>,
     /// The character's "Name-Realm" in a group guide (empty alone).
     pub player: String,
+}
+
+/// A class quest the route must do (`m_class_requirement`): the quests teaching a spell, or the
+/// overrides' list. The quests are its versions, the last quest of each chain: the route does one
+/// of those the character can take, the others are closed.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClassRequirement {
+    pub class_id: i64,
+    pub name: String,
+    /// The spell it teaches.
+    pub spell: Option<i64>,
+    /// The level it must be done by, once it can be started.
+    pub max_level: Option<i64>,
+    pub quests: Vec<i64>,
+    /// The names of its quests (the guides saved before the requirements name those).
+    pub quest_names: Vec<String>,
+    /// The guide includes it (the others still give their power).
+    pub selected: bool,
 }
 
 /// Inclusive levels when a required quest is turned in, before its XP reward.
@@ -188,6 +210,16 @@ pub struct Loc {
     pub kind: EntityKind,
     pub id: i64,
     pub name: String,
+}
+
+/// A trainer of a profession.
+#[derive(Debug, Clone)]
+pub struct ProfessionTrainer {
+    /// The profession's skill line.
+    pub line: i64,
+    /// The highest skill cap its title says it teaches (75, 150, 225 or 300).
+    pub cap: i64,
+    pub loc: Loc,
 }
 
 #[derive(Debug, Clone)]
@@ -473,6 +505,9 @@ pub struct Quest {
     /// Explicit player requirement or a prerequisite selected to reach one.
     pub required: bool,
     pub completion_window: CompletionWindow,
+    /// The window is the default one (`default_completion_windows`), not the player's: a guide
+    /// replayed as it is (an older one, the editor's) is not refused for it.
+    pub implicit_window: bool,
     /// Earliest deadline of the requirements this quest helps complete.
     pub priority_deadline: Option<i64>,
     /// Profession quest: index in `Model::professions` and skill needed to accept it.
@@ -482,6 +517,8 @@ pub struct Quest {
     pub power: Option<(u8, f64)>,
     /// The spell its turn-in teaches (a pet, a totem...).
     pub reward_spell: Option<i64>,
+    /// The items its turn-in gives (`m_quest_reward`, offered as a choice or not).
+    pub reward_items: Vec<i64>,
     /// Hostile mobs around its givers and its turn-ins (the hardest of them).
     pub start_guard: Guard,
     pub end_guard: Guard,
@@ -524,6 +561,8 @@ pub struct Model {
     pub chain_top: Vec<i64>,
     /// Class trainers and innkeepers the character can use.
     pub trainers: Vec<Loc>,
+    /// Profession trainers the character can use, loaded only for `Params::profession_trainers`.
+    pub profession_trainers: Vec<ProfessionTrainer>,
     pub inns: Vec<Loc>,
     /// Vendors friendly to the character: the bags' loot is sold there.
     pub vendors: Vec<Loc>,

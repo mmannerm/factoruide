@@ -188,6 +188,8 @@ export interface Params {
   explore_radius: number;
   food_xp: boolean;
   sleeping_bag: boolean;
+  auction_house: boolean;
+  profession_trainers: boolean;
   edition: Edition;
 }
 

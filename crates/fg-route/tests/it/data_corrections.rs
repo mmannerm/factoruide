@@ -176,7 +176,7 @@ fn the_blacklisted_fools_stout_is_not_planned_as_a_child() {
     let error = job::prepare(&conn, &o, &request(&json!([1127])), &|_| {})
         .err()
         .unwrap();
-    assert!(format!("{error:#}").contains("unavailable in this edition"));
+    assert!(format!("{error:#}").contains("missing, unavailable, or restricted to another race/class"));
     let p = job::prepare(&conn, &o, &request(&json!([1119])), &|_| {}).unwrap();
     assert!(p.model.quests[p.model.index[&1119]].required);
     assert!(!p.model.index.contains_key(&1127));
@@ -289,15 +289,35 @@ fn trial_blessings_preserve_the_original_relic_objective_indices() {
 }
 
 #[test]
-fn unknown_override_quests_and_prerequisites_fail_visibly() {
+fn data_audits_reject_unknown_override_quests_and_prerequisites() {
     for edition in Edition::ALL {
         let conn = database_of(edition.key());
+        let mut baseline = overrides(edition);
+        // Only the graph audit is needed here, not a model for every race.
+        baseline.races.clear();
+        let checks = ["exclusive-prerequisites".to_owned()];
+        fg_route::audit::audit(&conn, &baseline, &checks, &|_| {}).unwrap();
         for (id, pre) in [(21, 999_999_999), (999_999_999, 783)] {
-            let mut o = overrides(edition);
+            let mut o = baseline.clone();
             o.quest_overrides
                 .push(serde_json::from_value(json!({"id":id,"pre_all":[pre]})).unwrap());
-            let error = job::prepare(&conn, &o, &request(&json!([])), &|_| {}).err().unwrap();
+            let error = fg_route::audit::audit(&conn, &o, &checks, &|_| {}).err().unwrap();
             assert!(format!("{error:#}").contains("999999999"), "{error:#}");
         }
+    }
+}
+
+#[test]
+fn present_quest_corrections_reject_unknown_prerequisites() {
+    for edition in Edition::ALL {
+        let conn = database_of(edition.key());
+        let mut o = overrides(edition);
+        o.quest_overrides
+            .push(serde_json::from_value(json!({"id":21,"pre_all":[999_999_999]})).unwrap());
+        let error = job::prepare(&conn, &o, &request(&json!([])), &|_| {}).err().unwrap();
+        assert!(
+            format!("{error:#}").contains("references unknown quest 999999999"),
+            "{error:#}"
+        );
     }
 }

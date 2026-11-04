@@ -1,7 +1,8 @@
 //! Explicit quest requirements through request resolution, model construction and guide saving.
 
-use crate::common::{database_of, repo};
+use crate::common::repo;
 use fg_route::faction::Faction;
+use fg_route::fixture::Fixture;
 use fg_route::job::{self, Editor, LogQuest, Overrides, PlanRequest, QuestId, RequiredQuest, RouteStep, StartState};
 use fg_route::plan::{Kind, Planner, Stop};
 use fg_route::testing::{At, Obj, Q, Scenario};
@@ -106,40 +107,6 @@ fn required_quest_editor_refuses_removal() {
         .unwrap();
 }
 
-#[test]
-fn sleeping_bag_option_requires_the_chain_and_recognizes_imported_completion() {
-    let conn = database_of("forever");
-    let mut overrides = Overrides::load_edition(&repo().join("overrides"), Edition::Forever).unwrap();
-    overrides.params.sleeping_bag = true;
-    for (race, class, starter, other) in [
-        ("human", "warrior", 79008, 79007),
-        ("skyborne_horde", "druid", 79007, 79008),
-    ] {
-        let mut req = request(race, class, &[]);
-        req.from_level = 35;
-        req.to_level = 36;
-        let p = job::prepare(&conn, &overrides, &req, &|_| {}).unwrap();
-        for id in [starter, 79192, 79980, 79974, 79975, 79976] {
-            assert!(p.model.quests[p.model.index[&id]].required, "required bag quest {id}");
-        }
-        assert!(!p.model.index.contains_key(&other));
-        req.start = Some(StartState {
-            level: 35,
-            completed: vec![QuestId(79976)],
-            ..StartState::default()
-        });
-        let imported = job::prepare(&conn, &overrides, &req, &|_| {}).unwrap();
-        assert!(imported.model.quests.iter().all(|q| !q.required));
-    }
-    for edition in [Edition::Classic, Edition::Tbc] {
-        let conn = database_of(edition.key());
-        let mut other = Overrides::load_edition(&repo().join("overrides"), edition).unwrap();
-        other.params.sleeping_bag = true;
-        let p = job::prepare(&conn, &other, &request("human", "warrior", &[]), &|_| {}).unwrap();
-        assert!(p.profile.required_quests.is_empty());
-    }
-}
-
 /// A must-have quest the character already did needs no repeat, and leaves the other class choices
 /// as they were.
 #[test]
@@ -185,11 +152,11 @@ fn required_quests_continue_after_target_level() {
         .quest(
             Q::new(783, "A Threat Within")
                 .level(5)
-                .xp(100_000)
+                .xp(1_500)
                 .giver(1, 40.0, 40.0)
                 .kill("Defias", 5, 4, 1, 45.0, 45.0),
         )
-        .quest(Q::new(7, "Kobolds").xp(100_000).giver(1, 60.0, 60.0))
+        .quest(Q::new(7, "Kobolds").xp(1_500).giver(1, 60.0, 60.0))
         .required(783)
         .build();
     let planner = Planner::new(&p.model, &p.world, &p.params, &p.profile);
@@ -206,7 +173,7 @@ fn required_quests_continue_after_target_level() {
 
 #[test]
 fn required_sleeping_bag_route_exports_the_factions_chain_by_id_or_name() {
-    let conn = database_of("forever");
+    let conn = Fixture::new(Edition::Forever).file("forever_sleeping_bag").open();
     let mut overrides = Overrides::load_edition(&repo().join("overrides"), Edition::Forever).unwrap();
     overrides.params.dungeons = false;
     for (race, class, choice, starter, unavailable) in [
@@ -481,7 +448,7 @@ fn required_class_quest_can_belong_to_a_higher_xp_group_member() {
 /// at Xizk, whose repeatable quest has nothing to do.
 #[test]
 fn the_warlocks_gold_bloodrobe_chain_can_be_required() {
-    let conn = database_of("forever");
+    let conn = Fixture::new(Edition::Forever).file("forever_bloodrobe").open();
     let overrides = Overrides::load_edition(&repo().join("overrides"), Edition::Forever).unwrap();
     let mut req = request("human", "warlock", &[RequiredQuest::Id(4784)]);
     req.to_level = 60;
@@ -490,31 +457,11 @@ fn the_warlocks_gold_bloodrobe_chain_can_be_required() {
     assert!(quest.mandatory);
 }
 
-#[test]
-fn sleeping_bag_option_preserves_an_explicit_completion_window() {
-    let conn = database_of("forever");
-    let o = Overrides::load_edition(&repo().join("overrides"), Edition::Forever).unwrap();
-    let req = serde_json::from_value(serde_json::json!({
-        "race":"human","class":"warrior","from_level":1,"to_level":60,
-        "required_class_quests":[],"required_quests":[{"quest":79976,"min_level":20,"max_level":60}],
-        "params":{"edition":"forever","sleeping_bag":true,"food_xp":true}
-    }))
-    .unwrap();
-    let p = job::prepare(&conn, &o, &req, &|_| {}).unwrap();
-    let choices: Vec<_> = p.profile.required_quests.iter().filter(|q| q.id == 79976).collect();
-    assert_eq!(choices.len(), 1);
-    assert_eq!(choices[0].window.min_level, Some(20));
-    assert_eq!(
-        p.model.quests[p.model.index[&79976]].completion_window.max_level,
-        Some(60)
-    );
-}
-
 /// A guide from level 40 to 60 with Ragefire Chasm forced (levels 13-19) is refused at once, saying
 /// which dungeon (GitHub #84): it could not be run.
 #[test]
 fn a_forced_dungeon_below_the_guides_levels_is_refused() {
-    let conn = database_of("forever");
+    let conn = Fixture::new(Edition::Forever).file("forever_ragefire").open();
     let overrides = Overrides::load_edition(&repo().join("overrides"), Edition::Forever).unwrap();
     let mut req = request("orc", "warrior", &[]);
     (req.from_level, req.to_level) = (40, 60);
@@ -659,4 +606,144 @@ fn a_child_quest_is_done_between_its_parent_accept_and_turn_in() {
             "child_glue={glue}"
         );
     }
+}
+
+#[test]
+fn sleeping_bag_option_requires_the_chain_and_recognizes_imported_completion() {
+    let conn = Fixture::new(Edition::Forever).file("forever_sleeping_bag").open();
+    let mut overrides = Overrides::load_edition(&repo().join("overrides"), Edition::Forever).unwrap();
+    overrides.params.sleeping_bag = true;
+    for (race, class, starter, other) in [
+        ("human", "warrior", 79008, 79007),
+        ("skyborne_horde", "druid", 79007, 79008),
+    ] {
+        let mut req = request(race, class, &[]);
+        req.from_level = 35;
+        req.to_level = 36;
+        let p = job::prepare(&conn, &overrides, &req, &|_| {}).unwrap();
+        for id in [starter, 79192, 79980, 79974, 79975, 79976] {
+            assert!(p.model.quests[p.model.index[&id]].required, "required bag quest {id}");
+        }
+        assert!(!p.model.index.contains_key(&other));
+        req.start = Some(StartState {
+            level: 35,
+            completed: vec![QuestId(79976)],
+            ..StartState::default()
+        });
+        let imported = job::prepare(&conn, &overrides, &req, &|_| {}).unwrap();
+        assert!(imported.model.quests.iter().all(|q| !q.required));
+    }
+    for edition in [Edition::Classic, Edition::Tbc] {
+        let conn = Fixture::new(edition).open();
+        let mut other = Overrides::load_edition(&repo().join("overrides"), edition).unwrap();
+        other.params.sleeping_bag = true;
+        let p = job::prepare(&conn, &other, &request("human", "warrior", &[]), &|_| {}).unwrap();
+        let required: Vec<i64> = p.profile.required_quests.iter().map(|r| r.id).collect();
+        assert_eq!(required, Vec::<i64>::new());
+    }
+}
+
+#[test]
+fn sleeping_bag_option_preserves_an_explicit_completion_window() {
+    let conn = Fixture::new(Edition::Forever).file("forever_sleeping_bag").open();
+    let o = Overrides::load_edition(&repo().join("overrides"), Edition::Forever).unwrap();
+    let req = serde_json::from_value(serde_json::json!({
+        "race":"human","class":"warrior","from_level":1,"to_level":60,
+        "required_class_quests":[],"required_quests":[{"quest":79976,"min_level":20,"max_level":60}],
+        "params":{"edition":"forever","sleeping_bag":true,"food_xp":true}
+    }))
+    .unwrap();
+    let p = job::prepare(&conn, &o, &req, &|_| {}).unwrap();
+    let choices: Vec<_> = p.profile.required_quests.iter().filter(|q| q.id == 79976).collect();
+    assert_eq!(choices.len(), 1);
+    assert_eq!(choices[0].window.min_level, Some(20));
+    assert_eq!(
+        p.model.quests[p.model.index[&79976]].completion_window.max_level,
+        Some(60)
+    );
+}
+
+/// Class quests WoW Forever's pages open to the races and classes that are new there can be
+/// required: the Orc mage takes the Undead's and the Troll's quests, the Troll warlock the Orc's
+/// Voidwalker quests, the High Order Skyborne mage the Human's and the Gnome's, the druid the
+/// Night Elf's.
+fn class_quests_are_open_to_the_races_new_to_a_class_of(race: &str, class: &str, quests: &[i64]) {
+    let conn = Fixture::new(Edition::Forever).file("forever_new_race_classes").open();
+    let overrides = Overrides::load_edition(&repo().join("overrides"), Edition::Forever).unwrap();
+    for &id in quests {
+        let mut req = request(race, class, &[RequiredQuest::Id(id)]);
+        req.to_level = 60;
+        // Some of these cannot be planned for any race (1960's item has no known source):
+        // what must not happen is being refused for the character's race or class.
+        match job::prepare(&conn, &overrides, &req, &|_| {}) {
+            Ok(p) => {
+                let quest = p.model.quests.iter().find(|q| q.id == id).expect("planned");
+                assert!(quest.mandatory, "{race} {class}: {} ({id}) is required", quest.name);
+            }
+            Err(e) => {
+                let e = format!("{e:#}");
+                assert!(
+                    !e.contains("unavailable to this character"),
+                    "{race} {class}, quest {id}: {e}"
+                );
+            }
+        }
+    }
+}
+
+/// A must-have quest with no window of its own is done while the game shows it yellow (orange for
+/// a risky character) or green: not before, not once it is gray; a quest already gray at the start
+/// has no limit. A window the player set stays as it is.
+#[test]
+fn a_must_have_quest_is_done_while_it_is_not_too_hard_nor_gray() {
+    let window = |progression: Option<&str>, level: i64, from: i64| {
+        let s = Scenario::new()
+            .levels(from, 40)
+            .params(|p| {
+                if progression == Some("risky") {
+                    p.progression = fg_route::params::Progression::Risky;
+                }
+            })
+            .quest(
+                Q::new(1, "Quest")
+                    .level(level)
+                    .giver(1, 40.0, 40.0)
+                    .kill("Mob", level, 2, 1, 45.0, 45.0),
+            );
+        let p = s.required(1).build();
+        let w = p.model.quests[0].completion_window;
+        (w.min_level, w.max_level)
+    };
+    // Yellow from two levels below, gray from level 18 (a quest of level 12).
+    assert_eq!(window(None, 12, 1), (Some(10), Some(17)));
+    // Orange from four levels below for a risky character.
+    assert_eq!(window(Some("risky"), 12, 1), (Some(8), Some(17)));
+    // Already in the window at the start: no minimum.
+    assert_eq!(window(None, 12, 11), (None, Some(17)));
+    // Already gray at the start: nothing to ask.
+    assert_eq!(window(None, 12, 20), (None, None));
+}
+
+#[test]
+fn class_quests_are_open_to_the_orc_mage() {
+    class_quests_are_open_to_the_races_new_to_a_class_of("orc", "mage", &[1943, 1944, 1945, 1946, 1959, 1960, 1962]);
+}
+
+#[test]
+fn class_quests_are_open_to_the_troll_warlock() {
+    class_quests_are_open_to_the_races_new_to_a_class_of("troll", "warlock", &[1501, 1504]);
+}
+
+#[test]
+fn class_quests_are_open_to_the_skyborne_mage() {
+    class_quests_are_open_to_the_races_new_to_a_class_of(
+        "skyborne",
+        "mage",
+        &[1860, 1919, 1921, 1938, 1940, 1941, 1942],
+    );
+}
+
+#[test]
+fn class_quests_are_open_to_the_skyborne_druid() {
+    class_quests_are_open_to_the_races_new_to_a_class_of("skyborne", "druid", &[26, 29, 5061, 6123, 6124, 6125]);
 }

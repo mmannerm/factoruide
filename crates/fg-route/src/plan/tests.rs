@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 mod movement;
+mod profession_trainers;
 mod xp_buffs;
 #[test]
 fn completion_window_is_checked_after_exploration_on_the_trip() {
@@ -109,6 +110,24 @@ fn at_start(mut p: Prepared, n: usize) -> Prepared {
     p.model.explore_by_zone.clear();
     (p.params.camp_radius, p.params.farm_on_way, p.params.flight_learn_radius) = (0.0, false, 0.0);
     p
+}
+
+/// The character of a request with its class's spells and power from the database, and one quest.
+pub(crate) fn class_scenario(conn: &Connection, overrides: &Overrides, req: &PlanRequest) -> crate::testing::Scenario {
+    use crate::testing::{Q, Scenario};
+    let level = req.from_level.max(1);
+    let mut scenario = Scenario::of_class(conn, overrides, req)
+        .unwrap()
+        .quest(Q::new(900, "Quest").level(level).min_level(level));
+    // The quests the character did.
+    for done in req.start.iter().flat_map(|s| &s.completed) {
+        scenario = scenario.quest(Q::new(done.0, "Done").level(level).min_level(level));
+    }
+    scenario
+}
+
+pub(crate) fn class_prepared(conn: &Connection, overrides: &Overrides, req: &PlanRequest) -> Prepared {
+    class_scenario(conn, overrides, req).build()
 }
 
 fn planner(p: &Prepared) -> Planner<'_> {
@@ -265,7 +284,7 @@ fn objective_started_counts_its_share_at_another_place() {
 fn gathering_next_to_kills_saves_time_when_consecutive() {
     let p = camp_of_two_objectives();
     let planner = planner(&p);
-    let fighting = |route: &[Stop]| planner.simulate_full(route, None).unwrap().1.fighting;
+    let fighting = |route: &[Stop]| fighting_with_turn_ins(&planner, route);
     let (kill, gather) = (Stop::quest(0, Kind::Objective(0)), Stop::quest(1, Kind::Objective(0)));
     let (k, g) = (fighting(&[kill]), fighting(&[gather]));
     let saved = g.min(k * p.params.gather_overlap);
@@ -275,6 +294,19 @@ fn gathering_next_to_kills_saves_time_when_consecutive() {
     // Another stop between them (a quest taken at the start).
     let apart = fighting(&[kill, Stop::quest(2, Kind::Accept), gather]);
     assert!((apart - (k + g)).abs() < 1e-6, "{apart} with a stop between");
+}
+
+/// The fighting of `route` with the quests whose objective it does turned in at its end: a quest
+/// left in the log is grinding (`Planner::count_unfinished_as_grind`), not fighting.
+fn fighting_with_turn_ins(planner: &Planner<'_>, route: &[Stop]) -> f64 {
+    let mut full = route.to_vec();
+    full.extend(
+        route
+            .iter()
+            .filter(|s| s.kind == Kind::Objective(0))
+            .map(|s| Stop::quest(s.index, Kind::TurnIn)),
+    );
+    planner.simulate_full(&full, None).unwrap().1.fighting
 }
 
 /// Kill and gathering objectives at a camp 100 yards east of the start, for quests 0 and 1 (in
@@ -337,7 +369,7 @@ fn objectives_at_one_place_are_brought_together() {
     let apart = vec![kill, accept, gather];
     let together = planner.route_together(apart.clone());
     assert_eq!(together, vec![kill, gather, accept]);
-    let fighting = |route: &[Stop]| planner.simulate_full(route, None).unwrap().1.fighting;
+    let fighting = |route: &[Stop]| fighting_with_turn_ins(&planner, route);
     assert!(fighting(&together) < fighting(&apart) - 1.0);
 }
 
@@ -1001,7 +1033,9 @@ mod abilities;
 
 #[test]
 fn an_unbounded_required_quest_stays_in_the_log_when_gray() {
-    let conn = database_of("classic");
+    let conn = crate::fixture::Fixture::new(Edition::Classic)
+        .file("classic_northshire")
+        .open();
     let o = Overrides::load_edition(&repo().join("overrides"), Edition::Classic).unwrap();
     let req=serde_json::from_value(serde_json::json!({"race":"human","class":"warrior","from_level":20,"to_level":21,"required_class_quests":[],"required_quests":[783],"start":{"level":20,"log":[{"id":783,"complete":true}]}})).unwrap();
     let p = job::prepare(&conn, &o, &req, &|_| {}).unwrap();
@@ -1014,4 +1048,132 @@ fn an_unbounded_required_quest_stays_in_the_log_when_gray() {
     let mut state = plan.initial_state();
     plan.abandon_hopeless(&mut state, &mut |_, _| {});
     assert!(state.accepted[i]);
+}
+
+/// Two versions of a must-have class quest, of two steps each: taking one closes the other. The
+/// first is far away, the second at the start.
+fn far_and_near_versions() -> Prepared {
+    let mut p = quests_at_start(4);
+    p.world.terrain = crate::terrain::Terrain::default();
+    let ids: Vec<i64> = p.model.quests.iter().map(|q| q.id).collect();
+    for q in &mut p.model.quests {
+        q.mandatory = true;
+    }
+    p.model.quests[1].pre_all = vec![ids[0]];
+    p.model.quests[3].pre_all = vec![ids[2]];
+    for i in 0..2 {
+        p.model.quests[i].exclusive = vec![ids[2], ids[3]];
+        p.model.quests[i + 2].exclusive = vec![ids[0], ids[1]];
+        p.model.quests[i].starts[0].pos.x += 5000.0;
+        p.model.quests[i].ends[0].pos.x += 5000.0;
+    }
+    p
+}
+
+fn far_version_route() -> Vec<Stop> {
+    vec![
+        Stop::quest(0, Kind::Accept),
+        Stop::quest(0, Kind::TurnIn),
+        Stop::quest(1, Kind::Accept),
+        Stop::quest(1, Kind::TurnIn),
+    ]
+}
+
+/// No other move can change the version: a must-have quest stays, and the other is closed.
+#[test]
+fn the_other_version_of_a_class_quest_replaces_the_one_in_the_route() {
+    use rand::SeedableRng;
+    let p = far_and_near_versions();
+    let planner = planner(&p);
+    let mut route = far_version_route();
+    let run = planner.run(&route).unwrap();
+    let mut changed = None;
+    let mut rng = rand::rngs::SmallRng::seed_from_u64(1);
+    for _ in 0..64 {
+        changed = changed.or_else(|| planner.swap_version(&mut route, &run, &mut rng));
+    }
+    let change = changed.expect("the other version is open");
+    assert_eq!(change.first, 0);
+    let quests: Vec<u32> = route.iter().map(|s| s.index).collect();
+    assert!(quests.iter().all(|&q| q >= 2), "the old version is gone: {quests:?}");
+    assert_eq!(route.len(), 4, "the whole new version: {quests:?}");
+    let (with, spent) = planner.simulate_full(&route, None).unwrap();
+    assert_eq!(spent.missing_class_quests, 0);
+    assert!(with < run.total, "{with} vs {}", run.total);
+}
+
+#[test]
+fn the_search_changes_to_the_better_version_of_a_class_quest() {
+    let p = far_and_near_versions();
+    let route = planner(&p).improve_while(
+        far_version_route(),
+        super::Effort::Tries(4000),
+        || true,
+        |_| {},
+        |_, _, _| {},
+    );
+    let quests: Vec<u32> = route.iter().filter(|s| s.is_quest()).map(|s| s.index).collect();
+    assert!(quests.contains(&2) && quests.contains(&3), "{quests:?}");
+    assert!(!quests.contains(&0) && !quests.contains(&1), "{quests:?}");
+}
+
+/// A quest with no other version: the move does nothing, and draws nothing (routes of every
+/// other character stay the same).
+#[test]
+fn a_class_quest_with_one_version_has_nothing_to_swap() {
+    use rand::{RngExt, SeedableRng};
+    let mut p = quests_at_start(2);
+    p.model.quests[0].mandatory = true;
+    let planner = planner(&p);
+    let mut route = vec![Stop::quest(0, Kind::Accept), Stop::quest(0, Kind::TurnIn)];
+    let run = planner.run(&route).unwrap();
+    let mut rng = rand::rngs::SmallRng::seed_from_u64(1);
+    let mut same = rand::rngs::SmallRng::seed_from_u64(1);
+    assert!(planner.swap_version(&mut route, &run, &mut rng).is_none());
+    assert_eq!(route.len(), 2);
+    assert_eq!(rng.random::<u64>(), same.random::<u64>());
+}
+
+/// The move shares its slot with adding a new quest, the only one: a character with versions
+/// still gets most of those tries, for the whole search.
+#[test]
+fn a_route_with_another_version_still_tries_new_quests() {
+    use rand::SeedableRng;
+    let p = far_and_near_versions();
+    let planner = planner(&p);
+    let route = far_version_route();
+    let run = planner.run(&route).unwrap();
+    let mut rng = rand::rngs::SmallRng::seed_from_u64(1);
+    let swaps = (0..1000)
+        .filter(|_| planner.swap_version(&mut route.clone(), &run, &mut rng).is_some())
+        .count();
+    assert!((50..=250).contains(&swaps), "{swaps} swaps of 1000 tries");
+}
+
+/// A quest the route took and never turned in is grinding in all but name: the time of its
+/// objectives is counted as grinding, not as the fighting of a quest; turned in, it stays fighting.
+#[test]
+fn a_quest_never_turned_in_counts_as_grinding() {
+    use crate::testing::{Q, Scenario};
+    let p = Scenario::new()
+        .levels(1, 3)
+        .quest(
+            Q::new(1, "Kills")
+                .level(1)
+                .xp(50)
+                .giver(1, 40.0, 40.0)
+                .kill("Boar", 1, 10, 1, 45.0, 45.0),
+        )
+        .build();
+    let planner = planner(&p);
+    let (accept, objective, turn_in) = (
+        Stop::quest(0, Kind::Accept),
+        Stop::quest(0, Kind::Objective(0)),
+        Stop::quest(0, Kind::TurnIn),
+    );
+    let (_, done) = planner.simulate_full(&[accept, objective, turn_in], None).unwrap();
+    let (_, left) = planner.simulate_full(&[accept, objective], None).unwrap();
+    assert!(done.fighting > 1.0, "turned in: the quest's fighting {done:?}");
+    assert!(left.fighting < 1.0, "never turned in: grinding {left:?}");
+    assert!(left.grinding > done.grinding, "{} vs {}", left.grinding, done.grinding);
 }

@@ -43,6 +43,15 @@ Planning and edited-guide saves reject missed windows.
 `world.rs` gives the geography: zone coordinates converted to world coordinates, the passes
 between zones, boats, zeppelins and tram (`overrides/`), and the flight path network.
 
+The quest data itself is corrected in `overrides/database/` (`*.toml` for every edition,
+`<edition>/` for one): races and classes of a quest, prerequisites, objectives, spawns, drop
+chances, an NPC's side. The database builder applies them on top of its sources at every build,
+so source-data fixes go there (the format is at the top of `overrides/database/quests.toml`),
+never into the packed database alone. The runtime overlays above add model behavior such as
+blessing steps and Shipping Label acquisition, which the importer format does not express.
+Planning applies runtime quest corrections only to quests present in the loaded database;
+`fg audit` also rejects unknown correction targets and references in the complete data.
+
 A guide can start from a character met in game (`job/start.rs`): the profile the addon saves
 (`Profile.lua`, read by the app from the SavedVariables) becomes the simulation's initial state:
 quests turned in, position, hearthstone, known flight paths, XP and rested XP, gear worn, last
@@ -99,9 +108,15 @@ level:
   `farm_share` (80%) of the mobs met are killed, fewer on a crowded server (the other players
   take their share, as at an objective's spot); the mobs of the log's quests are left to their
   objectives, which count them where they are done.
-  Professions add no time: only their quests are planned, once the skill curve reaches them
-  (optional in the guide). Their reward is the profession's, not XP: they are kept once gray,
-  and each one left out costs `profession_quest_weight`.
+  By default professions add no time or steps: only their quests are planned, once the skill curve reaches
+  them (optional in the guide). Their reward is the profession's, not XP: they are kept once gray,
+  and each one left out costs `profession_quest_weight`. With `profession_trainers` (off by
+  default) the planner also visits the trainers (`plan/profession_trainers.rs`, called after every
+  step with the class training): a trainer within `train_radius` teaches each rank the character can
+  learn (level and skill the rank asks) as a detour; a farther one is a trip, once the curve passes
+  the cap of the rank before. The time counts in the route, the visit is a `profession` step, and
+  the state (`State::ranks`) remembers the ranks learned. A rank no trainer teaches gets no
+  visit. A guide edited by hand has none (the editor plans no trainer).
 - **Every action is a step**: each take, objective and turn-in of a quest is a stop of the route,
   done at that stop and nowhere else (no quest taken in passing at another stop, no objective
   finished on the way), so that each one can be moved or removed in the guide editor. What doing
@@ -176,21 +191,27 @@ quest whose objectives are far out of reach is not picked up.
   level are assumed known, independently of quest selection; this does not mark quests completed.
   Saved characters retain learned ranks. `overrides/forever/quests.toml` lists Cat Form's starter
   attacks. Choosing which quests a route must complete is separate from this ability state.
-- **Required class quests**: those of `overrides/class_quests.toml` and every class quest the data
-  says teaches a spell (`m_quest.reward_spell`), by name; the app lists them, the player can take
-  some out. Where quests of a name teach a spell, the spell is what is required: those quests and
-  the steps of the name leading to them, not a later quest of the same name (the orc's second
-  Vile Familiars, in Durotar, is not the undead warlock's). A quest the route takes and gives up
-  costs it `abandon_weight`.
+- **Required class quests** are class requirements, built by the database (`m_class_requirement`):
+  one per spell the class's quests teach (`m_quest.reward_spell`), a start zone's letter to the
+  class trainer, and those the overrides add (`[[class_requirement]]` in `overrides/database`:
+  Moonglade, Call of Air). Its quests are its versions, the last quest of each chain (a step
+  listing the same spell is not one): the route does one of those the character can take and the
+  others are closed (`chains::settle_class_quest_versions`; the search can change version,
+  `swap_version`). The app lists the requirements by name, the player can take some out; guides
+  saved with quest names still select the requirements having a quest of that name. A requirement
+  is a must-have quest: unless its window says otherwise it is done while the game shows the
+  quest yellow (orange when the progression is risky) or green, never before nor once it is gray,
+  and the route is refused otherwise (`default_completion_windows`; a guide replayed or edited is
+  not refused for it). A quest the route takes and gives up costs it `abandon_weight`.
   Missing unlocks keep their earlier prerequisites; known rewards avoid repeating unlocks.
   A spell proves a prerequisite only when one eligible quest grants it on completion. Shared
   rewards need recorded quest history. Moonglade teaches its teleport on acceptance, so its
   turn-in still gates the next quest. Group knowledge requires every eligible member; explicit
   must-have quests still need completion.
-- **Class quests** giving a pet or a form (`overrides/class_quests.toml`) add levels of power
-  too (a 1.4 times faster fight is 3.2 levels), and count like an upgrade when choosing quests;
-  the quest teaching that spell gives it, whatever its name (Piercing the Veil, the undead's
-  Imp, like Vile Familiars).
+- **Class quests** giving a pet or a form (`overrides/class_quests.toml`, by requirement name) add
+  levels of power too (a 1.4 times faster fight is 3.2 levels), and count like an upgrade when
+  choosing quests; the quests of the requirement give it (Piercing the Veil, the undead's Imp, like
+  Vile Familiars).
 - The data (item stats, quest rewards, boss loot, trainer spells, base stats by level) comes from
   VMaNGOS (Classic, Forever). TBC uses level-based combat power and `train_every` for
   combat training; `overrides/tbc/movement.toml` supplies missing movement trainer levels
@@ -357,3 +378,27 @@ The planner is one crate among a few, each with one job:
 - `fg-web` and `app/src-tauri` are the two `Host`s: the browser build (WebAssembly) and the
   desktop app. They add what only they can do (settings, the game folder, the contribution
   server for the desktop app; the files of the page for the browser).
+
+## 6. How the tests get their data
+
+A test never reads the game's databases. It names the small world it needs, in files
+(`crates/fg-route/tests/fixtures/*.toml`), and `fg_route::fixture::Fixture` builds a database of the
+game's own shape from them: quests, NPCs, objects, items and their drops, vendors, dungeons, and
+any row of any table (`[[row]]`). The format is at the top of `model/fixture.rs`.
+
+```rust
+let conn = Fixture::new(Edition::Classic).file("classic_druid").file("classic_services").open();
+```
+
+- The database starts from `base-<edition>.sqlite.zst`: the real schema, the game's constants
+  (classes, races, zones, factions, class spells, the maps and the flight network) and the races'
+  start NPCs. `scripts/test-base.sh` makes it from the databases; the files declare the rest.
+- A walk needs the ground: a `[[terrain]]` region copies the tiles of a map from
+  `terrain-<edition>.sqlite.zst` (`scripts/test-terrain.sh`, the regions are listed in
+  `terrain-regions.txt`). `tile_x` follows the world's y and `tile_y` its x.
+- A fixture is built once per process and copied for each call. `FG_TRACE=1` prints the statements
+  a test runs, `FG_SLOW=5` those taking 5 ms or more.
+- A test of what the planner does with a quest declares that quest. Three tests read the real
+  databases and are slow on purpose, because what they check is the data or a whole continent: the
+  example guide the apps ship, opened in every view (`fg-web`) and replayed in the editor
+  (`edit.rs`), and the walks between the south and the north of the Eastern Kingdoms (`routes.rs`).

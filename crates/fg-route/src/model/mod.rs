@@ -8,6 +8,8 @@ pub use dungeons::dungeon_levels;
 mod entities;
 mod explore;
 mod farm;
+#[cfg(any(test, feature = "testing"))]
+pub mod fixture;
 mod givers;
 mod guard;
 mod item;
@@ -18,6 +20,7 @@ mod places;
 mod pvp;
 mod quest;
 mod required;
+pub mod requirements;
 mod rewards;
 mod selection;
 mod sources;
@@ -25,7 +28,7 @@ mod sources;
 pub mod testing;
 mod types;
 
-pub(crate) use chains::{class_sort, required_by_name};
+pub(crate) use chains::class_sort;
 pub use farm::{FarmMobs, Met};
 pub use givers::{Dropper, UNKNOWN_START_CHANCE, assumed_start_chance};
 pub use guard::Guards;
@@ -33,9 +36,9 @@ pub use loot::CommonLoot;
 pub use names::Names;
 pub(crate) use sources::{LinkKind, quest_links};
 pub use types::{
-    CompletionWindow, Dungeon, DungeonDef, EntityKind, ExploreArea, Guard, Initial, Loc, Mate, MateStart, Model,
-    Objective, ObjectiveOrder, ProfessionPlan, Profile, Quest, QuestOverride, QuestRequirement, SpellLevel, Spots,
-    Teleport, TeleportDef, Vendor, race_bit,
+    ClassRequirement, CompletionWindow, Dungeon, DungeonDef, EntityKind, ExploreArea, Guard, Initial, Loc, Mate,
+    MateStart, Model, Objective, ObjectiveOrder, ProfessionPlan, ProfessionTrainer, Profile, Quest, QuestOverride,
+    QuestRequirement, SpellLevel, Spots, Teleport, TeleportDef, Vendor, race_bit,
 };
 
 use crate::params::Params;
@@ -131,7 +134,15 @@ pub fn load(
     let known_names: HashSet<_> = names_known.into_iter().filter_map(|(n, k)| k.then_some(n)).collect();
     chains::drop_unhanded(&mut quests, &mut skipped);
     report_skipped_class_quests(&sources, &skipped);
-    let places = Places::load(conn, world, &sources.entities, profile, &sources.start, params.edition)?;
+    let places = Places::load(
+        conn,
+        world,
+        &sources.entities,
+        profile,
+        &sources.start,
+        params.edition,
+        params.profession_trainers && !profile.profession_goals().is_empty(),
+    )?;
     for q in &mut quests {
         if known_names.contains(&q.name) && !q.required && !q.zone_forced {
             q.mandatory = false;
@@ -150,13 +161,7 @@ pub fn load(
         q.late_unlock = sources.class_quest_ids.contains(&q.id)
             && !profile.within_levels(q.level, q.min_level, params.max_quest_above);
     }
-    settle_quests(
-        &mut quests,
-        &sources.dungeons,
-        params,
-        &known_prerequisites,
-        &profile.completed_quests,
-    );
+    settle_quests(&mut quests, &sources.dungeons, params, &known_prerequisites, profile);
     let loot = CommonLoot::load(conn, &mut quests)?;
     let levels = dungeon_levels(conn, &profile.dungeons)?;
     let window = (params.dungeon_from, params.dungeon_to);
@@ -226,10 +231,11 @@ pub fn load(
         .iter()
         .enumerate()
         .filter(|(_, (name, _))| {
-            sources
-                .rows
-                .iter()
-                .any(|q| &q.name == name && abilities.quest(q.id) & own_knowledge != 0)
+            // The quests of the requirement of that name (a pet, a form) give the power.
+            (profile.class_requirements.iter())
+                .filter(|c| &c.name == name)
+                .flat_map(|c| &c.quests)
+                .any(|id| abilities.quest(*id) & own_knowledge != 0)
         })
         .fold(0, |bits, (k, _)| bits | (1 << k));
     Ok(Model {
@@ -250,6 +256,7 @@ pub fn load(
         unlocks,
         chain_top,
         trainers: places.trainers,
+        profession_trainers: places.profession_trainers,
         inns: places.inns,
         vendors: places.vendors,
         start_inn: places.start_inn,
@@ -282,18 +289,22 @@ pub(crate) fn settle_quests(
     dungeons: &[Dungeon],
     params: &Params,
     known: &HashSet<i64>,
-    completed: &HashSet<i64>,
+    profile: &Profile,
 ) {
-    chains::narrow_class_quests_to_spells(quests, params.all_class_quests);
+    let (completed, requirements) = (&profile.completed_quests, &profile.class_requirements);
+    let versions = chains::class_quest_versions(quests, requirements, params.all_class_quests);
     for q in quests.iter_mut() {
         let forced = |d: usize| params.forced_dungeon_quests.contains(&dungeons[d].area);
         q.mandatory |= q.objectives.iter().any(|o| o.dungeon.is_some_and(forced));
     }
+    chains::require_alternatives(quests, requirements);
     chains::require_prerequisites(quests);
     chains::release_impossible_class_quests(quests, known, completed);
+    chains::settle_class_quest_versions(quests, &versions);
     for q in quests.iter_mut() {
         q.mandatory |= q.required;
     }
+    chains::default_completion_windows(quests, profile, params);
 }
 
 /// A dungeon holding an objective of a must-have quest is run like a forced one, and past its
@@ -379,6 +390,12 @@ fn build_quests(
             Ok(Some(quest)) => quests.push(quest),
             Ok(None) => {}
             Err(reason) => skipped.push((row.id, row.name.clone(), reason.to_owned())),
+        }
+    }
+    let index: HashMap<i64, usize> = quests.iter().enumerate().map(|(i, q)| (q.id, i)).collect();
+    for (&item, givers) in &sources.reward_of {
+        for i in givers.iter().filter_map(|q| index.get(q)) {
+            quests[*i].reward_items.push(item);
         }
     }
     (quests, skipped)
