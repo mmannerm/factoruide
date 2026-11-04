@@ -37,9 +37,9 @@ bounds remain unbounded. Automatic class requirements favor upstream's default y
 window as a scheduling target; missing that target does not refuse a guide. Prerequisites and child quests inherit deadline priority,
 not the lower bound. Near a deadline, the chain's available quest work takes priority, though
 forced and must-have dungeons (their quest pickups and runs) can come first. Replay omits optional
-work needing grinding beyond a scheduled deadline. Turn-ins check each member
+work needing grinding beyond a player-specified deadline. Turn-ins check each member
 still needing the quest, including after travel; imported completion already satisfies the goal.
-Planning and edited-guide saves reject missed windows.
+Planning and edited-guide saves reject missed player-specified windows.
 
 `world.rs` gives the geography: zone coordinates converted to world coordinates, the passes
 between zones, boats, zeppelins and tram (`overrides/`), and the flight path network.
@@ -200,10 +200,10 @@ quest whose objectives are far out of reach is not picked up.
   others are closed (`chains::settle_class_quest_versions`; the search can change version,
   `swap_version`). The app lists the requirements by name, the player can take some out; guides
   saved with quest names still select the requirements having a quest of that name. A requirement
-  is a must-have quest: unless its window says otherwise it is done while the game shows the
-  quest yellow (orange when the progression is risky) or green, never before nor once it is gray,
-  and the route is refused otherwise (`default_completion_windows`; a guide replayed or edited is
-  not refused for it). A quest the route takes and gives up costs it `abandon_weight`.
+  is mandatory, with a scheduling target while the quest is yellow (orange with risky progression)
+  or green (`default_completion_windows`). Missing that target does not refuse the guide or prune
+  optional work during repair. Explicit player completion bounds remain hard constraints.
+  A quest the route takes and gives up costs it `abandon_weight`.
   Missing unlocks keep their earlier prerequisites; known rewards avoid repeating unlocks.
   A spell proves a prerequisite only when one eligible quest grants it on completion. Shared
   rewards need recorded quest history. Moonglade teaches its teleport on acceptance, so its

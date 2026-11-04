@@ -508,7 +508,7 @@ pub struct Quest {
     /// A default class scheduling target (`default_completion_windows`), not a player-supplied
     /// constraint: missing it does not refuse the guide.
     pub implicit_window: bool,
-    /// Earliest deadline of the requirements this quest helps complete.
+    /// Earliest scheduling deadline or class target this quest helps complete.
     pub priority_deadline: Option<i64>,
     /// Profession quest: index in `Model::professions` and skill needed to accept it.
     pub skill: Option<(usize, i64)>,

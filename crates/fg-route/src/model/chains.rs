@@ -295,8 +295,7 @@ pub(super) fn default_completion_windows(quests: &mut [Quest], profile: &Profile
         };
         q.implicit_window = true;
     }
-    // The route goes for them before the level they turn gray: the quest and what leads to it get
-    // the deadline, the earliest of those sharing a prerequisite winning.
+    // Prioritize the quest and what leads to it by the earliest shared class target.
     let index: HashMap<i64, usize> = quests.iter().enumerate().map(|(i, q)| (q.id, i)).collect();
     let mut due: Vec<(i64, usize)> = (quests.iter().enumerate())
         .filter(|(_, q)| q.implicit_window)
