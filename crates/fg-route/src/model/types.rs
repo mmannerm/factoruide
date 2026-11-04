@@ -505,8 +505,8 @@ pub struct Quest {
     /// Explicit player requirement or a prerequisite selected to reach one.
     pub required: bool,
     pub completion_window: CompletionWindow,
-    /// The window is the default one (`default_completion_windows`), not the player's: a guide
-    /// replayed as it is (an older one, the editor's) is not refused for it.
+    /// A default class scheduling target (`default_completion_windows`), not a player-supplied
+    /// constraint: missing it does not refuse the guide.
     pub implicit_window: bool,
     /// Earliest deadline of the requirements this quest helps complete.
     pub priority_deadline: Option<i64>,

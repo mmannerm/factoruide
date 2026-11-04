@@ -266,8 +266,8 @@ pub(super) fn settle_class_quest_versions(quests: &mut [Quest], versions: &[(Cla
     }
 }
 
-/// Automatic class requirements are done while yellow (orange with risky progression) or
-/// green. Explicit quest choices use only the completion bounds the player supplied.
+/// Prefer automatic class requirements while yellow (orange with risky progression) or green.
+/// Explicit quest choices use only the completion bounds the player supplied.
 pub(super) fn default_completion_windows(quests: &mut [Quest], profile: &Profile, params: &Params) {
     let above = match params.progression {
         crate::params::Progression::Risky => 4,

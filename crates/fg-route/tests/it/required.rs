@@ -768,3 +768,35 @@ fn explicit_quest_choices_without_bounds_stay_unbounded() {
         assert_eq!(q.priority_deadline, None);
     }
 }
+
+#[test]
+fn an_automatic_class_target_does_not_refuse_a_quest_guarded_past_its_window() {
+    let mut p = Scenario::new()
+        .levels(30, 60)
+        .requirement("Class Quest", &[1])
+        .quest(
+            Q::new(1, "Class Quest")
+                .level(30)
+                .min_level(30)
+                .mandatory()
+                .giver(1, 40.0, 40.0),
+        )
+        .build();
+    // Call of Air's current source data has two level-50 guards at its giver.
+    p.model.quests[0].start_guard = fg_route::model::Guard {
+        level: 50,
+        count: 2,
+        elite: false,
+    };
+    assert_eq!(p.model.quests[0].completion_window.max_level, Some(37));
+    let planner = Planner::new(&p.model, &p.world, &p.params, &p.profile);
+    let route = planner.greedy();
+    planner.validate_required(&route).unwrap();
+    let guide = fg_route::export::build(&planner, &p.profile, &route);
+    let turn_in = guide
+        .steps
+        .iter()
+        .find(|s| s.quest == Some(1) && s.kind == fg_route::export::StepKind::TurnIn)
+        .unwrap();
+    assert!(turn_in.level > 37, "the guards still set the reachable level");
+}

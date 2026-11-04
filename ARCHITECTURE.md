@@ -33,8 +33,8 @@ window; unsupported or conflicting choices are reported. Required quests keep a 
 past its target level until they are complete. Generated guides and saved edits check completion.
 Entries can include `min_level` and/or `max_level`, inclusive at turn-in before reward XP:
 `--required-quest '{"quest":21,"min_level":3,"max_level":4}'`. IDs and exact names without
-bounds remain unbounded. Automatic class requirements use upstream's default yellow-to-green
-completion window. Prerequisites and child quests inherit deadline priority,
+bounds remain unbounded. Automatic class requirements favor upstream's default yellow-to-green
+window as a scheduling target; missing that target does not refuse a guide. Prerequisites and child quests inherit deadline priority,
 not the lower bound. Near a deadline, the chain's available quest work takes priority, though
 forced and must-have dungeons (their quest pickups and runs) can come first. Replay omits optional
 work needing grinding beyond a scheduled deadline. Turn-ins check each member
