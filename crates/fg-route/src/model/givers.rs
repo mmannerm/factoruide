@@ -26,6 +26,7 @@ pub(super) struct Givers {
 }
 
 /// How the item starting a quest is got.
+#[expect(clippy::large_enum_variant, reason = "one a quest, read at once")]
 enum ItemStart {
     Looted {
         at: Loc,
@@ -166,6 +167,8 @@ impl QuestBuilder<'_> {
                     kind: EntityKind::Item,
                     id: item,
                     name: self.sources.entities.name(EntityKind::Item, item),
+                    inside: None,
+                    floor: None,
                 });
                 givers.starter = Some(item);
                 givers.auction_start = (!ready).then(|| purchase.clone());
@@ -225,7 +228,7 @@ impl QuestBuilder<'_> {
             .flat_map(|(_, o)| entities.points(world, EntityKind::Object, *o))
             .collect();
         // A boss's drop, or an object's inside (Hall of Thanes' Treaty of Understanding): looted
-        // during the run, with the group (the quest needs it, `add_dungeon_givers`).
+        // inside, with the group: taken there.
         let boss = sources.iter().find_map(|(t, n)| {
             (*t == SourceKind::Npc).then(|| self.dungeon_of(EntityKind::Npc, *n).map(|d| (*n, d)))?
         });
@@ -237,7 +240,11 @@ impl QuestBuilder<'_> {
                 kind: EntityKind::Item,
                 id: item,
                 name: entities.name(EntityKind::Item, item),
-                ..self.sources.dungeons[d].entrance.clone()
+                // At the boss dropping it.
+                ..match &mob {
+                    Some((npc, _)) => self.inside_at(d, EntityKind::Npc, *npc),
+                    None => self.inside(d),
+                }
             },
             work: (0.0, 0, 0.0),
             mob,
@@ -284,6 +291,8 @@ impl QuestBuilder<'_> {
             kind: EntityKind::Item,
             id: item,
             name: entities.name(EntityKind::Item, item),
+            inside: None,
+            floor: None,
         };
         if let Some((pos, zone, _)) = best_cluster(&objects, Some(&start.pos)) {
             return ItemStart::Looted {

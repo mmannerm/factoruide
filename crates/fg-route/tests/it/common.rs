@@ -65,22 +65,6 @@ pub fn leveling_of(to_level: i64, quests: i64) -> Scenario {
     s
 }
 
-/// The walking world of an edition for a faction, loaded once for the tests that only read it.
-pub fn world(edition: fg_route::xp::Edition, faction: fg_route::faction::Faction) -> &'static fg_route::world::World {
-    static WORLDS: Mutex<Vec<(String, &'static fg_route::world::World)>> = Mutex::new(Vec::new());
-    let key = format!("{}-{}", edition.key(), faction);
-    let mut worlds = WORLDS.lock().unwrap();
-    if let Some((_, world)) = worlds.iter().find(|(k, _)| *k == key) {
-        return world;
-    }
-    let overrides = fg_route::job::Overrides::load_edition(&repo().join("overrides"), edition).unwrap();
-    let world: &'static fg_route::world::World = Box::leak(Box::new(
-        fg_route::job::game_world(&database_of(edition.key()), &overrides, faction, 0).unwrap(),
-    ));
-    worlds.push((key, world));
-    world
-}
-
 /// The walking world of an edition for a faction on a database without terrain: its zones, passes
 /// and capitals (the game's constants of the base), for the tests that do not walk.
 pub fn bare_world(edition: fg_route::xp::Edition, faction: fg_route::faction::Faction) -> fg_route::world::World {

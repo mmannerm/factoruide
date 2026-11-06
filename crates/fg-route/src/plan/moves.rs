@@ -37,6 +37,68 @@ impl Change {
 }
 
 impl Planner<'_> {
+    /// Each dungeon's stops back together: a dungeon is entered once, so a move taking some of
+    /// its stops elsewhere takes the others with them (the whole dungeon moves). `change` grows to
+    /// what moved.
+    pub(crate) fn gather_dungeons(&self, route: &mut Vec<Stop>, change: &mut Change) {
+        let places = self.places();
+        // Most moves leave each dungeon's stops together: one look at the route says so.
+        let mut spans = vec![(usize::MAX, 0, 0); self.model.dungeons.len()];
+        for (k, &stop) in route.iter().enumerate() {
+            if let Some(d) = places.usual_inside(stop) {
+                let (first, last, n) = &mut spans[d];
+                *first = (*first).min(k);
+                *last = k;
+                *n += 1;
+            }
+        }
+        if spans.iter().all(|&(first, last, n)| n == 0 || last - first + 1 == n) {
+            return;
+        }
+        for d in places.entered(route) {
+            let d = d as usize;
+            let at: Vec<usize> = (0..route.len())
+                .filter(|&k| places.usual_inside(route[k]) == Some(d))
+                .collect();
+            if at.windows(2).all(|w| w[1] == w[0] + 1) {
+                continue;
+            }
+            // The part a move took apart (the smallest one: the stops it moved), the others joining it.
+            let mut parts: Vec<&[usize]> = Vec::new();
+            let mut from = 0;
+            for n in 1..=at.len() {
+                if n == at.len() || at[n] != at[n - 1] + 1 {
+                    parts.push(&at[from..n]);
+                    from = n;
+                }
+            }
+            // Of parts as small, the one the move touched.
+            let touched = |p: &[usize]| p.iter().any(|&k| (change.first..=change.last).contains(&k));
+            let anchor = (parts.iter())
+                .min_by_key(|p| (p.len(), !touched(p)))
+                .map_or(at[0], |p| p[0]);
+            let block: Vec<Stop> = at.iter().map(|&k| route[k]).collect();
+            // Where the anchor lands once the others are taken out.
+            let start = anchor - at.iter().filter(|&&k| k < anchor).count();
+            for &k in at.iter().rev() {
+                route.remove(k);
+            }
+            let first = at[0].min(start);
+            for (n, stop) in block.into_iter().enumerate() {
+                route.insert(start + n, stop);
+            }
+            change.first = change.first.min(first);
+            change.last = change
+                .last
+                .max(at[at.len() - 1])
+                .max(start + at.len() - 1)
+                .min(route.len() - 1);
+            change.reordered = true;
+        }
+    }
+}
+
+impl Planner<'_> {
     /// One of the small moves, drawn at random.
     pub(crate) fn random_move(&self, route: &mut Vec<Stop>, run: &Run, rng: &mut SmallRng) -> Option<Change> {
         match rng.random_range(0..25) {
@@ -274,7 +336,7 @@ impl Planner<'_> {
         if kind == Kind::Dungeon && route.contains(&stop) {
             return None;
         }
-        let at = self.insert_near(route, &self.places().pos(&self.initial_state(), stop), 0);
+        let at = self.insert_near(route, &self.places().pos(&self.sim().initial_state(), stop), 0);
         route.insert(at, stop);
         Some(Change::edited(at, route.len()))
     }
@@ -286,7 +348,7 @@ impl Planner<'_> {
     /// trip in between may fly. A visit of the route to it later is moved there.
     fn add_flight_visit(&self, route: &mut Vec<Stop>, rng: &mut SmallRng) -> Option<Change> {
         let node = rng.random_range(0..self.world.taxi_nodes.len());
-        let s0 = self.initial_state();
+        let s0 = self.sim().initial_state();
         if s0.known & (1u128 << node) != 0 {
             return None;
         }
@@ -300,14 +362,14 @@ impl Planner<'_> {
             .position(|&st| {
                 st == visit
                     || (st.kind != Kind::LearnFlight
-                        && self.pos_from_start(&s0, st).dist(&pos) <= self.params.flight_learn_radius)
+                        && self.sim().pos_from_start(&s0, st).dist(&pos) <= self.params.flight_learn_radius)
             })
             .unwrap_or(route.len());
         if learned == 0 {
             return None;
         }
         let at = (0..learned)
-            .map(|i| (i, self.pos_from_start(&s0, route[i]).dist(&pos)))
+            .map(|i| (i, self.sim().pos_from_start(&s0, route[i]).dist(&pos)))
             .filter(|(_, d)| d.is_finite())
             .min_by(|a, b| a.1.total_cmp(&b.1))
             .map(|(i, _)| i + 1)?;
@@ -323,7 +385,7 @@ impl Planner<'_> {
     /// around it closest to the inn; or a bind of the route moved to such an inn.
     fn rebind_nearby(&self, route: &mut Vec<Stop>, rng: &mut SmallRng) -> Option<Change> {
         const AROUND: usize = 15;
-        let s0 = self.initial_state();
+        let s0 = self.sim().initial_state();
         let k = rng.random_range(0..route.len());
         let inns = self.inns_near(&self.places().pos(&s0, route[k]), INNS_TRIED);
         let inn = *inns.get(rng.random_range(0..inns.len().max(1)))?;

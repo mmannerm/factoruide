@@ -34,7 +34,7 @@ class ReviewedSources(unittest.TestCase):
         after["SpellLevels"].append({"SpellID": "1", "DifficultyID": "0", "SpellLevel": "99"})
         after["TaxiPathNode"].append({"PathID": "1", "NodeIndex": "0", "Loc_0": "99", "Loc_1": "99", "Loc_2": "99"})
         expected = SCRIPT["client_facts"](before)
-        self.assertEqual(expected["spell_levels"], {"5221": 20, "18499": 30})
+        self.assertEqual(expected["spell_levels"], {"5221": 20})
         self.assertEqual(expected["bridge"]["points"], [[10.0, 15.0, 0.0], [20.0, 30.0, 0.0]])
         SCRIPT["unchanged"]("Client facts", expected, SCRIPT["client_facts"](after))
 

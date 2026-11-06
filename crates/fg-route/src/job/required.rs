@@ -190,7 +190,7 @@ pub(super) fn check_start(
     members: &[&super::StartState],
 ) -> Result<()> {
     for (i, q) in model.quests.iter().enumerate() {
-        let Some(max) = q.completion_window.max_level else {
+        let Some(max) = q.completion_window.max_level.filter(|_| !q.implicit_window) else {
             continue;
         };
         if model.initial.turned.contains(&i) {

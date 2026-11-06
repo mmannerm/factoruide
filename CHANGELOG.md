@@ -10,13 +10,22 @@ An addon change also goes, in the same words, under Unreleased in that addon's o
 
 ### App
 
+- The steps inside a dungeon are a block of their own on the guide page, shown on the map of the dungeon's floor they are on (Classic and WoW Forever dungeons, from the game's own dungeon maps).
+- The first guide of a game version no longer fails now and then because another command removed its data while unpacking it.
+- A settings change made while the addon installs, or while a character is added back or forgotten, is no longer lost.
 - A dungeon quest with one objective inside shows its name in the guide ("An Ancient Grudge: Faldrim Anvilmar"), not the dungeon's ("The Hall of Thanes: Faldrim Anvilmar").
 
 ### Guides
 
+- A dungeon's quests are steps inside it: taken from a boss's drop or a giver inside, objectives and hand-ins, each where it is done, the dungeon entered once (its run's time and mobs counted then). Guides made before get those steps when opened.
+- After a quest at an NPC who walks around, the level checkpoint's arrow points at the checkpoint, not along the NPC's path.
+- A guide text with a control character or a character name with an unusual letter is written into the data addon as the game reads it, not as stray letters.
 - "On the way: buy ... at the auction house" comes before the flight, boat or zeppelin that leaves the city, not after it (GitHub #115).
 - WoW Forever: the Orc mage takes the Undercity mage quests (Investigate the Alchemist Shop, Spellfire Robes, Speak with Deino...), the Troll warlock the Voidwalker's Creature of the Void and The Binding, and the High Order Skyborne mage and druid the Human, Gnome and Night Elf quests of their sides, instead of leaving them out of the guide (GitHub #111, #114).
 - Class quests: the guide takes one version of each (the Skyborne shaman's two Call of Fire chains, the human priest's Divine Grace, the warlocks' demons by race...) instead of all of them, and a class quest no version of which can be planned is reported. The races of the class quests follow the quests' pages (the troll warlock gets its Voidwalker and Incubus, Piercing the Veil is the orc and undead warlocks') (GitHub #110, #111, #112, #114).
+- Web app: when the backend stops, the message carries what it wrote on its error output (a panic's place and reason) and the error's own message, so that a report says why (GitHub #109).
+- A must-have quest asked at a minimum level ("complete it at level 18") has its dungeon run from that level, instead of before it and the hand-in after (GitHub #108).
+- WoW Forever: Lost in the Thicket Things (Excavation Site: Wetlands) is ended to Ardin Grassman inside the dungeon, who gives Heartwoven to take back to Caitlin Grassman in Menethil Harbor: the guide runs the dungeon once for both (GitHub #107).
 - A quest the guide takes and never hands in is grinding in all but name: the time of its kills counts as grinding, in the planner's score and against the grind limit. Guides no longer end on a many-hour step for a quest they never hand in, nor keep quests only for their kills (GitHub #117, #124).
 - Automatic class requirements favor the levels where quests are yellow (orange with the risky profile) or green, without refusing a guide for missing that target. Manually selected must-have quests use the optional completion range you supply; leaving it empty imposes no deadline.
 - A quest started by an item found in a dungeon's object is planned with the run and taken in it: WoW Forever's The Treaty of Understanding, from the Hall of Thanes.
@@ -32,6 +41,12 @@ An addon change also goes, in the same words, under Unreleased in that addon's o
 
 - WoW Forever's Hall of Thanes: Underground Map is planned (the Dark Iron Map drops from the Dark Iron Spies and Captain Beld), and Old Ironforge Incursion after it (GitHub #98).
 - WoW Forever: the warlocks' pets and the Theramore Emissaries no longer count as hostile creatures in Stormwind (they kept low-level characters from its auction house), and A Dynamite Plan asks for its 10 Rough Dynamite.
+- The players' latest contributions: more quests seen in game, creature ranks and object names (WoW Forever).
+- WoW Forever: the library's books (Friend of the Library) are planned again, the game files them with the event quests.
+- The XP players measure in game where the quest data was off (TBC: Your Place In The World and Rude Awakening give 40, not 60), with the latest quest data and the game's new builds.
+- WoW Forever: the latest quest data (the priests' Divine Grace and Confounding Flash versions exclude each other, An Enticing Offer's objectives in the game's order) and more object and creature names checked from players' reports.
+- Names checked from players' reports: the Spanish names and titles of the Classic game (not the Latin American ones), German names in TBC, French titles in WoW Forever.
+- WoW Forever: the latest quest data and creature places, the XP players measure in game for 60 more quests, Latin American Spanish names and pet names checked from players' reports, and Khan Hratha from level 35.
 
 ## 0.15.0 (2026-11-01)
 

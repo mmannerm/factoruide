@@ -1,54 +1,37 @@
 # Data corrections
 
-The fork uses upstream's bundled databases and applies the edition's corrections when
-loading a guide. Corrections remain readable and apply after database refreshes; the database
-archives are not edited.
+The fork uses upstream's bundled databases without editing their archives. The current Forever
+import records identify QuestieDB `8086696078`, Questie `a2800fd3ae`, AllTheThings `7bf3b5e17b`
+and client cache build `70790` in the [upstream snapshot](https://github.com/brouznouf/factoruide/blob/5def9b54150bbd57a3f35a6273972123a636634a/data/forever.sqlite.zst).
 
-Selecting Shipping Label (#98247 Alliance, #98248 Horde) as a must-have adds an Auction House
-stop for one Apprentice Herbs crate and 20 Peacebloom per character who still needs a label,
-then filling it before accepting the quest. The first filled crate supplies the label. Use
-owned items instead of buying when possible; the estimate assumes purchases, auction stock
-and affordability, using the usual purchase-time estimate. Random drop rates, other crate
-bundles and repeat deliveries are not modeled. Sources are linked in
-`overrides/forever/quests.toml`.
+Source-data corrections live in `overrides/database/`; upstream's database builder reapplies them
+at each build. The builder is not included in this checkout. The fork's remaining runtime
+corrections add behavior or facts the bundled data does not yet supply:
 
-Forever's bundled import records identify QuestieDB `8f55e69`, Questie `854582a` and
-AllTheThings `816a63e`. The baseline now includes the ingot alternatives, both Black Shield
-prerequisites and the removal of Fool's Stout; their duplicate runtime overrides are removed.
-The remaining model corrections and reference data use these sources:
-
-| Source | Applied rules |
+| Correction | Source and behavior |
 | --- | --- |
-| [Bundled quest graph](https://github.com/brouznouf/factoruide/blob/7cb371c7fbcc2cecb1856943f6321f3f28666b15/data/forever.sqlite.zst), [Questie blacklist](https://github.com/Questie/Questie/commit/9b46e836ccbe3fb9ce394bd6415cf11db9d895fa) | The baseline removes Fool's Stout (1127) but still lists it as Zanzil's Mixture (1119)'s child. Remove that stale child link. |
-| [Cat relic trial](https://www.wowhead.com/forever/quest=98404/the-great-windborne-cat-spirit), [Tauren](https://www.wowhead.com/forever/quest=98342/the-great-cat-spirit), [Night elf](https://www.wowhead.com/forever/quest=98396/the-great-cat-spirit) | Use the entrance statue's temporary stealth to collect the relics. NPC levels stay unchanged. |
-| [Blizzard October 1](https://us.forums.blizzard.com/en/wow/t/2360696/4), [October 15](https://us.forums.blizzard.com/en/wow/t/2360696/6), [build 70532 spell levels](https://wago.tools/db2/SpellLevels?build=1.60.1.70532&useHotfixes=1) | Shred rank 1 at level 20; Tiger's Fury removed from training estimates. Berserker Rage at level 30 is recorded for reference only; the planner does not currently track this ability. |
-| [Build 70532 taxi paths](https://wago.tools/db2/TaxiPathNode?build=1.60.1.70532&useHotfixes=1), [Peacekeeper](https://www.wowhead.com/forever/npc=256635/peacekeeper) | Wind bridge path 12018: one way, while the faction's Confront Lorthuna is held. Wait for the wind before crossing. |
-| [AllTheThings 94cb3ab…130b0c9](https://github.com/ATTWoWAddon/AllTheThings/compare/94cb3ab30be5a7357819d6e1869f51b538d42bd6...130b0c906e64d4a67832ee024c9346b3c24d4fae) | Fifteen profession source changes in `data/forever-profession-skills.csv`, including camp-feature skill thresholds and a removed skill-line entry. These do not change profession simulation. |
+| Cat relic trials | The [Skyborne](https://www.wowhead.com/forever/quest=98404/the-great-windborne-cat-spirit), [Tauren](https://www.wowhead.com/forever/quest=98342/the-great-cat-spirit) and [Night elf](https://www.wowhead.com/forever/quest=98396/the-great-cat-spirit) trials use the entrance statue's temporary stealth to collect relics. Guards keep their actual levels. The guide asks the player to renew the blessing; expiry and detection failures are not simulated. |
+| Druid training | [Blizzard's October 1](https://us.forums.blizzard.com/en/wow/t/2360696/4) and [October 15](https://us.forums.blizzard.com/en/wow/t/2360696/6) updates and [client spell levels](https://wago.tools/db2/SpellLevels?build=1.60.1.70532&useHotfixes=1): Shred rank 1 at level 20, Tiger's Fury omitted from training estimates. |
+| Wind bridge | [Path 12018](https://wago.tools/db2/TaxiPathNode?build=1.60.1.70532&useHotfixes=1) is one way and available while the faction's Confront Lorthuna is held. The bundled client path now contains the same geometry, but its node is not a faction flight node, so ordinary flight routing does not expose it. |
+| Shipping Label | Requiring #98247 (Alliance) or #98248 (Horde) adds an Auction House stop for one Apprentice Herbs crate and 20 Peacebloom per character needing a label, then filling it before accepting the quest. Sources are linked in `overrides/forever/quests.toml`. |
+
+Shipping Label estimates assume auction stock and affordability, using the ordinary purchase-time
+estimate. Use owned inputs when possible. Random crate drops, other bundles and repeat deliveries
+are not modeled. Already-ready imported quests do not buy their inputs again.
 
 Run `python3 scripts/refresh-forever-data.py` to regenerate `overrides/forever/client.toml`
-offline from `data/forever-client-facts.json`. This small reviewed snapshot records the consumed
-spell levels and transport geometry, with source URLs, retrieval date and original download hashes.
-Run the script with `--refresh` to check current sources: unrelated rows or CSV formatting do not
-invalidate the facts; a changed consumed fact fails with a diff for review. The profession CSV is
-reference data only, checked against the pinned ATT revisions during a refresh. Downloads stay in
-ignored `data/cache/`. `python3 scripts/test_forever_data.py` checks extraction and regeneration.
-The hotfix overlay is required: the base client export lacks the wind bridge. Its ride is
-estimated at the default flight speed, plus the normal transport wait; event downtime and
-actual crossing time remain unverified in production.
+offline from `data/forever-client-facts.json`. This reviewed snapshot records the consumed spell
+level and transport geometry, source URLs, retrieval date and original download hashes. With
+`--refresh`, the script checks current sources and rejects changed consumed facts with a diff
+for review. Downloads stay in ignored `data/cache/`. Run `python3 -I scripts/test_forever_data.py`
+to check extraction and regeneration.
 
-Import corrections belong in `overrides/database/`, which upstream's database builder reapplies
-at each build. Its builder is not included in this checkout. Runtime overlays here add planner
-behavior the importer format does not express: granted spell lists, blessing steps, Shipping
-Label acquisition and client transport rules.
+The bridge ride is estimated at the default flight speed plus the normal transport wait; event
+downtime and actual crossing time remain unverified. Trial blessing steps are appended to keep
+the relic objective indices stable. Older fork guides using the inserted blessing layout should
+be recomputed before editing.
 
-For a refresh, read `import_run` in the new database and compare the source revisions with
-those linked above. Review changed facts individually, update the edition's overrides and run
-the affected guide tests and `fg audit`. Remove corrections when the new baseline already
-supplies them. Audit acceptance files record reviewed exceptions; they do not fix data.
-
-Trial blessing steps are appended so the original relic objective indices remain stable. Older
-fork guides that already used the inserted blessing layout should be recomputed before editing.
-
-The fork-specific corrections apply to Forever; every edition retains upstream's bundled
-archive. Production gameplay has not been validated; the trial estimate assumes the player
-maintains the blessing.
+After a database refresh, compare its `import_run` revisions with the sources above, review
+changed facts, and remove runtime corrections the baseline now supplies. Run the affected guide
+tests and `fg audit`; audit acceptance files record exceptions rather than correcting data.
+Fork-specific corrections apply only to Forever. Every edition retains upstream's bundled archive.

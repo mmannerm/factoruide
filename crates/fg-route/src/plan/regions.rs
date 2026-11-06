@@ -168,7 +168,7 @@ impl Planner<'_> {
         }
         if self.availability().objectives_done(s, i) {
             let stop = Stop::quest(i, Kind::TurnIn);
-            return (self.near_group(s, stop, group) && self.gate_level(s, stop) <= s.level).then_some(stop);
+            return (self.near_group(s, stop, group) && self.sim().gate_level(s, stop) <= s.level).then_some(stop);
         }
         let q = self.quest(i);
         q.objectives.iter().enumerate().find_map(|(k, o)| {
@@ -176,7 +176,7 @@ impl Planner<'_> {
             let level_ok = self.combat().need(q, o) <= self.params.reach(s.level, s.might());
             (self.availability().objective_open(s, i, k)
                 && level_ok
-                && o.dungeon.is_none()
+                && o.dungeon_of().is_none()
                 && self.near_group(s, stop, group))
             .then_some(stop)
         })
@@ -190,7 +190,7 @@ impl Planner<'_> {
             .copied()
             .filter(|&i| {
                 // Its level, and the camp around its giver (`gate_level`).
-                self.gate_level(s, Stop::quest(i, Kind::Accept)) <= s.level
+                self.sim().gate_level(s, Stop::quest(i, Kind::Accept)) <= s.level
                     && self.availability().can_accept(s, i)
                     && self.worth().worth_it(s, i, s.level, 0.0)
                     && (!groups.travel[i as usize] || self.travel_destination_ok(s, groups, i))
@@ -248,7 +248,7 @@ impl Planner<'_> {
     fn work_group(&self, s: &mut State, route: &mut Vec<Stop>, groups: &Groups, g: usize) {
         let group = &groups.list[g];
         loop {
-            if self.ended(s) || self.aborted() || s.completion_error.is_some() {
+            if self.sim().ended(s) || self.aborted() || s.completion_error.is_some() {
                 return;
             }
             let mut best: Option<(f64, Stop)> = None;
@@ -269,7 +269,7 @@ impl Planner<'_> {
                     let stop = Stop::quest(i, Kind::TurnIn);
                     // Not among mobs too strong yet (`gate_level`): later, from another group.
                     if (groups.of_quest[iu] == g || self.near_group(s, stop, group))
-                        && self.gate_level(s, stop) <= s.level
+                        && self.sim().gate_level(s, stop) <= s.level
                     {
                         consider(stop, 0.7, s);
                     }
@@ -279,7 +279,7 @@ impl Planner<'_> {
                         let level_ok = self.combat().need(q, o) <= self.params.reach(s.level, s.might());
                         if self.availability().objective_open(s, i, k)
                             && level_ok
-                            && o.dungeon.is_none()
+                            && o.dungeon_of().is_none()
                             && (groups.of_quest[iu] == g || self.near_group(s, stop, group))
                         {
                             consider(stop, 1.0, s);
@@ -291,7 +291,7 @@ impl Planner<'_> {
                 consider(Stop::quest(i, Kind::Accept), 1.3, s);
             }
             let Some((_, stop)) = best else { return };
-            self.apply(s, stop, None);
+            self.sim().apply(s, stop, None);
             route.push(stop);
         }
     }
@@ -316,7 +316,7 @@ impl Planner<'_> {
                 index: inn as u32,
                 kind: Kind::Bind,
             };
-            self.apply(s, stop, None);
+            self.sim().apply(s, stop, None);
             route.push(stop);
         }
     }
@@ -329,13 +329,13 @@ impl Planner<'_> {
             groups.list.len(),
             groups.travel.iter().filter(|t| **t).count()
         ));
-        let mut s = self.initial_state();
+        let mut s = self.sim().initial_state();
         let mut route = Vec::new();
-        let verbose = std::env::var_os("FG_DEBUG").is_some();
+        let verbose = self.diagnostics.debug;
         // Groups where nothing progressed, ignored until the next level.
         let mut stuck: Vec<bool> = vec![false; groups.list.len()];
         let mut stuck_level = s.level;
-        while !self.ended(&s) && !self.aborted() && s.completion_error.is_none() {
+        while !self.sim().ended(&s) && !self.aborted() && s.completion_error.is_none() {
             if s.level != stuck_level {
                 stuck.fill(false);
                 stuck_level = s.level;
@@ -346,7 +346,7 @@ impl Planner<'_> {
             let Some((g, score)) = best else {
                 // Nothing to do at this level anywhere: grind to the next unlock, the level the
                 // quest requires (`gate_level`: also the camp around its giver).
-                let gate = |i: u32| self.gate_level(&s, Stop::quest(i, Kind::Accept));
+                let gate = |i: u32| self.sim().gate_level(&s, Stop::quest(i, Kind::Accept));
                 let next = (0..self.model.quests.len() as u32)
                     .filter(|&i| self.availability().can_accept(&s, i) && gate(i) > s.level)
                     .filter(|&i| {
@@ -359,7 +359,7 @@ impl Planner<'_> {
                 match next {
                     Some(i) => {
                         let stop = Stop::quest(i, Kind::Accept);
-                        self.apply(&mut s, stop, None);
+                        self.sim().apply(&mut s, stop, None);
                         route.push(stop);
                         continue;
                     }
@@ -414,7 +414,7 @@ impl Planner<'_> {
             let reason = if impossible {
                 "prerequisite not plannable"
             } else if !self.availability().prereqs_met(s, i as u32) {
-                if std::env::var_os("FG_DEBUG_PREREQ").is_some() && q.level >= 45 {
+                if self.diagnostics.prereq && q.level >= 45 {
                     let names: Vec<String> = q
                         .pre_all
                         .iter()
@@ -440,9 +440,7 @@ impl Planner<'_> {
             } else {
                 "skipped by planner"
             };
-            if let Ok(ids) = std::env::var("FG_DEBUG_QUESTS")
-                && ids.split(',').any(|x| x.trim() == q.id.to_string())
-            {
+            if self.diagnostics.quests.contains(&q.id) {
                 let starts: Vec<String> = q
                     .starts
                     .iter()
@@ -461,7 +459,7 @@ impl Planner<'_> {
                 );
             }
             *reasons.entry(format!("{band} {reason}")).or_insert(0) += 1;
-            if reason == "prerequisites not done" && std::env::var_os("FG_DEBUG_ROOT").is_some() {
+            if reason == "prerequisites not done" && self.diagnostics.root {
                 // Walk up the chain to the first quest not done.
                 let mut j = i;
                 for _ in 0..20 {
@@ -586,14 +584,14 @@ mod window_tests {
         p.model.quests[0].completion_window.max_level = Some(1);
         p.model.quests[1].xp = 400;
         let planner = Planner::new(&p.model, &p.world, &p.params, &p.profile);
-        let mut state = planner.initial_state();
+        let mut state = planner.sim().initial_state();
         let mut route = vec![
             Stop::quest(1, Kind::Accept),
             Stop::quest(1, Kind::TurnIn),
             Stop::quest(0, Kind::Accept),
         ];
         for &stop in &route {
-            planner.apply(&mut state, stop, None);
+            planner.sim().apply(&mut state, stop, None);
         }
 
         let groups = planner.build_groups();

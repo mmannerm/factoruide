@@ -6,11 +6,6 @@
 id = 5221
 level = 20
 
-# Berserker Rage (reference only; not currently tracked by the planner)
-[[spell]]
-id = 18499
-level = 30
-
 # Quest path 12018, node 3361: its four hotfixed path points supply the endpoints.
 # Ride estimate at the default flight speed (30 yd/s); the normal transport wait is added.
 # https://www.wowhead.com/forever/npc=256635/peacekeeper

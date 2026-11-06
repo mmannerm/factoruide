@@ -5,7 +5,7 @@ use super::*;
 /// A form unlocked late (the druid's cat and bear forms by their quests) credits no attack rank
 /// trained before it, whatever the rank (a test each, so that they run side by side).
 fn late_form_unlock(family: &str, rank: i64, quest_id: i64) {
-    let conn = database_of("forever");
+    let conn = fixture_of("forever", &["forever_druid", "forever_class_spells"]);
     let mut overrides = Overrides::load_edition(&repo().join("overrides"), Edition::Forever).unwrap();
     // Use common catalog weights for these form-gating scenarios.
     let catalog = Overrides::load_edition(&repo().join("overrides"), Edition::Classic).unwrap();
@@ -194,7 +194,7 @@ late_form!(swipe, "Swipe", 779, 94638);
 
 #[test]
 fn undead_paladin_learns_holy_light_from_its_quest() {
-    let conn = database_of("forever");
+    let conn = fixture_of("forever", &["forever_class_spells"]);
     let overrides = Overrides::load_edition(&repo().join("overrides"), Edition::Forever).unwrap();
     let req: PlanRequest = serde_json::from_value(serde_json::json!({
         "race":"undead","class":"paladin","from_level":6,"to_level":7,
@@ -281,7 +281,7 @@ fn undead_paladin_learns_holy_light_from_its_quest() {
 /// What a character is taken to know at the start: the spells recorded, or the unlocks assumed
 /// from its level (a case each, both with and without the class quests selected).
 fn starting_knowledge(level: i64, recorded: bool, spells: &[i64], completed: &[i64], expected: bool) {
-    let conn = database_of("forever");
+    let conn = fixture_of("forever", &["forever_druid"]);
     let overrides = Overrides::load_edition(&repo().join("overrides"), Edition::Forever).unwrap();
     for selected in [false, true] {
         let req: PlanRequest = serde_json::from_value(serde_json::json!({
@@ -327,7 +327,7 @@ knowledge!(level_21_assumed_7, 21, false, [], [], true);
 #[test]
 fn higher_rank_and_cosmetic_mage_quests_do_not_gate_basic_training() {
     for (edition, key) in [(Edition::Classic, "classic"), (Edition::Forever, "forever")] {
-        let conn = database_of(key);
+        let conn = base_of(key);
         let overrides = Overrides::load_edition(&repo().join("overrides"), edition).unwrap();
         let req: PlanRequest = serde_json::from_value(serde_json::json!({
             "race":"human", "class":"mage", "from_level":8, "to_level":9,
@@ -383,7 +383,7 @@ fn higher_rank_and_cosmetic_mage_quests_do_not_gate_basic_training() {
 
 #[test]
 fn verified_training_levels_also_change_form_attack_power() {
-    let conn = database_of("forever");
+    let conn = fixture_of("forever", &[]);
     let o = Overrides::load_edition(&repo().join("overrides"), Edition::Forever).unwrap();
     let req = serde_json::from_value(serde_json::json!({"race":"skyborne_horde","class":"druid","from_level":20,"to_level":21,"required_class_quests":[],"start":{"level":20,"spells":[768]}})).unwrap();
     let p = job::prepare(&conn, &o, &req, &|_| {}).unwrap();
