@@ -160,14 +160,19 @@ type TileLabels = (Vec<u32>, Vec<u32>);
 type SnapKey = (u32, i64, i32, i32, Option<i16>);
 /// Where a place stands for the walks: its cell and its height when known (`Pos::z`).
 type Spot = ((i32, i32), Option<i16>);
+/// Walks `MEMO` remembers in a thread, beyond which it starts over (some 80 MB).
+/// What a table of 2^21 buckets holds (7/8 of them): it never doubles for the last ones.
+const MEMO_MAX: usize = (1 << 21) / 8 * 7;
 /// Cells `SNAPS` remembers, beyond which it starts over.
-const SNAPS_MAX: usize = 1 << 18;
+/// What a table of 2^18 buckets holds (7/8 of them): it never doubles for the last ones.
+const SNAPS_MAX: usize = (1 << 18) / 8 * 7;
 /// The turns of the walks already followed (`Terrain::waypoints`), by continent, pair of cells
 /// and pair of heights, in shards; a shard is emptied beyond `TURNS_MAX`. A turn: its cell and
 /// the height of the floor walked there.
 type TurnKey = (i64, i32, i32, i32, i32, Option<i16>, Option<i16>);
 type Turns = Vec<Mutex<FxHashMap<TurnKey, Arc<[(i32, i32, Option<i16>)]>>>>;
-const TURNS_MAX: usize = 1 << 16;
+/// What a table of 2^16 buckets holds (7/8 of them): it never doubles for the last ones.
+const TURNS_MAX: usize = (1 << 16) / 8 * 7;
 static NEXT_ID: AtomicU32 = AtomicU32::new(1);
 
 /// The path search's work space, kept from a search to the next in each thread: the cheapest
@@ -349,8 +354,9 @@ struct Grid {
     cols: i32,
     tile_cols: usize,
     /// The floors of each tile (None: none), by tile of 64 x 64 cells (row by row, `tile_cols`
-    /// a row).
-    tiles: Vec<Option<Box<TileNodes>>>,
+    /// a row). Shared with the terrain it was copied from (`fork`) until one of them changes a
+    /// tile (`tile_mut`): the copy of a whole terrain costs a hundred megabytes.
+    tiles: Vec<Option<Arc<TileNodes>>>,
     /// Where the nodes of each tile beyond its first floors start among the continent's
     /// (`Scratch::best`), and their count.
     extra_base: Vec<u32>,
@@ -433,6 +439,11 @@ impl Grid {
             caves: self.caves.clone(),
             drop_tier: self.drop_tier,
         }
+    }
+
+    /// Tile `t`'s floors to change, copied first when shared with another terrain.
+    fn tile_mut(&mut self, t: usize) -> Option<&mut TileNodes> {
+        self.tiles[t].as_mut().map(Arc::make_mut)
     }
 
     /// Index of a cell's tile and its index in it, None out of the box.
@@ -895,7 +906,7 @@ impl Grid {
             all.into_iter().map(|x| x.1).collect()
         });
         for (t, (moves, edges)) in all.into_iter().enumerate() {
-            if let Some(tile) = self.tiles[t].as_deref_mut() {
+            if let Some(tile) = self.tile_mut(t) {
                 tile.moves = moves;
                 tile.edges = edges;
             }
@@ -996,7 +1007,7 @@ impl Grid {
         let mut tiles: std::collections::BTreeSet<usize> = std::collections::BTreeSet::new();
         for &n in closed {
             let Some((t, l)) = self.locate(n) else { continue };
-            if let Some(tile) = self.tiles[t].as_deref_mut() {
+            if let Some(tile) = self.tile_mut(t) {
                 tile.moves[l] = MOVE_NO_GO;
                 tile.flags[l] |= NO_GO;
             }
@@ -1007,7 +1018,7 @@ impl Grid {
                     let m = Node::new(pr, pc, f);
                     let Some((u, k)) = self.locate(m) else { continue };
                     tiles.insert(u);
-                    let Some(tile) = self.tiles[u].as_deref_mut() else {
+                    let Some(tile) = self.tile_mut(u) else {
                         continue;
                     };
                     if n.f() == 0 {
@@ -1020,7 +1031,7 @@ impl Grid {
         // The other steps to them (edges).
         for &t in &tiles {
             let origin = self.origin(t);
-            let Some(tile) = self.tiles[t].as_deref_mut() else {
+            let Some(tile) = self.tile_mut(t) else {
                 continue;
             };
             let mut edges = std::mem::take(&mut tile.edges).into_vec();
@@ -1280,7 +1291,7 @@ type TileRow = (i32, i32, TileLayers);
 
 /// The nodes of a tile from its layers, their moves left for `Grid::link` (they need the tiles
 /// around).
-fn tile_nodes(l: &TileLayers) -> Box<TileNodes> {
+fn tile_nodes(l: &TileLayers) -> Arc<TileNodes> {
     let mut more = Vec::with_capacity(4097);
     let mut more_cell = Vec::new();
     let mut k = 0u16;
@@ -1322,7 +1333,7 @@ fn tile_nodes(l: &TileLayers) -> Box<TileNodes> {
             nodes.flags[at] = flags;
         }
     }
-    Box::new(nodes)
+    Arc::new(nodes)
 }
 
 impl Terrain {
@@ -1436,7 +1447,7 @@ impl Terrain {
             let tile_cols = cols as usize / 64;
             let count = rows as usize / 64 * tile_cols;
             let mut layers: Vec<Option<TileLayers>> = (0..count).map(|_| None).collect();
-            let mut nodes: Vec<Option<Box<TileNodes>>> = (0..count).map(|_| None).collect();
+            let mut nodes: Vec<Option<Arc<TileNodes>>> = (0..count).map(|_| None).collect();
             for (x, y, l) in list {
                 let t = (y - ty0) as usize * tile_cols + (x - tx0) as usize;
                 nodes[t] = Some(tile_nodes(&l));
@@ -1725,7 +1736,14 @@ impl Terrain {
             let w = self
                 .walk_cells(grid, a.continent, sa, sb)
                 .map_or(f32::NAN, |d| d as f32);
-            MEMO.with(|m| m.borrow_mut().insert(key, w));
+            MEMO.with(|m| {
+                let mut m = m.borrow_mut();
+                // The walks of older terrains stay too (their id is in the key): start over.
+                if m.len() >= MEMO_MAX {
+                    m.clear();
+                }
+                m.insert(key, w);
+            });
             w
         });
         // From or to a cave: through its mouth (two places of the same cave: straight).
@@ -1838,7 +1856,7 @@ impl Terrain {
     /// A way the floors hold that the game keeps closed (a locked gate, `[[closed]]` of
     /// `overrides/passes.toml`): the floors within `radius` yards of `p` are never stood on.
     /// Before `enclose` (the areas are labelled again). Whether there were floors there.
-    pub fn close(&mut self, p: &Pos, radius: f64) -> bool {
+    pub(crate) fn close(&mut self, p: &Pos, radius: f64) -> bool {
         let Some(grid) = self.grids.get_mut(&p.continent) else {
             return false;
         };
@@ -1871,7 +1889,7 @@ impl Terrain {
     /// The large area at `p` is left only by boat, portal or lift (Rut'theran Village, at the
     /// foot of Teldrassil): no walk between it and the other areas. Its area and size, None when
     /// `p` is not in a large area.
-    pub fn enclose(&mut self, p: &Pos, place: u32) -> Option<(u32, u32)> {
+    pub(crate) fn enclose(&mut self, p: &Pos, place: u32) -> Option<(u32, u32)> {
         let (area, size) = self.area_of(p).filter(|&(a, size)| a != 0 && size >= LARGE_AREA)?;
         // Swimming joins the shore to the mainland: enclosing it would enclose the continent.
         if self.main_area(p.continent) == Some(area) {

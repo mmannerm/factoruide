@@ -102,6 +102,8 @@ pub(super) fn load_dungeons(
                 kind: EntityKind::Dungeon,
                 id: area,
                 name: name.clone(),
+                inside: None,
+                floor: None,
             },
             name,
             min_level: 0,
@@ -170,7 +172,7 @@ pub(super) fn faction_entrances(conn: &Connection, faction: Faction) -> Result<H
 /// with an objective that lives only inside it. The app shows it and the planner runs the dungeon from it
 /// (`Params::dungeon_from`, `Params::dungeon_to`).
 pub fn dungeon_levels(conn: &Connection, defs: &[DungeonDef]) -> Result<HashMap<i64, i64>> {
-    let mut out = filed_levels(conn)?;
+    let mut out = HashMap::clone(filed_levels(conn)?.as_ref());
     for def in defs {
         if let Some([low, high]) = def.levels {
             out.insert(def.area, (low + high + 1) / 2);
@@ -181,25 +183,8 @@ pub fn dungeon_levels(conn: &Connection, defs: &[DungeonDef]) -> Result<HashMap<
 
 /// The median level of the quests filed under, or done only inside, each dungeon: the same at
 /// every plan with the same database, so kept (the query takes a third of a second).
-fn filed_levels(conn: &Connection) -> Result<HashMap<i64, i64>> {
-    static KEPT: std::sync::Mutex<Vec<(u64, HashMap<i64, i64>)>> = std::sync::Mutex::new(Vec::new());
-    let stamp = crate::world::file_stamp(conn);
-    if let Some(stamp) = stamp
-        && let Some((_, levels)) = KEPT
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .iter()
-            .find(|(s, _)| *s == stamp)
-    {
-        return Ok(levels.clone());
-    }
-    let levels = read_filed_levels(conn)?;
-    if let Some(stamp) = stamp {
-        KEPT.lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .push((stamp, levels.clone()));
-    }
-    Ok(levels)
+fn filed_levels(conn: &Connection) -> Result<std::sync::Arc<HashMap<i64, i64>>> {
+    crate::memo::rows(conn, "filed levels", 0, || read_filed_levels(conn))
 }
 
 fn read_filed_levels(conn: &Connection) -> Result<HashMap<i64, i64>> {
@@ -254,7 +239,7 @@ pub(super) fn set_dungeon_levels(
 ) {
     for (d, dungeon) in dungeons.iter_mut().enumerate() {
         let mut own: Vec<i64> = (quests.iter())
-            .filter(|q| q.objectives.iter().any(|o| o.dungeon == Some(d)))
+            .filter(|q| q.objectives.iter().any(|o| o.dungeon_of() == Some(d)))
             .map(|q| q.level)
             .collect();
         if own.is_empty() {

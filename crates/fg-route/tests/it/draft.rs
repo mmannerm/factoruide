@@ -172,9 +172,9 @@ fn an_offered_quest_added_after_a_step_is_taken_there() {
     assert_eq!(view.lines[k + 1].kind.as_str(), "accept");
 }
 
-/// A dungeon quest taken whose dungeon is no longer run (and that is not turned in) is an
-/// error of its accept, which the draft cannot be saved with; the dungeon's objectives are then
-/// offered at its entrance.
+/// A dungeon quest taken whose dungeon is no longer entered (its run and its objectives inside
+/// gone, and it is not turned in) is an error of its accept, which the draft cannot be saved
+/// with; the dungeon's objectives are then offered at its entrance.
 #[test]
 fn a_dungeon_quest_without_its_run_is_an_error() {
     const DEADMINES: i64 = 900;
@@ -202,12 +202,18 @@ fn a_dungeon_quest_without_its_run_is_an_error() {
     let names = Names::default();
     assert_eq!(editor.simulate(&guide.plan, &names).errors, 0, "the guide as planned");
 
-    let run = (guide.plan.iter())
-        .position(|s| matches!(s, RouteStep::Dungeon { dungeon: DEADMINES }))
-        .expect("the forced run");
+    assert!(
+        (guide.plan.iter()).any(|s| matches!(s, RouteStep::Objective { quest: 300 | 301, .. })),
+        "the objectives inside are steps of their own"
+    );
     let mut draft = guide.plan;
-    draft.remove(run);
-    // Its turn-ins, which cannot be done without the run, go too.
+    draft.retain(|s| {
+        !matches!(
+            s,
+            RouteStep::Dungeon { dungeon: DEADMINES } | RouteStep::Objective { quest: 300 | 301, .. }
+        )
+    });
+    // Its turn-ins, which cannot be done without the dungeon, go too.
     let report = editor.simulate(&draft, &names);
     let draft: Vec<RouteStep> = (draft.iter().zip(&report.steps))
         .filter(|(s, r)| !(matches!(s, RouteStep::TurnIn { .. }) && r.status == "error"))
@@ -242,4 +248,49 @@ fn a_dungeon_quest_without_its_run_is_an_error() {
         .expect("its dungeon objective is offered");
     assert_eq!(inside.dungeon.as_ref().map(|d| d.0), Some(DEADMINES));
     assert_eq!(inside.places.len(), 1, "the entrance");
+}
+
+/// A guide saved when a dungeon's run did its objectives (no step inside it): opened, the
+/// objectives inside of the quests in the log follow the run, and it replays without error.
+#[test]
+fn a_guide_of_dungeon_runs_gets_the_stops_inside_them() {
+    const DEADMINES: i64 = 900;
+    let mut scenario = leveling(25)
+        .dungeon("The Deadmines", 1, 70.0, 70.0)
+        .params(|p| p.forced_dungeons = vec![DEADMINES]);
+    for (id, name) in [(300, "Red Silk Bandanas"), (301, "Collecting Memories")] {
+        scenario = scenario.quest(
+            Q::new(id, name).level(18).giver(1, 40.0, 40.0).objective(
+                Obj::kill(
+                    "Defias",
+                    18,
+                    6,
+                    At {
+                        zone: 1,
+                        x: 70.0,
+                        y: 70.0,
+                    },
+                )
+                .inside(0),
+            ),
+        );
+    }
+    let (editor, guide) = scenario.guide();
+    let names = Names::default();
+    let mut old = guide;
+    old.plan
+        .retain(|s| !matches!(s, RouteStep::Objective { quest: 300 | 301, .. }));
+    let (steps, _) = editor.steps(&old);
+    let run = (steps.iter())
+        .position(|s| matches!(s, RouteStep::Dungeon { dungeon: DEADMINES }))
+        .expect("the run");
+    let after: Vec<i64> = steps[run + 1..run + 3]
+        .iter()
+        .filter_map(|s| match s {
+            RouteStep::Objective { quest, .. } => Some(*quest),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(after, [300, 301], "{steps:?}");
+    assert_eq!(editor.simulate(&steps, &names).errors, 0);
 }

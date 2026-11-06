@@ -21,24 +21,11 @@
     "SpellLevels": {
       "url": "https://wago.tools/db2/SpellLevels/csv?build=1.60.1.70532&useHotfixes=1",
       "reviewed_sha256": "04c3a781fee6d13aebb1d07a97f81ed9c932fba2b94104bd3461c6c6e72ecd99"
-    },
-    "SpellName": {
-      "url": "https://wago.tools/db2/SpellName/csv?build=1.60.1.70532",
-      "reviewed_sha256": "88f0e96ad902ab1a15da366018edfc73ecf0b0ad3e02402c064527bdf9d1a912"
-    },
-    "SkillLineAbility": {
-      "url": "https://raw.githubusercontent.com/ATTWoWAddon/AllTheThings/130b0c906e64d4a67832ee024c9346b3c24d4fae/.contrib/.db/forever/.config/.wago/SkillLineAbility.1.60.1.70532.csv",
-      "reviewed_sha256": "3ac5edfcdc43a57cf78eee12d5d64142d2ca641d0fa29a4db7fd10dcbb18ff02"
-    },
-    "SkillLineAbility-before": {
-      "url": "https://raw.githubusercontent.com/ATTWoWAddon/AllTheThings/94cb3ab30be5a7357819d6e1869f51b538d42bd6/.contrib/.db/forever/.config/.wago/SkillLineAbility.1.60.1.70374.csv",
-      "reviewed_sha256": "05c88213477aae7b8e3fed9c710d61ead0b6a6011e76499f576acdb2b398fe9b"
     }
   },
   "client": {
     "spell_levels": {
-      "5221": 20,
-      "18499": 30
+      "5221": 20
     },
     "bridge": {
       "path": 12018,

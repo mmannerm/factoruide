@@ -13,7 +13,13 @@ fn movement_spell_changes_the_eligible_walking_legs(
 ) {
     use crate::terrain::TestGround::{Covered, Dry, Indoor, Mixed, Shallow, Unknown};
     {
-        let conn = database_of(edition.key());
+        // Forever's druids learn their forms by quests.
+        let files: &[&str] = if edition == Edition::Forever && class == "druid" {
+            &["forever_druid", "forever_class_spells"]
+        } else {
+            &[]
+        };
+        let conn = fixture_of(edition.key(), files);
         let overrides = Overrides::load_edition(&repo().join("overrides"), edition).unwrap();
         let req:PlanRequest=serde_json::from_value(serde_json::json!({"race":race,"class":class,"from_level":30,"to_level":31,"required_class_quests":[],"start":{"level":30,"spells":[]}})).unwrap();
         let base = class_scenario(&conn, &overrides, &req);
@@ -201,7 +207,7 @@ movement_spell_tests! {
 
 #[test]
 fn cat_speed_requires_its_quest_and_the_talent_assumption() {
-    let conn = database_of("forever");
+    let conn = fixture_of("forever", &["forever_druid"]);
     let overrides = Overrides::load_edition(&repo().join("overrides"), Edition::Forever).unwrap();
     let req:PlanRequest=serde_json::from_value(serde_json::json!({"race":"skyborne_horde","class":"druid","from_level":20,"to_level":21,"required_class_quests":[],"start":{"level":20}})).unwrap();
     let mut p = at_start(class_prepared(&conn, &overrides, &req), 2);
@@ -274,7 +280,7 @@ fn cat_speed_requires_its_quest_and_the_talent_assumption() {
 #[test]
 fn classic_and_tbc_cat_speed_follow_the_available_feral_swiftness_rank() {
     for edition in [Edition::Classic, Edition::Tbc] {
-        let conn = database_of(edition.key());
+        let conn = base_of(edition.key());
         let mut overrides = Overrides::parse_edition(
             |name| {
                 if edition == Edition::Classic && name == "classic/movement.toml" {
@@ -369,7 +375,7 @@ fn classic_and_tbc_cat_speed_follow_the_available_feral_swiftness_rank() {
 
 fn group_travel_keeps_the_shared_speed(edition: Edition) {
     {
-        let conn = database_of(edition.key());
+        let conn = base_of(edition.key());
         let overrides = Overrides::load_edition(&repo().join("overrides"), edition).unwrap();
         let req: PlanRequest = serde_json::from_value(serde_json::json!({
             "race":"nightelf","class":"druid","from_level":30,"to_level":31,
@@ -426,7 +432,7 @@ fn forever_group_travel_keeps_the_shared_speed_when_the_druid_knows_travel_form(
 
 #[test]
 fn movement_training_waits_for_a_nearby_trainer() {
-    let conn = database_of("classic");
+    let conn = base_of("classic");
     let overrides = Overrides::load_edition(&repo().join("overrides"), Edition::Classic).unwrap();
     let req: PlanRequest = serde_json::from_value(serde_json::json!({
         "race":"orc", "class":"hunter", "from_level":20, "to_level":21,
@@ -441,16 +447,16 @@ fn movement_training_waits_for_a_nearby_trainer() {
     trainer.pos.x += 1000.0;
     p.model.trainers = vec![trainer];
     let plan = Planner::new(&p.model, &p.world, &p.params, &p.profile);
-    let mut state = plan.initial_state();
+    let mut state = plan.sim().initial_state();
     let mut events = Vec::new();
-    plan.train(&mut state, &mut |_, e| events.push(e));
+    plan.sim().train(&mut state, &mut |_, e| events.push(e));
     assert!(
         events.is_empty(),
         "a movement gain alone does not justify a dedicated trip"
     );
     p.model.trainers[0].pos = p.model.start.pos;
     let plan = Planner::new(&p.model, &p.world, &p.params, &p.profile);
-    plan.train(&mut state, &mut |_, e| events.push(e));
+    plan.sim().train(&mut state, &mut |_, e| events.push(e));
     assert!(
         events.iter().any(|e| matches!(e, Event::Train { .. })),
         "learn Cheetah at a nearby trainer"
@@ -460,7 +466,7 @@ fn movement_training_waits_for_a_nearby_trainer() {
 #[test]
 fn passage_walks_keep_the_normal_speed_even_with_dry_ground_under_them() {
     use crate::world::{PassDef, Pos, ZonePoint};
-    let conn = database_of("classic");
+    let conn = base_of("classic");
     let mut p = quests_at_start(1);
     p.world = crate::world::World::flat(
         &[
@@ -504,6 +510,7 @@ fn passage_walks_keep_the_normal_speed_even_with_dry_ground_under_them() {
                 one_way: false,
                 lift: true,
             }],
+            crate::world::WorldTables::shared(),
         )
         .unwrap();
     assert!(warnings.is_empty(), "{warnings:?}");
@@ -522,7 +529,7 @@ fn passage_walks_keep_the_normal_speed_even_with_dry_ground_under_them() {
 
 #[test]
 fn a_trainer_detour_returns_with_the_new_movement_spell() {
-    let conn = database_of("classic");
+    let conn = base_of("classic");
     let o = Overrides::load_edition(&repo().join("overrides"), Edition::Classic).unwrap();
     let req = serde_json::from_value(serde_json::json!({"race":"orc","class":"hunter","from_level":20,"to_level":21,"required_class_quests":[],"start":{"level":20,"spells":[]}})).unwrap();
     let mut p = at_start(class_prepared(&conn, &o, &req), 1);
@@ -539,8 +546,8 @@ fn a_trainer_detour_returns_with_the_new_movement_spell() {
     p.world.terrain = crate::terrain::movement_test_ground(crate::terrain::TestGround::Dry);
     (p.params.run_speed, p.params.detour, p.params.train_radius) = (7.0, 1.0, 200.0);
     let plan = planner(&p);
-    let mut state = plan.initial_state();
-    plan.train_at(&mut state, 0, &mut |_, _| {});
+    let mut state = plan.sim().initial_state();
+    plan.sim().train_at(&mut state, 0, &mut |_, _| {});
     assert_eq!(state.pos, a, "a detour returns to where it started");
     assert!(
         (state.spent.travel - (100.0 / 7.0 + 100.0 / 9.1)).abs() < 1e-6,

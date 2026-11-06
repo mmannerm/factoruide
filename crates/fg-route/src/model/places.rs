@@ -48,7 +48,7 @@ impl Places {
         } else {
             Vec::new()
         };
-        let spells = class_spells(conn, profile)?;
+        let spells = class_spells(conn, profile.class_id)?;
         // Where a teleport lands: the class trainer of that city, else its inn (the character's
         // capitals only: the others have none friendly to it).
         let in_city = |locs: &[Loc], city: &str| {
@@ -118,6 +118,8 @@ pub(super) fn quest_teleports(
                     kind: EntityKind::Area,
                     id: 0,
                     name: world.zone_name(def.to.zone).to_owned(),
+                    inside: None,
+                    floor: None,
                 },
             })
         })
@@ -126,7 +128,7 @@ pub(super) fn quest_teleports(
 
 /// The class's spells that travel ("Teleport: Stormwind", "Astral Recall") and the level they
 /// are learned at; none without the class spell data.
-fn class_spells(conn: &Connection, profile: &Profile) -> Result<Vec<(String, i64)>> {
+fn class_spells(conn: &Connection, class_id: i64) -> Result<Vec<(String, i64)>> {
     let known: i64 = conn.query_row(
         "SELECT count(*) FROM sqlite_master WHERE name = 'm_class_spell'",
         [],
@@ -136,22 +138,12 @@ fn class_spells(conn: &Connection, profile: &Profile) -> Result<Vec<(String, i64
         return Ok(Vec::new());
     }
     let mut stmt = conn.prepare(
-        "SELECT spell_id, name, level FROM m_class_spell
-         WHERE class_id = ?1 AND (name LIKE 'Teleport: %' OR name = 'Astral Recall')",
+        "SELECT name, min(level) FROM m_class_spell
+         WHERE class_id = ?1 AND (name LIKE 'Teleport: %' OR name = 'Astral Recall')
+         GROUP BY name",
     )?;
-    let rows = stmt.query_map([profile.class_id], |r| {
-        Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?))
-    })?;
-    let mut spells = std::collections::BTreeMap::<String, i64>::new();
-    for row in rows {
-        let (id, name, level) = row?;
-        let level = profile.spell_level(id, level);
-        spells
-            .entry(name)
-            .and_modify(|old| *old = (*old).min(level))
-            .or_insert(level);
-    }
-    Ok(spells.into_iter().collect())
+    let rows = stmt.query_map([class_id], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
 }
 
 struct NpcFinder<'a> {
@@ -170,6 +162,8 @@ impl NpcFinder<'_> {
             kind: EntityKind::Npc,
             id,
             name: self.entities.name(EntityKind::Npc, id),
+            inside: None,
+            floor: None,
         })
     }
 

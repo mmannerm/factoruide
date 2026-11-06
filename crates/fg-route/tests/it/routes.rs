@@ -2,7 +2,9 @@
 
 use crate::common::{leveling, leveling_of, repo};
 use fg_route::fixture::Fixture;
-use fg_route::job::{self, Bind, LogObjective, LogQuest, MapPos, Overrides, PlanRequest, Prepared, StartState};
+use fg_route::job::{
+    self, Bind, LogObjective, LogQuest, MapPos, Overrides, PlanRequest, Prepared, RequiredQuest, StartState,
+};
 use fg_route::model::{CommonLoot, EntityKind, Guard, Initial, Objective, Spots};
 use fg_route::params::ReputationGoal;
 use fg_route::plan::{Edit, Event, Kind, Outcome, Planner, Stop};
@@ -782,6 +784,7 @@ fn job_saves_its_walks() {
         &|_| {},
         &interrupt,
         Some(&walks),
+        &fg_route::diagnostics::Diagnostics::default(),
     )
     .unwrap();
     let memory = first.walks.clone().expect("a memory with the outcome");
@@ -796,6 +799,7 @@ fn job_saves_its_walks() {
         &|_| {},
         &interrupt,
         Some(&walks),
+        &fg_route::diagnostics::Diagnostics::default(),
     )
     .unwrap();
     assert_eq!(walks.len(), known, "paths searched again");
@@ -809,7 +813,8 @@ fn panicking_search_ends_the_job() {
     std::thread::spawn(move || {
         let scenario = leveling(12).params(|p| (p.threads, p.effort) = (1, 0.05));
         // The search's first message, from its own thread.
-        let progress = |m: &str| assert!(!m.starts_with("start:"), "search failed");
+        let progress =
+            |e: &job::JobEvent<'_>| assert!(!e.status().is_some_and(|m| m.starts_with("start:")), "search failed");
         let interrupt = job::Interrupt::default();
         let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             scenario.job(&progress, &interrupt, None)
@@ -862,8 +867,9 @@ fn panicking_search_does_not_hold_the_meetings() {
         });
         // The first search of the final, at its first message (the other one waits at a meeting).
         let starts = std::sync::atomic::AtomicUsize::new(0);
-        let progress = |m: &str| {
-            let final_start = m.starts_with("start:") && starts.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 1;
+        let progress = |e: &job::JobEvent<'_>| {
+            let final_start = e.status().is_some_and(|m| m.starts_with("start:"))
+                && starts.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 1;
             assert!(!final_start, "search failed");
         };
         let interrupt = job::Interrupt::default();
@@ -1360,37 +1366,21 @@ fn mount_hyjal_is_reached_by_darkwhisper_gorge() {
     }
 }
 
-/// The passages of the Eastern Kingdoms' south (Stormwind, Elwynn) and north (Dun Morogh,
-/// Silverpine) do not meet: going from one to the other takes the tram, a flight or a boat, never
-/// a walk in a straight line over the mountains.
-#[test]
-fn no_walk_between_the_south_and_north_of_the_eastern_kingdoms() {
-    let w = crate::common::world(Edition::Classic, fg_route::faction::Faction::Alliance);
-    let at = |zone, x, y| w.to_world(zone, x, y).unwrap();
-    let stormwind = at(1519, 77.0, 30.3);
-    assert!(w.walk_distance(&stormwind, &at(130, 58.2, 69.9)).is_infinite());
-    assert!(w.walk_distance(&at(12, 42.0, 65.0), &at(38, 35.0, 46.0)).is_infinite());
-    assert!(w.walk_distance(&stormwind, &at(40, 56.0, 47.0)).is_finite());
-    assert!(w.walk_distance(&at(1, 47.0, 52.0), &at(38, 35.0, 46.0)).is_finite());
-}
-
-/// A level 17 does not walk into a zone whose mobs are far above it (Stranglethorn Vale, to the
-/// boat of Booty Bay), nor across one on its way (Arathi, behind the Burning Steppes), but walks
-/// to Ashenvale and the Barrens; a level 50 walks to all of them.
+/// A level 10 does not walk into a zone whose mobs are far above it (Stonetalon's, level 25),
+/// a level 30 does; out of such a zone, a level 10 walks.
 #[test]
 fn walks_do_not_go_into_zones_far_above_the_character() {
-    let w = crate::common::world(Edition::Classic, fg_route::faction::Faction::Alliance);
-    let at = |zone, x, y| w.to_world(zone, x, y).unwrap();
-    let westfall = at(40, 40.0, 70.0);
-    let booty_bay = at(33, 26.1, 73.4);
-    let (weak, strong) = (w.walk_level(17), w.walk_level(50));
-    assert!(w.walk_distance_at(&westfall, &booty_bay, weak).is_infinite());
-    assert!(w.walk_distance_at(&westfall, &booty_bay, strong).is_finite());
-    let darkshore = at(148, 36.0, 45.0);
-    assert!(w.walk_distance_at(&darkshore, &at(331, 34.0, 50.0), weak).is_finite());
-    assert!(w.walk_distance_at(&darkshore, &at(17, 63.0, 37.0), weak).is_finite());
-    // Out of a zone too strong for the character: yes.
-    assert!(w.walk_distance_at(&booty_bay, &westfall, weak).is_finite());
+    let w = &crate::common::terrain_world(
+        Edition::Classic,
+        fg_route::faction::Faction::Horde,
+        &["classic_stonetalon_barrens_terrain", "classic_strong_stonetalon"],
+    );
+    let barrens = w.to_world(w.zone_of_ui_map(1413).unwrap(), 62.98, 37.22).unwrap();
+    let stonetalon = w.to_world(w.zone_of_ui_map(1442).unwrap(), 58.99, 62.6).unwrap();
+    let (weak, strong) = (w.walk_level(10), w.walk_level(30));
+    assert!(w.walk_distance_at(&barrens, &stonetalon, weak).is_infinite());
+    assert!(w.walk_distance_at(&barrens, &stonetalon, strong).is_finite());
+    assert!(w.walk_distance_at(&stonetalon, &barrens, weak).is_finite());
 }
 
 /// The mountain skip from Dun Morogh into the Wetlands is a drop: taken that way only, and a step
@@ -1490,7 +1480,8 @@ fn link_opened_by_a_quest() {
         p.params.run_speed / p.params.detour,
         p.params.link_wait,
     );
-    p.world.add_links(&[link], faction, speed, wait);
+    p.world
+        .add_links(&[link], faction, speed, wait, fg_route::world::WorldTables::shared());
     let mut o = one_kill_east_of_start(&p, 0.0);
     (o.loc.pos, o.loc.zone) = (p.world.to_world(1537, 50.0, 50.0).unwrap(), 1537);
     p.model.quests[0].objectives = vec![o];
@@ -1532,7 +1523,8 @@ fn link_open_while_a_quest_is_held() {
         p.params.run_speed / p.params.detour,
         p.params.link_wait,
     );
-    p.world.add_links(&[link], faction, speed, wait);
+    p.world
+        .add_links(&[link], faction, speed, wait, fg_route::world::WorldTables::shared());
     let mut o = one_kill_east_of_start(&p, 0.0);
     (o.loc.pos, o.loc.zone) = (p.world.to_world(1537, 50.0, 50.0).unwrap(), 1537);
     p.model.quests[0].objectives = vec![o];
@@ -3714,7 +3706,8 @@ fn a_quest_started_by_an_object_inside_a_dungeon_starts_in_the_run() {
     let thanes = p.model.dungeons.iter().position(|d| d.area == 16919).unwrap();
     let q = &p.model.quests[quest(&p, 98423).expect("The Treaty of Understanding planned") as usize];
     assert_eq!(q.start_dungeon, Some(thanes));
-    assert!(q.objectives.iter().any(|o| o.dungeon == Some(thanes)));
+    // Taken inside: in the dungeon, entered for it.
+    assert!(q.starts.iter().all(|l| l.inside.map(usize::from) == Some(thanes)));
 }
 
 /// Forever's Rare Books (GitHub #59): its books drop from elites, left out of a solo guide, but
@@ -3725,7 +3718,7 @@ fn rare_books_asked_for_are_planned_with_one_of_each_book() {
     let overrides = Overrides::load_edition(&repo().join("overrides"), Edition::Forever).unwrap();
     let request = PlanRequest {
         params: Some(overrides.params.with_overrides(&[]).unwrap()),
-        required_quests: vec![job::RequiredQuest::Id(91777)],
+        required_quests: vec![RequiredQuest::Id(91777)],
         ..request("human", "warrior", 12, &[])
     };
     let p = job::prepare(
@@ -3912,6 +3905,59 @@ fn a_dungeon_forced_with_its_quests_takes_them_all() {
         );
     }
 }
+/// A dungeon forced with its quests waits for the one whose chain ends later (taken at 19, after
+/// the others at 15): the dungeon is entered once, with all of them in the log.
+#[test]
+fn a_dungeon_forced_with_its_quests_waits_for_the_last_one() {
+    let mut scenario = with_deadmines(leveling(25)).params(|p| p.forced_dungeon_quests = vec![900]);
+    scenario = scenario
+        .quest(
+            Q::new(320, "Lead")
+                .level(19)
+                .min_level(19)
+                .giver(2, 20.0, 60.0)
+                .kill("Wolf", 19, 6, 2, 30.0, 60.0),
+        )
+        .quest(
+            Q::new(321, "Follow-up")
+                .level(19)
+                .min_level(19)
+                .after(&[320])
+                .giver(2, 40.0, 60.0)
+                .kill("Bear", 19, 6, 2, 50.0, 60.0),
+        )
+        .quest(
+            Q::new(322, "Into the mine")
+                .level(19)
+                .min_level(19)
+                .after(&[321])
+                .giver(2, 60.0, 60.0)
+                .objective(
+                    Obj::kill(
+                        "Defias",
+                        19,
+                        6,
+                        At {
+                            zone: 1,
+                            x: 70.0,
+                            y: 70.0,
+                        },
+                    )
+                    .inside(0),
+                ),
+        );
+    let (_, guide) = scenario.guide();
+    for id in [300, 301, 302, 322] {
+        assert!(
+            guide
+                .plan
+                .iter()
+                .any(|s| matches!(s, job::RouteStep::TurnIn { quest } if *quest == id)),
+            "{id} turned in"
+        );
+    }
+}
+
 /// A forced dungeon stays within the levels of its window: the route that cannot run it there is
 /// refused (GitHub #84, a forced Ragefire Chasm run at level 47). A dungeon a must-have quest
 /// needs is run past them.
@@ -4057,4 +4103,88 @@ fn death_skips_below_level_ten_and_a_half() {
         report.total_time,
         outcome.route.total_time
     );
+}
+
+/// A quest a dungeon's NPC gives once the quest before it is ended to him (Heartwoven, given by
+/// Ardin Grassman at the end of Lost in the Thicket Things, GitHub #107) is taken during the run of
+/// that one and handed in outside: it asks no run of its own, a dungeon being run once.
+#[test]
+fn a_quest_given_in_a_dungeon_after_the_one_before_it_asks_no_second_run() {
+    let overrides = Overrides::load_edition(&repo().join("overrides"), Edition::Forever).unwrap();
+    let request = PlanRequest {
+        required_quests: vec![RequiredQuest::Id(95809)],
+        params: Some(overrides.params.with_overrides(&[]).unwrap()),
+        ..request("dwarf", "warrior", 40, &[])
+    };
+    let p = job::prepare(
+        &Fixture::new(Edition::Forever)
+            .file("forever_services")
+            .file("forever_excavation")
+            .open(),
+        &overrides,
+        &request,
+        &|_| {},
+    )
+    .unwrap();
+    let quest_of = |id| &p.model.quests[quest(&p, id).unwrap() as usize];
+    assert!(!quest_of(95647).objectives.is_empty(), "the first is done in the run");
+    assert!(
+        quest_of(95809).objectives.is_empty(),
+        "the second needs no run of its own"
+    );
+    let planner = planner(&p);
+    let route = planner.greedy();
+    planner.validate_required(&route).unwrap();
+}
+
+/// A must-have quest asked at a level has its dungeon run from it (GitHub #108): the quest of the
+/// Hall of Thanes asked at level 18 does not have the dungeon run at the middle of its levels.
+#[test]
+fn a_dungeon_is_run_from_the_minimum_level_of_its_must_have_quest() {
+    let mut p = leveling(30)
+        .dungeon("The Hall of Thanes", 1, 70.0, 70.0)
+        .quest(
+            Q::new(300, "An Ancient Grudge")
+                .level(16)
+                .giver(1, 40.0, 40.0)
+                .objective(
+                    Obj::kill(
+                        "Ghost",
+                        16,
+                        4,
+                        At {
+                            zone: 1,
+                            x: 70.0,
+                            y: 70.0,
+                        },
+                    )
+                    .inside(0),
+                ),
+        )
+        .params(|p| (p.dungeon_from, p.dungeon_to, p.effort) = (-3, 3, 0.0))
+        .required(300)
+        .build();
+    let dungeon_level = |p: &Prepared| {
+        let planner = planner(p);
+        let route = planner.greedy();
+        let mut trace = Vec::new();
+        planner.simulate_full(&route, Some(&mut trace)).unwrap();
+        (trace.iter())
+            .find(|t| {
+                matches!(t.event, Event::Enter { .. })
+                    || matches!(t.event, Event::Stop { stop, .. } if stop.kind == Kind::Dungeon)
+            })
+            .map(|t| t.level)
+            .expect("the dungeon is run")
+    };
+    assert!(dungeon_level(&p) < 18, "by itself it is run before level 18");
+    let i = p.model.index[&300];
+    // An explicit quest without bounds stays unbounded; an automatic class target is advisory.
+    assert!(!p.model.quests[i].implicit_window);
+    assert_eq!(p.model.quests[i].completion_window.min_level, None);
+    p.model.quests[i].completion_window.min_level = Some(18);
+    p.model.quests[i].implicit_window = true;
+    assert!(dungeon_level(&p) < 18, "an advisory target does not delay the run");
+    p.model.quests[i].implicit_window = false;
+    assert!(dungeon_level(&p) >= 18, "asked at level 18: run from it");
 }

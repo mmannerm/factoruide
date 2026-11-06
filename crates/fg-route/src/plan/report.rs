@@ -66,7 +66,7 @@ impl Planner<'_> {
     /// Editor replays include explicit actions, so validate their actual trace, not a fresh
     /// replay that could insert automatic actions or finish at a different time.
     pub(crate) fn validate_required_trace(&self, trace: &[super::Timed]) -> anyhow::Result<()> {
-        let initial = self.initial_state();
+        let initial = self.sim().initial_state();
         let turned: HashSet<_> = trace
             .iter()
             .filter_map(|t| match t.event {
@@ -154,7 +154,7 @@ impl Planner<'_> {
 
     fn missing_required(&self, route: &[Stop], zone: bool) -> Vec<String> {
         // Done before the route (in a group: by everyone it is for), or in it.
-        let s0 = self.initial_state();
+        let s0 = self.sim().initial_state();
         let turned = |j: usize| s0.turned[j] || route.iter().any(|s| s.kind == Kind::TurnIn && s.index as usize == j);
         self.model
             .quests
@@ -236,7 +236,7 @@ impl Planner<'_> {
             let Kind::Objective(k) = s.kind else { continue };
             let q = self.quest(s.index);
             let o = &q.objectives[k as usize];
-            if o.kills <= 0.0 || o.dungeon.is_some() || self.model.unlocks[s.index as usize] > 0.0 {
+            if o.kills <= 0.0 || o.dungeon_of().is_some() || self.model.unlocks[s.index as usize] > 0.0 {
                 continue;
             }
             if o.kills * self.combat().kill_time(q.level, 0.0, o) < 240.0 {

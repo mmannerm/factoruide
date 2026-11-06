@@ -210,6 +210,20 @@ pub struct Loc {
     pub kind: EntityKind,
     pub id: i64,
     pub name: String,
+    /// The dungeon it is inside (index in `Model::dungeons`, below 128 as `State::dungeons`):
+    /// reached by entering it.
+    pub inside: Option<u8>,
+    /// Where it stands on its dungeon's floor, when known (`dungeon_spawn`).
+    pub floor: Option<FloorPoint>,
+}
+
+/// A point on a dungeon floor's map: the floor (its map, `dungeon_floor`) and percent
+/// coordinates on it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FloorPoint {
+    pub ui_map: i32,
+    pub x: f32,
+    pub y: f32,
 }
 
 /// A trainer of a profession.
@@ -296,6 +310,11 @@ pub struct Vendor {
 }
 
 impl Objective {
+    /// The dungeon the objective belongs to: done by entering it (`dungeon`), or inside it.
+    pub fn dungeon_of(&self) -> Option<usize> {
+        self.dungeon.or(self.loc.inside.map(usize::from))
+    }
+
     /// Its places: itself, then its `alts`.
     pub fn places(&self) -> impl Iterator<Item = &Self> {
         std::iter::once(self).chain(&self.alts)
@@ -530,6 +549,13 @@ pub struct Quest {
 }
 
 impl Quest {
+    /// The dungeon one of its objectives belongs to (`Objective::dungeon_of`), else the one it is
+    /// handed in inside.
+    pub fn dungeon(&self) -> Option<usize> {
+        (self.objectives.iter().find_map(Objective::dungeon_of))
+            .or_else(|| self.ends.iter().find_map(|l| l.inside.map(usize::from)))
+    }
+
     /// The `pre_any` quests that must be done: `pre_need` of them, at most the ones that exist.
     pub fn pre_any_needed(&self, plannable: usize) -> usize {
         self.pre_need.min(plannable.max(1))
@@ -648,7 +674,6 @@ pub struct QuestOverride {
     pub pre_any: Option<Vec<i64>>,
     /// How many of `pre_any` the quest needs done (default one).
     pub pre_count: Option<usize>,
-    pub children: Option<Vec<i64>>,
     pub spells: Option<Vec<i64>>,
     /// Object granting the quest's temporary stealth for its collection objectives.
     pub stealth_object: Option<i64>,

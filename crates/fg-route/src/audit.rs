@@ -680,7 +680,7 @@ fn out_of_reach(
             .chain(
                 q.objectives
                     .iter()
-                    .filter(|o| o.dungeon.is_none())
+                    .filter(|o| o.dungeon_of().is_none())
                     .map(|o| (o.text.clone(), &o.loc)),
             );
         for (what, loc) in places {
@@ -774,7 +774,7 @@ fn ambiguous_floors(world: &World, model: &Model) -> Vec<Finding> {
             .chain(q.ends.iter().map(|l| ("ends at", l)))
             .chain(
                 (q.objectives.iter())
-                    .filter(|o| o.dungeon.is_none())
+                    .filter(|o| o.dungeon_of().is_none())
                     .flat_map(|o| std::iter::once(&o.loc).chain(o.alts.iter().map(|a| &a.loc)))
                     .map(|l| ("objective at", l)),
             );
@@ -887,7 +887,7 @@ fn passage_areas(world: &World) -> Vec<Vec<Area>> {
         .map(|i| {
             let mut areas = passages[i].clone();
             if ends(i) {
-                for j in (0..passages.len()).filter(|&j| ends(j) && world.pass_dist[i][j].is_finite()) {
+                for j in (0..passages.len()).filter(|&j| ends(j) && world.pass_dist(i, j).is_finite()) {
                     areas.extend(passages[j].iter().filter(|a| !passages[i].contains(a)));
                 }
             }
@@ -962,7 +962,7 @@ fn uncovered_source_items(model: &Model, source_items: &HashMap<i64, SourceItems
         let Some(needs) = source_items.get(&q.id) else {
             continue;
         };
-        if needs.assembled || q.objectives.iter().any(|o| o.dungeon.is_some()) {
+        if needs.assembled || q.objectives.iter().any(|o| o.dungeon_of().is_some()) {
             continue;
         }
         for (item, name, found) in &needs.items {

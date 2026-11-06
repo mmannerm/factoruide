@@ -514,7 +514,14 @@ fn a_required_quest_inside_a_dungeon_runs_the_dungeon() {
     let planner = Planner::new(&p.model, &p.world, &p.params, &p.profile);
     let route = planner.construct(|_| {});
     planner.validate_required(&route).unwrap();
-    assert!(route.iter().any(|s| s.kind == Kind::Dungeon));
+    // Entered, by its run or by the objective inside it.
+    let mut trace = Vec::new();
+    planner.simulate_full(&route, Some(&mut trace)).unwrap();
+    assert!(trace.iter().any(|t| match t.event {
+        fg_route::plan::Event::Enter { .. } => true,
+        fg_route::plan::Event::Stop { stop, .. } => stop.kind == Kind::Dungeon,
+        _ => false,
+    }));
 }
 
 /// A must-have quest whose dungeon objectives are already complete in the log (GitHub #87) does
@@ -799,4 +806,28 @@ fn an_automatic_class_target_does_not_refuse_a_quest_guarded_past_its_window() {
         .find(|s| s.quest == Some(1) && s.kind == fg_route::export::StepKind::TurnIn)
         .unwrap();
     assert!(turn_in.level > 37, "the guards still set the reachable level");
+}
+
+/// The chain of a must-have quest keeps the quests left out otherwise: an item only crafted is
+/// bought at the auction house (that option off), an elite quest is done (elites off).
+#[test]
+fn a_must_have_chain_keeps_crafted_items_and_elites() {
+    let conn = Fixture::new(Edition::Forever)
+        .file("forever_services")
+        .file("forever_dynamite_plan")
+        .file("forever_elite_chain")
+        .open();
+    let overrides = Overrides::load_edition(&repo().join("overrides"), Edition::Forever).unwrap();
+    let prepare = |required: &[RequiredQuest]| {
+        let mut request = request("human", "warrior", required);
+        let params = ["auction_house=false".to_owned(), "allow_elite=false".to_owned()];
+        request.params = Some(overrides.params.with_overrides(&params).unwrap());
+        job::prepare(&conn, &overrides, &request, &|_| {}).expect("planned")
+    };
+    let has = |p: &job::Prepared, id: i64| p.model.index.contains_key(&id);
+    let p = prepare(&[]);
+    assert!(!has(&p, 92749) && !has(&p, 93000), "left out without a must-have");
+    let p = prepare(&[RequiredQuest::Id(92900), RequiredQuest::Id(93001)]);
+    assert!(has(&p, 92749), "the dynamite bought");
+    assert!(has(&p, 93000), "the elites fought");
 }

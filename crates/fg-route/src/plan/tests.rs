@@ -7,8 +7,8 @@ use crate::model::{Guard, Initial, Objective};
 use crate::xp::Edition;
 use rusqlite::Connection;
 use std::path::PathBuf;
-use std::sync::Mutex;
 
+mod dungeons;
 mod movement;
 mod profession_trainers;
 mod xp_buffs;
@@ -49,19 +49,16 @@ fn repo() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
-pub(crate) fn database_of(edition: &str) -> Connection {
-    static UNPACK: Mutex<()> = Mutex::new(());
-    let _guard = UNPACK.lock().unwrap();
-    let (path, packed) = (
-        repo().join(format!("data/{edition}.sqlite")),
-        repo().join(format!("data/{edition}.sqlite.zst")),
-    );
-    let modified = |p: &PathBuf| std::fs::metadata(p).and_then(|m| m.modified()).ok();
-    if !path.exists() || modified(&packed) > modified(&path) {
-        let data = zstd::decode_all(std::fs::File::open(&packed).unwrap()).unwrap();
-        std::fs::write(&path, data).unwrap();
-    }
-    Connection::open(path).unwrap()
+/// The fixtures' base of an edition (`scripts/test-base.sh`): the game's classes, races, zones and
+/// class spells, no quest.
+pub(crate) fn base_of(edition: &str) -> Connection {
+    fixture_of(edition, &[])
+}
+
+/// The fixtures' base of an edition with the fixture `files` (`tests/fixtures/<file>.toml`).
+pub(crate) fn fixture_of(edition: &str, files: &[&str]) -> Connection {
+    let base = crate::fixture::Fixture::new(Edition::from_key(edition).expect("an edition"));
+    files.iter().fold(base, |f, name| f.file(name)).open()
 }
 
 /// Level 1 human warrior with only `n` quests of its own: taken and turned in at the start NPC,
@@ -267,10 +264,10 @@ fn objective_started_counts_its_share_at_another_place() {
     p.model.initial.accepted = vec![0];
     p.model.initial.progress = vec![(0, 0, 0.1)];
     let planner = planner(&p);
-    let mut s = planner.initial_state();
+    let mut s = planner.sim().initial_state();
     s.pos.x += 300.0;
     let xp = s.spent.mob_xp;
-    planner.apply(&mut s, Stop::quest(0, Kind::Objective(0)), None);
+    planner.sim().apply(&mut s, Stop::quest(0, Kind::Objective(0)), None);
     let each = planner.combat().mob_xp(1, &p.model.quests[0].objectives[0].alts[0]);
     let kills = (s.spent.mob_xp - xp) as f64 / each;
     assert!((kills - 9.0).abs() < 1e-6, "{kills} kills at the other place");
@@ -557,7 +554,7 @@ fn farmed_on_walk(
     b: &crate::world::Pos,
 ) -> (u32, i64) {
     let mut kills = 0;
-    planner.farm_along(&mut s, a, b, &mut |_, e| {
+    planner.sim().farm_along(&mut s, a, b, &mut |_, e| {
         if let super::Event::Farm { kills: k, .. } = e {
             kills += k;
         }
@@ -572,7 +569,7 @@ fn farmed_on_walk(
 fn the_logs_quest_mobs_are_not_farmed_on_the_way() {
     let (p, start, end) = road_of_mobs();
     let planner = planner(&p);
-    let s0 = planner.initial_state();
+    let s0 = planner.sim().initial_state();
     assert_eq!(farmed_on_walk(&planner, s0.clone(), &start, &end).0, 6, "not taken yet");
     let mut taken = s0;
     taken.accepted.set(0, true);
@@ -601,7 +598,7 @@ fn farming_on_the_way_kills_a_share_of_the_mobs_met() {
     let (mut p, start, end) = road_of_mobs();
     let xp = |p: &Prepared| {
         let planner = planner(p);
-        farmed_on_walk(&planner, planner.initial_state(), &start, &end).1 as f64
+        farmed_on_walk(&planner, planner.sim().initial_state(), &start, &end).1 as f64
     };
     let all = xp(&p);
     assert!(all > 0.0);
@@ -722,7 +719,7 @@ fn trips_fly_to_a_boat_and_from_it() {
 fn loot_fills_the_bags_and_what_no_longer_fits_costs() {
     let p = quests_at_start(1);
     let planner = planner(&p);
-    let mut s = planner.initial_state();
+    let mut s = planner.sim().initial_state();
     let (room, each) = (planner.growth().bag_room(1), p.params.loot_per_kill);
     planner.growth().fill_bags(&mut s, room / each / 2.0);
     assert!((f64::from(s.bags) - room / 2.0).abs() < 1e-3, "half full: {}", s.bags);
@@ -748,11 +745,11 @@ fn quest_items_take_a_slot_until_the_turn_in() {
     let mut p = quests_at_start(1);
     p.model.quests[0].carried = true;
     let planner = planner(&p);
-    let mut s = planner.initial_state();
-    planner.accept(&mut s, 0);
+    let mut s = planner.sim().initial_state();
+    planner.sim().accept(&mut s, 0);
     assert_eq!(s.held, 1);
     let rewards = planner.growth().quest_rewards(&s, 0);
-    planner.turn_in(&mut s, 0, &rewards);
+    planner.sim().turn_in(&mut s, 0, &rewards);
     assert_eq!(s.held, 0);
 }
 
@@ -764,19 +761,37 @@ fn a_vendor_on_the_way_empties_half_full_bags() {
     vendor.pos.x += 30.0;
     p.model.vendors = vec![vendor];
     let planner = planner(&p);
-    let mut s = planner.initial_state();
+    let mut s = planner.sim().initial_state();
     let mut events = Vec::new();
     s.bags = 2.0;
-    planner.sell(&mut s, &mut |_, e| events.push(e));
+    planner.sim().sell(&mut s, &mut |_, e| events.push(e));
     assert!(events.is_empty() && s.bags > 0.0, "not worth a stop yet");
     s.bags = (planner.growth().bag_room(1) * 0.6) as f32;
     let before = s.time;
-    planner.sell(&mut s, &mut |_, e| events.push(e));
+    planner.sim().sell(&mut s, &mut |_, e| events.push(e));
     assert!(
         matches!(events[..], [super::state::Event::Sell { vendor: 0 }]),
         "{events:?}"
     );
     assert!(s.bags == 0.0 && s.time >= before + p.params.sell_time);
+}
+
+/// Inside a dungeon, no stop at a vendor nor a trainer by its entrance (the steps of a dungeon
+/// whose places are not known stand at its entrance, in town): once out of it.
+#[test]
+fn no_vendor_nor_trainer_while_in_a_dungeon() {
+    let mut p = quests_at_start(1);
+    let mut vendor = p.model.start.clone();
+    vendor.pos.x += 30.0;
+    p.model.vendors = vec![vendor];
+    let planner = planner(&p);
+    let mut s = planner.sim().initial_state();
+    let mut events = Vec::new();
+    s.bags = (planner.growth().bag_room(1) * 0.6) as f32;
+    s.inside = Some(0);
+    planner.sim().sell(&mut s, &mut |_, e| events.push(e));
+    planner.sim().train(&mut s, &mut |_, e| events.push(e));
+    assert!(events.is_empty(), "{events:?}");
 }
 
 /// What the bags keep for the class and the gathering professions: a hunter's quiver takes a bag,
@@ -869,8 +884,11 @@ fn timed_quest_taken_once_strong_enough_for_its_objectives() {
     ];
     let gates = |p: &Prepared| {
         let planner = planner(p);
-        let s = planner.start_state(planner.planned(&route));
-        (planner.gate_level(&s, route[0]), planner.gate_level(&s, route[1]))
+        let s = planner.sim().start_state(planner.planned(&route));
+        (
+            planner.sim().gate_level(&s, route[0]),
+            planner.sim().gate_level(&s, route[1]),
+        )
     };
     let (accept, objective) = gates(&p);
     assert!(
@@ -948,9 +966,9 @@ fn each_player_gets_the_xp_of_its_quests() {
     let mut p = duo(100);
     p.params.group_sync_max = 10.0;
     let planner = planner(&p);
-    let mut s = planner.start_state(planner.planned(&BOTH));
+    let mut s = planner.sim().start_state(planner.planned(&BOTH));
     for stop in BOTH {
-        planner.apply(&mut s, stop, None);
+        planner.sim().apply(&mut s, stop, None);
     }
     assert_eq!(s.party(), [(1, 200), (1, 100)]);
     assert_eq!((s.level, s.xp), (1, 100), "the one behind is planned for");
@@ -963,11 +981,11 @@ fn each_player_gets_the_xp_of_its_quests() {
 fn the_guide_waits_for_everyone() {
     let p = duo(0);
     let planner = planner(&p);
-    let mut s = planner.initial_state();
+    let mut s = planner.sim().initial_state();
     s.level = 2;
-    assert!(!planner.ended(&s), "the other player is still level 1");
+    assert!(!planner.sim().ended(&s), "the other player is still level 1");
     s.mates[0].level = 2;
-    assert!(planner.ended(&s));
+    assert!(planner.sim().ended(&s));
 }
 
 /// The time the players are levels apart beyond the window costs the score; within it nothing.
@@ -1002,10 +1020,10 @@ fn the_player_behind_catches_up() {
     let mut p = duo(100);
     (p.params.group_sync_window, p.params.group_sync_max) = (0.05, 0.1);
     let planner = planner(&p);
-    let mut s = planner.start_state(planner.planned(&BOTH));
+    let mut s = planner.sim().start_state(planner.planned(&BOTH));
     let mut events = Vec::new();
     for stop in BOTH {
-        planner.apply(&mut s, stop, Some(&mut events));
+        planner.sim().apply(&mut s, stop, Some(&mut events));
     }
     let caught = events.iter().find_map(|t| match t.event {
         super::Event::CatchUp { members, seconds, .. } => Some((members, seconds)),
@@ -1018,9 +1036,9 @@ fn the_player_behind_catches_up() {
     assert_eq!(s.party()[0], (1, 200), "the character waits");
     p.params.group_sync_max = 0.3;
     let planner = Planner::new(&p.model, &p.world, &p.params, &p.profile);
-    let mut s = planner.start_state(planner.planned(&BOTH));
+    let mut s = planner.sim().start_state(planner.planned(&BOTH));
     for stop in BOTH {
-        planner.apply(&mut s, stop, None);
+        planner.sim().apply(&mut s, stop, None);
     }
     assert_eq!(
         s.party(),
@@ -1045,8 +1063,8 @@ fn an_unbounded_required_quest_stays_in_the_log_when_gray() {
         "model construction makes exact requirements mandatory"
     );
     let plan = planner(&p);
-    let mut state = plan.initial_state();
-    plan.abandon_hopeless(&mut state, &mut |_, _| {});
+    let mut state = plan.sim().initial_state();
+    plan.sim().abandon_hopeless(&mut state, &mut |_, _| {});
     assert!(state.accepted[i]);
 }
 

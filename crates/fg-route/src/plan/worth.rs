@@ -87,7 +87,7 @@ impl Worth<'_> {
         let hardest = q
             .objectives
             .iter()
-            .filter(|o| o.dungeon.is_none())
+            .filter(|o| o.dungeon_of().is_none())
             .map(|o| self.combat.need(q, o))
             .fold(0.0, f64::max);
         if hardest > self.params.reach(level + 1, might) {
@@ -97,7 +97,7 @@ impl Worth<'_> {
             return true;
         }
         // Dungeon quests: picked up on the way well before the run, kept until it.
-        if let Some(d) = q.objectives.iter().find_map(|o| o.dungeon) {
+        if let Some(d) = q.dungeon() {
             let dungeon = &self.model.dungeons[d];
             return self.availability.dungeon_allowed(d)
                 && level <= dungeon.max_level
@@ -137,7 +137,7 @@ impl Worth<'_> {
             .map(|(_, o)| o)
             .collect();
         let hardest = (left.iter())
-            .filter(|o| o.dungeon.is_none())
+            .filter(|o| o.dungeon_of().is_none())
             .map(|o| self.combat.need(q, o))
             .fold(0.0, f64::max);
         if hardest > self.params.reach(level + 1, s.might()) {
@@ -146,7 +146,7 @@ impl Worth<'_> {
         if q.mandatory {
             return true;
         }
-        if let Some(d) = left.iter().find_map(|o| o.dungeon) {
+        if let Some(d) = left.iter().find_map(|o| o.dungeon_of()) {
             let dungeon = &self.model.dungeons[d];
             return self.availability.dungeon_allowed(d)
                 && level <= dungeon.max_level

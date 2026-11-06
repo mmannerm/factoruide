@@ -1,70 +1,22 @@
 //! Doing one stop of a route: accept, objectives (and the mobs met on the way), turn-in, visits, what is done while there.
 
+use super::Mode;
+use super::Simulator;
 use super::state::{Event, Kind, Landed, State, Stop, Timed, Together};
-use super::{Mode, Planner};
-use crate::model::{EntityKind, Loc, Model, Objective};
-use crate::world::Pos;
+use crate::model::{Loc, Objective};
 use crate::xp;
-use rustc_hash::FxHashMap;
-
-/// Quest NPCs by cell (continent, x, y): (quest, index in its starts or ends, giver?, and the
-/// NPC's x, y, to tell the ones at hand without reading the quest).
-pub(crate) type CampIndex = FxHashMap<(i64, i64, i64), Vec<(u32, u8, bool, f64, f64)>>;
-/// Vendors (index in `Model::vendors`) by cell of `Params::sell_radius`: (continent, x, y).
-pub(crate) type VendorIndex = FxHashMap<(i64, i64, i64), Vec<u32>>;
-
-pub(crate) fn vendor_index(model: &Model, radius: f64) -> VendorIndex {
-    let mut index = VendorIndex::default();
-    if radius > 0.0 {
-        for (i, v) in model.vendors.iter().enumerate() {
-            let cell = (
-                v.pos.continent,
-                (v.pos.x / radius).floor() as i64,
-                (v.pos.y / radius).floor() as i64,
-            );
-            index.entry(cell).or_default().push(i as u32);
-        }
-    }
-    index
-}
-
-/// Quest givers (NPCs and objects, not items) and turn-in NPCs by cell of `radius`.
-pub(crate) fn camp_index(model: &Model, radius: f64) -> CampIndex {
-    let mut index = CampIndex::default();
-    if radius <= 0.0 {
-        return index;
-    }
-    let cell = |p: &Pos| {
-        (
-            p.continent,
-            (p.x / radius).floor() as i64,
-            (p.y / radius).floor() as i64,
-        )
-    };
-    for (i, q) in model.quests.iter().enumerate() {
-        for (at, loc) in q.starts.iter().enumerate().filter(|(_, l)| l.kind != EntityKind::Item) {
-            index
-                .entry(cell(&loc.pos))
-                .or_default()
-                .push((i as u32, at as u8, true, loc.pos.x, loc.pos.y));
-        }
-        for (at, loc) in q.ends.iter().enumerate() {
-            index
-                .entry(cell(&loc.pos))
-                .or_default()
-                .push((i as u32, at as u8, false, loc.pos.x, loc.pos.y));
-        }
-    }
-    index
-}
 
 /// Share of a timed quest's limit the route may use from taking it to turning it in: the rest
 /// is a margin for the time estimates.
 const TIMED_SHARE: f64 = 0.75;
 
-impl Planner<'_> {
-    /// Training after a step: the class, then the professions.
+impl Simulator<'_> {
+    /// Training after a step: the class, then the professions. Not inside a dungeon (its steps
+    /// of unknown places stand at its entrance, maybe by a trainer): once out of it.
     pub(crate) fn train(&self, s: &mut State, record: &mut impl FnMut(&State, Event)) {
+        if s.inside.is_some() {
+            return;
+        }
         self.train_class(s, record);
         self.train_professions(s, record);
     }
@@ -137,7 +89,8 @@ impl Planner<'_> {
     /// (`Params::bag_weight`): routes by vendors keep room for the loot.
     pub(crate) fn sell(&self, s: &mut State, record: &mut impl FnMut(&State, Event)) {
         let radius = self.params.sell_radius;
-        if self.explicit || self.params.bag_weight <= 0.0 || radius <= 0.0 || s.bags <= 0.0 {
+        // Not inside a dungeon (see `train`).
+        if self.explicit || self.params.bag_weight <= 0.0 || radius <= 0.0 || s.bags <= 0.0 || s.inside.is_some() {
             return;
         }
         let room = self.growth().bag_room(s.level) - f64::from(s.held);
@@ -149,6 +102,7 @@ impl Planner<'_> {
         for dx in -1..=1 {
             for dy in -1..=1 {
                 for &i in self
+                    .ix
                     .vendors
                     .get(&(s.pos.continent, cx + dx, cy + dy))
                     .into_iter()
@@ -238,21 +192,19 @@ impl Planner<'_> {
     /// Those the route took count against it (`Params::abandon_weight`); a quest of the
     /// character's log it does not take was not its choice.
     pub(crate) fn abandon_hopeless(&self, s: &mut State, record: &mut impl FnMut(&State, Event)) {
-        if self.explicit || s.abandon_check == (s.level, s.dungeons) {
+        if self.explicit || s.abandon_check == (s.level, s.dungeons, s.inside) {
             return;
         }
-        s.abandon_check = (s.level, s.dungeons);
+        s.abandon_check = (s.level, s.dungeons, s.inside);
         for i in s.accepted.and_not(&s.turned) {
             let q = &self.model.quests[i];
             let hopeless = self.availability().gray_dead_end(s, q, i as u32)
                 || q.objectives.iter().enumerate().any(|(k, o)| {
                     s.objectives[i] & (1 << k) == 0
-                        && o.dungeon.is_some_and(|d| {
-                            !self.availability().dungeon_allowed(d)
-                                || s.dungeons & (1u128 << d) != 0
-                                || s.level > self.model.dungeons[d].max_level
-                        })
-                });
+                        && o.dungeon_of().is_some_and(|d| !self.availability().can_be_in(s, d))
+                })
+                // Handed in only inside a dungeon left.
+                || q.ends.iter().all(|l| l.inside.is_some_and(|d| !self.availability().can_be_in(s, usize::from(d))));
             if hopeless {
                 if s.planned.flags.get(i).is_some_and(|f| f & 1 != 0) {
                     s.spent.abandoned += 1;
@@ -684,8 +636,30 @@ impl Planner<'_> {
         self.gate_level_at(s, stop, self.spot_of(s, stop))
     }
 
-    /// The same with the objective's place already chosen (`spot`).
+    /// The same with the objective's place already chosen (`spot`): a stop entering a dungeon
+    /// waits for the dungeon's level too.
     fn gate_level_at(&self, s: &State, stop: Stop, spot: Option<&Objective>) -> i64 {
+        let own = self.stop_gate(s, stop, spot);
+        let inside = match spot {
+            Some(o) => o.loc.inside.map(usize::from),
+            None => self.places().inside(s, stop),
+        };
+        match inside {
+            Some(d) if stop.kind != Kind::Dungeon && s.inside.is_none_or(|i| usize::from(i) != d) => {
+                own.max(self.stop_gate(
+                    s,
+                    Stop {
+                        index: d as u32,
+                        kind: Kind::Dungeon,
+                    },
+                    None,
+                ))
+            }
+            _ => own,
+        }
+    }
+
+    fn stop_gate(&self, s: &State, stop: Stop, spot: Option<&Objective>) -> i64 {
         let i = stop.index as usize;
         match stop.kind {
             Kind::Accept => {
@@ -707,7 +681,14 @@ impl Planner<'_> {
                 spot.unwrap_or(&self.quest(stop.index).objectives[k as usize]),
                 s.might(),
             ),
-            Kind::Dungeon => self.model.dungeons[i].min_level,
+            // A must-have quest the player asked at a level has its dungeon run from it (not the
+            // default window: it only keeps the hand-in at a fair level).
+            Kind::Dungeon => self.ix.in_dungeon[i]
+                .iter()
+                .map(|&(q, _)| q as usize)
+                .filter(|&q| self.model.quests[q].mandatory && !self.model.quests[q].implicit_window && !s.turned[q])
+                .filter_map(|q| self.model.quests[q].completion_window.min_level)
+                .fold(self.model.dungeons[i].min_level, i64::max),
             _ => 0,
         }
     }
@@ -728,7 +709,7 @@ impl Planner<'_> {
     /// started and the quest fails (The Affray at 30 when Big Will needs 33).
     fn timed_gate(&self, q: &crate::model::Quest, s: &State) -> i64 {
         let combat = self.combat();
-        (q.objectives.iter().filter(|o| o.dungeon.is_none()))
+        (q.objectives.iter().filter(|o| o.dungeon_of().is_none()))
             .map(|o| {
                 o.places()
                     .map(|place| combat.level_at(q, place, s.might()))
@@ -773,7 +754,26 @@ impl Planner<'_> {
         record: &mut impl FnMut(&State, Event),
     ) -> Loc {
         let loc = spot.map_or_else(|| self.places().loc(s, stop), |o| o.loc.clone());
+        let into = if stop.kind == Kind::Dungeon {
+            Some(stop.index as usize)
+        } else {
+            loc.inside.map(usize::from)
+        };
+        // A stop elsewhere leaves the dungeon the character is in.
+        if s.inside.is_some_and(|d| Some(usize::from(d)) != into) {
+            s.inside = None;
+        }
         self.go(s, &loc.pos, loc.zone, record);
+        if let Some(d) = into
+            && s.inside.is_none()
+        {
+            self.run_dungeon(s, d);
+            s.inside = Some(u8::try_from(d).expect("fewer dungeons than `State::dungeons` holds"));
+            // A dungeon stop is the run's step itself.
+            if stop.kind != Kind::Dungeon {
+                record(s, Event::Enter { dungeon: d });
+            }
+        }
         s.time += self.params.stop_overhead;
         s.spent.overhead += self.params.stop_overhead;
         if stop.kind != Kind::LearnFlight && !self.explicit {
@@ -832,8 +832,8 @@ impl Planner<'_> {
                     (s.hearth_ready, s.recall_ready) = (0.0, 0.0);
                 }
             }
-            Kind::Hearth => {}
-            Kind::Dungeon => self.run_dungeon(s, i),
+            // A dungeon is entered on arriving (`arrive`).
+            Kind::Hearth | Kind::Dungeon => {}
         }
         None
     }
@@ -856,9 +856,9 @@ impl Planner<'_> {
         let near = s.together.at.is_some_and(|at| {
             at.continent == here.loc.pos.continent && at.dist(&here.loc.pos) <= self.params.gather_radius
         });
-        if !near || here.dungeon.is_some() {
+        if !near || here.dungeon_of().is_some() {
             s.together = Together {
-                at: (here.dungeon.is_none()).then_some(here.loc.pos),
+                at: (here.dungeon_of().is_none()).then_some(here.loc.pos),
                 ..Together::default()
             };
         }
@@ -915,8 +915,8 @@ impl Planner<'_> {
         (kill_work, uses * self.params.object_time)
     }
 
-    /// A group run: its time, its mobs' XP, the boss loot the character may win, and every
-    /// objective inside it of the quests in the log.
+    /// Dungeon `i` entered: its run's fixed time, its mobs' XP, the boss loot the character may
+    /// win, and what its group does outside (`Objective::dungeon`) for the quests in the log.
     fn run_dungeon(&self, s: &mut State, i: usize) {
         let d = &self.model.dungeons[i];
         let run = d.minutes * 60.0;
@@ -939,9 +939,10 @@ impl Planner<'_> {
                 self.growth().refresh_power(s);
             }
         }
-        for &(qi, k) in &self.in_dungeon[i] {
+        // What its group does outside: done with the entry (the rest is a stop inside).
+        for &(qi, k) in &self.ix.in_dungeon[i] {
             let qi = qi as usize;
-            if s.accepted[qi] && !s.turned[qi] {
+            if s.accepted[qi] && !s.turned[qi] && self.model.quests[qi].objectives[k as usize].dungeon.is_some() {
                 self.hold(s, qi, k);
             }
         }
