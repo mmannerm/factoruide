@@ -398,7 +398,7 @@ let conn = Fixture::new(Edition::Classic).file("classic_druid").file("classic_se
   `terrain-regions.txt`). `tile_x` follows the world's y and `tile_y` its x.
 - A fixture is built once per process and copied for each call. `FG_TRACE=1` prints the statements
   a test runs, `FG_SLOW=5` those taking 5 ms or more.
-- A test of what the planner does with a quest declares that quest. Full-data tests cover the
-  example guide the apps ship (`fg-web` and `edit.rs`), continent walks (`routes.rs`), and the
-  fork's acquisition and data corrections (`acquisition.rs` and `data_corrections.rs`). These
-  tests read the bundled databases to detect changes a fixture would not include.
+- A test of what the planner does with a quest declares that quest. Acquisition and correction
+  regressions (`acquisition.rs`, `data_corrections.rs`) read the bundled databases to check source
+  changes after refreshes. The ignored full-guide allocator test (`fg-web/tests/alloc_stress.rs`)
+  uses an unpacked Classic database.
