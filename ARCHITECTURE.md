@@ -381,7 +381,7 @@ The planner is one crate among a few, each with one job:
 
 ## 6. How the tests get their data
 
-A test never reads the game's databases. It names the small world it needs, in files
+Most tests name the small world they need, in files
 (`crates/fg-route/tests/fixtures/*.toml`), and `fg_route::fixture::Fixture` builds a database of the
 game's own shape from them: quests, NPCs, objects, items and their drops, vendors, dungeons, and
 any row of any table (`[[row]]`). The format is at the top of `model/fixture.rs`.
@@ -398,7 +398,7 @@ let conn = Fixture::new(Edition::Classic).file("classic_druid").file("classic_se
   `terrain-regions.txt`). `tile_x` follows the world's y and `tile_y` its x.
 - A fixture is built once per process and copied for each call. `FG_TRACE=1` prints the statements
   a test runs, `FG_SLOW=5` those taking 5 ms or more.
-- A test of what the planner does with a quest declares that quest. Three tests read the real
-  databases and are slow on purpose, because what they check is the data or a whole continent: the
-  example guide the apps ship, opened in every view (`fg-web`) and replayed in the editor
-  (`edit.rs`), and the walks between the south and the north of the Eastern Kingdoms (`routes.rs`).
+- A test of what the planner does with a quest declares that quest. Full-data tests cover the
+  example guide the apps ship (`fg-web` and `edit.rs`), continent walks (`routes.rs`), and the
+  fork's acquisition and data corrections (`acquisition.rs` and `data_corrections.rs`). These
+  tests read the bundled databases to detect changes a fixture would not include.

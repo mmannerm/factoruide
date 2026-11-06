@@ -831,3 +831,29 @@ fn a_must_have_chain_keeps_crafted_items_and_elites() {
     assert!(has(&p, 92749), "the dynamite bought");
     assert!(has(&p, 93000), "the elites fought");
 }
+
+#[test]
+fn an_older_group_member_can_start_past_an_automatic_class_target() {
+    let conn = Fixture::new(Edition::Forever).file("forever_class_spells").open();
+    let o = Overrides::load_edition(&repo().join("overrides"), Edition::Forever).unwrap();
+    let mut req: PlanRequest = serde_json::from_value(serde_json::json!({
+        "race":"human", "class":"warrior", "from_level":20, "to_level":60,
+        "required_class_quests":[],
+        "start":{"name":"Leader", "race":1, "class":"WARRIOR", "faction":"Alliance", "level":20},
+        "mates":[{"name":"Older", "race":4, "class":"DRUID", "faction":"Alliance", "level":35}]
+    }))
+    .unwrap();
+    let p = job::prepare(&conn, &o, &req, &|_| {}).unwrap();
+    let i = p.model.index[&98397];
+    assert_eq!(p.model.initial.need(i), 0b10);
+    assert!(p.model.quests[i].implicit_window);
+    assert_eq!(p.model.quests[i].completion_window.max_level, Some(26));
+    Editor::open(&conn, &o, &req, None).unwrap();
+
+    req.required_quests = serde_json::from_value(serde_json::json!([{"quest":98397,"max_level":26}])).unwrap();
+    let error = job::prepare(&conn, &o, &req, &|_| {}).err().unwrap();
+    assert!(
+        format!("{error:#}").contains("Older is already above completion level 26"),
+        "{error:#}"
+    );
+}

@@ -177,6 +177,9 @@ fn the_blacklisted_fools_stout_cannot_be_required() {
         .err()
         .unwrap();
     assert!(format!("{error:#}").contains("missing, unavailable, or restricted to another race/class"));
+    let p = job::prepare(&conn, &o, &request(&json!([1119])), &|_| {}).unwrap();
+    assert!(p.model.quests[p.model.index[&1119]].required);
+    assert!(!p.model.index.contains_key(&1127));
 }
 
 #[test]
