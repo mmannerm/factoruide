@@ -317,7 +317,7 @@ fn present_quest_corrections_reject_unknown_prerequisites() {
 }
 
 #[test]
-fn forever_call_of_fire_keeps_neutral_braziers_as_interactions() {
+fn forever_call_of_fire_keeps_braziers_as_interactions() {
     let conn = database_of("forever");
     let o = overrides(Edition::Forever);
     let mut req = request(&json!([97257]));

@@ -675,7 +675,7 @@ impl Planner<'_> {
             let Some((total, end)) = self.simulate_state(&route, None) else {
                 break;
             };
-            let mut candidate: Vec<Stop> = route
+            let candidate: Vec<Stop> = route
                 .iter()
                 .copied()
                 .filter(|s| !s.is_quest() || s.index != q)
@@ -691,12 +691,23 @@ impl Planner<'_> {
                 })
                 .unwrap_or(candidate.len())
                 .min(candidate.len());
-            self.insert_quest_after(&mut candidate, q, after);
-            if self
-                .simulate_state(&candidate, None)
-                .is_some_and(|(cost, state)| cost < total || quest.required && state.required_left < end.required_left)
-            {
-                route = candidate;
+            // A nearby insertion may be too early for the quest's work. Required quests can
+            // also follow the route's existing progression, under the same simulation checks.
+            let positions =
+                std::iter::once(after).chain((quest.required && after < candidate.len()).then_some(candidate.len()));
+            for at in positions {
+                let mut inserted = candidate.clone();
+                self.insert_quest_after(&mut inserted, q, at);
+                if self.simulate_state(&inserted, None).is_some_and(|(cost, state)| {
+                    if quest.required {
+                        state.rewarded(q as usize) && state.required_left < end.required_left
+                    } else {
+                        cost < total
+                    }
+                }) {
+                    route = inserted;
+                    break;
+                }
             }
         }
         route

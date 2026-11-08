@@ -594,6 +594,79 @@ fn required_quest_repair_waits_for_profession_skill() {
     assert!(accepted > trained, "the skill threshold is reached at level 2");
 }
 
+#[test]
+fn required_quest_repair_can_follow_late_power_rewards() {
+    use crate::testing::{Q, Scenario};
+    for max_level in [None, Some(59)] {
+        let mut p = Scenario::new()
+            .levels(59, 60)
+            .quest(Q::new(800, "Guarded delivery").level(59).xp(0))
+            .quest(
+                Q::new(801, "Power reward")
+                    .level(59)
+                    .turn_in_at(1, 90.0, 50.0)
+                    .xp(1_000_000),
+            )
+            .required(800)
+            .build();
+        p.model.quests[0].end_guard = Guard {
+            level: 62,
+            count: 5,
+            elite: true,
+        };
+        p.model.quests[0].completion_window.max_level = max_level;
+        p.model.quests[1].power = Some((0, 1.3));
+        p.params.class_curve = vec![0.0; 61];
+        p.params.gear_dependence = 0.0;
+        let plan = planner(&p);
+        let route = vec![Stop::quest(1, Kind::Accept), Stop::quest(1, Kind::TurnIn)];
+        let repaired = plan.insert_missing_mandatory(route);
+        if max_level.is_some() {
+            assert!(
+                plan.validate_required(&repaired).is_err(),
+                "the player's deadline stays hard"
+            );
+        } else {
+            plan.validate_required(&repaired).unwrap();
+            let reward = repaired
+                .iter()
+                .position(|s| *s == Stop::quest(1, Kind::TurnIn))
+                .unwrap();
+            let delivery = repaired
+                .iter()
+                .position(|s| *s == Stop::quest(0, Kind::TurnIn))
+                .unwrap();
+            assert!(
+                delivery > reward,
+                "the reward makes the guards accessible at the level cap"
+            );
+        }
+    }
+}
+
+#[test]
+fn required_quest_repair_keeps_an_imported_quest_within_its_window() {
+    let mut p = quests_at_start(2);
+    p.profile.to_level = 3;
+    p.model.initial.accepted = vec![0];
+    p.model.quests[0].required = true;
+    p.model.quests[0].mandatory = true;
+    p.model.quests[0].completion_window.max_level = Some(1);
+    p.model.quests[1].xp = 400;
+    let plan = planner(&p);
+    let repaired = plan.insert_missing_mandatory(vec![Stop::quest(1, Kind::Accept), Stop::quest(1, Kind::TurnIn)]);
+    plan.validate_required(&repaired).unwrap();
+    let delivery = repaired
+        .iter()
+        .position(|s| *s == Stop::quest(0, Kind::TurnIn))
+        .unwrap();
+    let level_up = repaired
+        .iter()
+        .position(|s| *s == Stop::quest(1, Kind::TurnIn))
+        .unwrap();
+    assert!(delivery < level_up);
+}
+
 /// A road east of the start lined with mobs of level 1: three of quest 0's (its objective is
 /// done at the end of the road) and three others. Farming on the way is on, without a cap, and
 /// every mob met is killed (`farm_share` 1).

@@ -11,7 +11,7 @@ corrections add behavior or facts the bundled data does not yet supply:
 
 | Correction | Source and behavior |
 | --- | --- |
-| Call of Fire | The Skyborne Horde [ritual and torch delivery](https://www.wowhead.com/forever/quest=97257/call-of-fire) uses two neutral NPC credits as interactions. The guide follows the quest's instructions and retains its six-minute limit. |
+| Call of Fire | The Skyborne Horde [ritual and torch delivery](https://www.wowhead.com/forever/quest=97257/call-of-fire) uses two NPC credits as interactions. The guide follows the quest's instructions and retains its six-minute limit. |
 | Cat relic trials | The [Skyborne](https://www.wowhead.com/forever/quest=98404/the-great-windborne-cat-spirit), [Tauren](https://www.wowhead.com/forever/quest=98342/the-great-cat-spirit) and [Night elf](https://www.wowhead.com/forever/quest=98396/the-great-cat-spirit) trials use the entrance statue's temporary stealth to collect relics. Guards keep their actual levels. The guide asks the player to renew the blessing; expiry and detection failures are not simulated. |
 | Druid training | [Blizzard's October 1](https://us.forums.blizzard.com/en/wow/t/2360696/4) and [October 15](https://us.forums.blizzard.com/en/wow/t/2360696/6) updates and [client spell levels](https://wago.tools/db2/SpellLevels?build=1.60.1.70532&useHotfixes=1): Shred rank 1 at level 20, Tiger's Fury omitted from training estimates. |
 | Wind bridge | [Path 12018](https://wago.tools/db2/TaxiPathNode?build=1.60.1.70532&useHotfixes=1) is one way and available while the faction's Confront Lorthuna is held. The bundled client path now contains the same geometry, but its node is not a faction flight node, so ordinary flight routing does not expose it. |
