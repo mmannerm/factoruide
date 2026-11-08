@@ -110,6 +110,9 @@ impl Planner<'_> {
                         }
                     }
                 }
+                // A stop gated above the game's levels (a wrong spawn among its givers) is never
+                // reached: no grind for it.
+                options.retain(|&(level, _)| level <= self.rules().max_level);
                 options.sort_by_key(|(lvl, _)| *lvl);
                 if self.diagnostics.stall && options.first().is_some_and(|(l, _)| *l > s.level) {
                     eprintln!(
@@ -672,26 +675,39 @@ impl Planner<'_> {
             let Some((total, end)) = self.simulate_state(&route, None) else {
                 break;
             };
-            let mut candidate: Vec<Stop> = route
+            let candidate: Vec<Stop> = route
                 .iter()
                 .copied()
                 .filter(|s| !s.is_quest() || s.index != q)
                 .collect();
             let Some(run) = self.run(&candidate) else { continue };
-            // Not before the level it needs, nor before its prerequisites.
+            // Not before it can be taken (including profession skill), unless already in the log.
             let quest = self.quest(q);
             let after = run
                 .states
                 .iter()
-                .position(|st| st.level >= quest.min_level && self.availability().prereqs_met(st, q))
+                .position(|st| {
+                    st.level >= quest.min_level && (self.in_log_at_start(q) || self.availability().can_accept(st, q))
+                })
                 .unwrap_or(candidate.len())
                 .min(candidate.len());
-            self.insert_quest_after(&mut candidate, q, after);
-            if self
-                .simulate_state(&candidate, None)
-                .is_some_and(|(cost, state)| cost < total || quest.required && state.required_left < end.required_left)
-            {
-                route = candidate;
+            // A nearby insertion may be too early for the quest's work. Required quests can
+            // also follow the route's existing progression, under the same simulation checks.
+            let positions =
+                std::iter::once(after).chain((quest.required && after < candidate.len()).then_some(candidate.len()));
+            for at in positions {
+                let mut inserted = candidate.clone();
+                self.insert_quest_after(&mut inserted, q, at);
+                if self.simulate_state(&inserted, None).is_some_and(|(cost, state)| {
+                    if quest.required {
+                        state.rewarded(q as usize) && state.required_left < end.required_left
+                    } else {
+                        cost < total
+                    }
+                }) {
+                    route = inserted;
+                    break;
+                }
             }
         }
         route
@@ -949,8 +965,48 @@ impl Planner<'_> {
             .any(|&(i, o, share)| i == q as usize && usize::from(o) == k && share >= 1.0)
     }
 
-    /// Insert a quest: accepted where the character is around its level (closest to the giver),
-    /// objectives and turn-in at the closest places within the following stretch. `levels` and
+    /// The first index of `route` where quest `q` may be taken as far as its prerequisites go:
+    /// right after the turn-in of the last of `pre_all` and of the `pre_need`-th of `pre_any`
+    /// (those done before the route count from its start; those the route never turns in are
+    /// left to the replay to refuse).
+    pub(crate) fn after_prerequisites(&self, route: &[Stop], q: u32) -> usize {
+        let quest = self.quest(q);
+        let done_at = |id: &i64| {
+            let &j = self.model.index.get(id)?;
+            if self.model.initial.turned.contains(&j) {
+                return Some(0);
+            }
+            Self::position_of(route, j as u32, Kind::TurnIn).map(|t| t + 1)
+        };
+        let all = quest.pre_all.iter().filter_map(done_at).max().unwrap_or(0);
+        let mut any: Vec<usize> = quest.pre_any.iter().filter_map(done_at).collect();
+        any.sort_unstable();
+        let need = quest.pre_need.max(1);
+        let any = if any.len() >= need { any[need - 1] } else { 0 };
+        all.max(any)
+    }
+
+    /// `quests` (indices) reordered so that each comes after those of its prerequisites among
+    /// them, the order kept otherwise.
+    pub(crate) fn prerequisites_first(&self, quests: &mut Vec<u32>) {
+        let needs = |q: u32, p: u32| {
+            let quest = self.quest(q);
+            let id = self.quest(p).id;
+            quest.pre_all.contains(&id) || quest.pre_any.contains(&id)
+        };
+        let mut left = std::mem::take(quests);
+        while !left.is_empty() {
+            // The first quest none of the others left needs first (a cycle: the first one).
+            let k = (0..left.len())
+                .find(|&k| !left.iter().any(|&p| p != left[k] && needs(left[k], p)))
+                .unwrap_or(0);
+            quests.push(left.remove(k));
+        }
+    }
+
+    /// Insert a quest: accepted where the character is around its level (closest to the giver)
+    /// once its prerequisites are turned in, objectives and turn-in at the closest places within
+    /// the following stretch. `levels` and
     /// `places` (`Simulator::pos_from_start` of each stop, from the initial state `s0`) are kept
     /// aligned with the route.
     pub(crate) fn insert_quest_leveled(
@@ -972,9 +1028,10 @@ impl Planner<'_> {
             }
         };
         let giver = quest.starts[0].pos;
+        let ready = self.after_prerequisites(route, q);
         // Each distance once (the first of the nearest, as `min_by` keeps).
         // A quest of the log is not accepted: its stops go where they fit best.
-        let at = (0..=route.len())
+        let at = (ready..=route.len())
             .filter(|_| !in_log)
             .filter(|&p| (lo..=hi).contains(&level(levels, p)))
             .map(|p| {
@@ -992,7 +1049,7 @@ impl Planner<'_> {
         let at = if linked { None } else { at };
         let Some(mut at) = at else {
             let old = route.clone();
-            let first = self.insert_quest(route, q);
+            let first = self.insert_quest_after(route, q, ready);
             // Keep levels aligned (approximate: copy the neighbour's level): the stops that came
             // in, a partner's too.
             let mut j = 0;
@@ -1127,7 +1184,7 @@ impl Planner<'_> {
         });
         match pick_up {
             Some(i) => Some(Stop::quest(i, Kind::Accept)),
-            None if self.waits_for_quests(s, d) => None,
+            None if self.waits_for_quests(s, d) => self.toward_waited_quest(s, d),
             None => Some(Stop {
                 index: d as u32,
                 kind: Kind::Dungeon,
@@ -1135,16 +1192,77 @@ impl Planner<'_> {
         }
     }
 
+    /// The next stop of the chain leading to a quest forced dungeon `d` waits for
+    /// (`waits_for_quests`): a quest of it to take, finish or hand in, its own last (Dragonmaw
+    /// Rumors before Open the Maw). Left to the weighing of the stops, a delivery far away worth
+    /// little comes after the dungeon's levels. None when no step of it can be made now, and in a
+    /// dungeon: what is left there comes first (it is not entered again).
+    fn toward_waited_quest(&self, s: &State, d: usize) -> Option<Stop> {
+        if s.inside.is_some() {
+            return None;
+        }
+        let bound = self.trips().bound(s);
+        let doable = |stop: Stop| {
+            self.sim().gate_level(s, stop) <= s.level
+                && self.places().inside(s, stop).is_none()
+                && bound.at(&self.places().pos(s, stop)).is_finite()
+        };
+        let mut stack: Vec<u32> = (self.availability().dungeon_quests(d))
+            .filter(|&i| {
+                let iu = i as usize;
+                self.quest(i).mandatory && !s.accepted[iu] && !s.rewarded(iu)
+            })
+            .collect();
+        let mut seen = std::collections::HashSet::new();
+        while let Some(i) = stack.pop() {
+            let iu = i as usize;
+            if !seen.insert(i) || s.rewarded(iu) {
+                continue;
+            }
+            let q = self.quest(i);
+            if s.accepted[iu] {
+                let next = if self.availability().objectives_done(s, i) {
+                    Some(Stop::quest(i, Kind::TurnIn)).filter(|&t| doable(t))
+                } else {
+                    (0..q.objectives.len())
+                        .filter(|&k| self.availability().objective_open(s, i, k))
+                        .map(|k| Stop::quest(i, Kind::Objective(k as u8)))
+                        .find(|&o| doable(o))
+                };
+                if next.is_some() {
+                    return next;
+                }
+                continue;
+            }
+            let accept = Stop::quest(i, Kind::Accept);
+            if self.availability().can_accept(s, i) && doable(accept) {
+                return Some(accept);
+            }
+            stack.extend(
+                (q.pre_all.iter().chain(&q.pre_any).chain(&q.pre_held))
+                    .filter_map(|id| self.model.index.get(id))
+                    .map(|&j| j as u32),
+            );
+        }
+        None
+    }
+
     /// Whether the run of dungeon `d` waits for a quest of it the route must do (a dungeon forced
     /// with its quests) and has not taken yet, its chain under way: entered once, the dungeon
-    /// would leave it undone. Up to the dungeon's last level.
+    /// would leave it undone. Up to the dungeon's last level; not for a quest gated above the
+    /// game's levels (never taken).
     fn waits_for_quests(&self, s: &State, d: usize) -> bool {
         let dungeon = &self.model.dungeons[d];
         s.level < dungeon.max_level
             && self.availability().dungeon_quests(d).any(|i| {
                 let iu = i as usize;
                 let q = self.quest(i);
-                q.mandatory && !s.accepted[iu] && !s.rewarded(iu) && q.min_level <= dungeon.max_level
+                q.mandatory
+                    && !s.accepted[iu]
+                    && !s.rewarded(iu)
+                    && q.min_level <= dungeon.max_level
+                    && self.places().inside(s, Stop::quest(i, Kind::Accept)).is_none()
+                    && self.sim().gate_level(s, Stop::quest(i, Kind::Accept)) <= self.rules().max_level
             })
     }
 }
@@ -1265,5 +1383,69 @@ mod deadline_tests {
             let next = plan.nearest_stop(&state, None).unwrap();
             assert_eq!(next, Stop::quest(u32::from(need != 3), Kind::Accept));
         }
+    }
+}
+
+#[cfg(test)]
+mod forced_dungeon_tests {
+    use super::*;
+    use crate::testing::{At, Obj, Q, Scenario};
+
+    /// A dungeon forced with its quests, at its level, waits for one of them whose prerequisite is
+    /// a delivery far away (Dragonmaw Rumors before Open the Maw, GitHub #125): the next stop is
+    /// that delivery, not the quest at hand, else the dungeon's levels go by without it.
+    #[test]
+    fn a_waiting_forced_dungeon_goes_for_what_unlocks_its_quest() {
+        let p = Scenario::new()
+            .levels(19, 22)
+            .zone(1, "Westfall")
+            .dungeon("The Deadmines", 1, 70.0, 70.0)
+            .params(|p| p.forced_dungeon_quests = vec![900])
+            .quest(
+                Q::new(330, "Rumors")
+                    .level(18)
+                    .xp(50)
+                    .giver(1, 90.0, 10.0)
+                    .turn_in_at(1, 92.0, 10.0),
+            )
+            .quest(
+                Q::new(331, "Into the maw")
+                    .level(18)
+                    .after(&[330])
+                    .giver(1, 92.0, 10.0)
+                    .objective(
+                        Obj::kill(
+                            "Defias",
+                            18,
+                            6,
+                            At {
+                                zone: 1,
+                                x: 70.0,
+                                y: 70.0,
+                            },
+                        )
+                        .inside(0),
+                    ),
+            )
+            .quest(
+                Q::new(302, "At hand")
+                    .level(19)
+                    .giver(1, 50.0, 50.0)
+                    .objective(Obj::kill(
+                        "Murloc",
+                        19,
+                        4,
+                        At {
+                            zone: 1,
+                            x: 52.0,
+                            y: 52.0,
+                        },
+                    )),
+            )
+            .build();
+        let plan = Planner::new(&p.model, &p.world, &p.params, &p.profile);
+        let s = plan.sim().initial_state();
+        let rumors = Stop::quest(p.model.index[&330] as u32, Kind::Accept);
+        assert_eq!(plan.nearest_stop(&s, None), Some(rumors));
     }
 }

@@ -3,7 +3,7 @@
 
 use super::{Kind, Planner, Stop};
 use crate::job::{self, Overrides, PlanRequest, Prepared};
-use crate::model::{Guard, Initial, Objective};
+use crate::model::{Guard, Initial, Objective, Pool};
 use crate::xp::Edition;
 use rusqlite::Connection;
 use std::path::PathBuf;
@@ -183,6 +183,7 @@ fn quests_at_hand_are_looked_for_where_the_stop_went() {
         pull: 1.0,
         spawns: 1,
         pack: 1.0,
+        pool: Pool::default(),
         spots: None,
         guard: Guard::default(),
         unopposed: false,
@@ -244,6 +245,7 @@ fn objective_started_counts_its_share_at_another_place() {
         pull: 1.0,
         spawns: 20,
         pack: 1.0,
+        pool: Pool::default(),
         spots: None,
         guard: Guard::default(),
         unopposed: false,
@@ -293,6 +295,79 @@ fn gathering_next_to_kills_saves_time_when_consecutive() {
     assert!((apart - (k + g)).abs() < 1e-6, "{apart} with a stop between");
 }
 
+/// A small spot of `spawns` mobs of kind `mob`, back in `respawn` seconds, killed in 20 s each,
+/// for `kills` kills: the objective's pool, its wait alone in its fixed time (as the model sets it).
+fn small_spot(o: &mut Objective, mob: i64, spawns: f64, respawn: f64, kills: f64) {
+    let rate = spawns / respawn;
+    let wait = Pool::wait_for(kills, spawns, rate, 20.0);
+    (o.kills, o.count, o.mobs) = (kills, kills, vec![(mob, format!("mob {mob}"))]);
+    o.pool = Pool {
+        mine: spawns,
+        rate,
+        each: 20.0,
+        wait,
+    };
+    o.extra = wait;
+}
+
+/// Two kill objectives at one camp (the Defias and the Riverpaw of Gold Coast Quarry), each asking
+/// more kills than its mobs' spawns: alone, each waits for its respawns; one after the other,
+/// the mobs of one are killed while the other's come back. A rare mob's long wait is not spared
+/// by the kills of others beyond their time. With another stop between them, each waits on its
+/// own again.
+#[test]
+fn kills_at_one_camp_wait_for_respawns_together() {
+    let mut p = camp_of_two_objectives();
+    let mut second = p.model.quests[0].objectives[0].clone();
+    small_spot(&mut p.model.quests[0].objectives[0], 1, 9.0, 300.0, 15.0);
+    small_spot(&mut second, 2, 9.0, 300.0, 15.0);
+    p.model.quests[1].objectives = vec![second];
+    let alone = p.model.quests[0].objectives[0].pool.wait;
+    assert!(alone > 60.0, "{alone}");
+    let planner = planner(&p);
+    let waiting = |route: &[Stop]| planner.simulate_full(route, None).unwrap().1.waiting;
+    let (a, b) = (Stop::quest(0, Kind::Objective(0)), Stop::quest(1, Kind::Objective(0)));
+    assert!((waiting(&[a]) - alone).abs() < 1e-6);
+    // 30 kills among 18 spawns coming back every 17 s, quicker than a kill: no wait left.
+    let together = waiting(&[a, b]);
+    assert!(together.abs() < 1e-6, "{together} waited together");
+    let apart = waiting(&[a, Stop::quest(2, Kind::Accept), b]);
+    assert!((apart - 2.0 * alone).abs() < 1e-6, "{apart} with a stop between");
+    // A rare mob instead (3 spawns back in 10 minutes): its wait less the other's 300 s of kills.
+    small_spot(&mut p.model.quests[1].objectives[0], 2, 3.0, 600.0, 15.0);
+    let rare = p.model.quests[1].objectives[0].pool.wait;
+    let planner = super::tests::planner(&p);
+    let waiting = |route: &[Stop]| planner.simulate_full(route, None).unwrap().1.waiting;
+    let together = waiting(&[a, b]);
+    assert!((together - (rare - 300.0)).abs() < 1e-6, "{together} {rare}");
+}
+
+/// An objective whose mobs live in a large group far off and a small one at the camp where the
+/// character just killed another quest's mobs: alone, the small group's respawns cost more than
+/// the walk to the large one; after the kills at the camp, they came back meanwhile and the
+/// objective is done there.
+#[test]
+fn an_objective_is_done_where_the_kills_just_done_share_its_wait() {
+    let mut p = camp_of_two_objectives();
+    let camp = p.model.quests[0].objectives[0].loc.clone();
+    small_spot(&mut p.model.quests[0].objectives[0], 1, 40.0, 300.0, 30.0);
+    let mut far = p.model.quests[0].objectives[0].clone();
+    small_spot(&mut far, 2, 30.0, 300.0, 15.0);
+    far.loc.pos.x += 600.0;
+    let mut here = far.clone();
+    here.loc = camp.clone();
+    // Alone: 10 respawns to wait for, 40 s each beyond the kill; after 30 kills (10 minutes), none.
+    small_spot(&mut here, 2, 5.0, 300.0, 15.0);
+    far.alts = vec![here];
+    p.model.quests[1].objectives = vec![far];
+    let planner = planner(&p);
+    let sim = planner.sim();
+    let mut s = sim.initial_state();
+    assert_ne!(sim.spot(&s, 1, 0).loc.pos, camp.pos, "alone, the large group far off");
+    sim.apply(&mut s, Stop::quest(0, Kind::Objective(0)), None);
+    assert_eq!(sim.spot(&s, 1, 0).loc.pos, camp.pos, "after the kills at the camp");
+}
+
 /// The fighting of `route` with the quests whose objective it does turned in at its end: a quest
 /// left in the log is grinding (`Planner::count_unfinished_as_grind`), not fighting.
 fn fighting_with_turn_ins(planner: &Planner<'_>, route: &[Stop]) -> f64 {
@@ -328,6 +403,7 @@ fn camp_of_two_objectives() -> Prepared {
         pull: 1.0,
         spawns: 10,
         pack: 1.0,
+        pool: Pool::default(),
         spots: None,
         guard: Guard::default(),
         unopposed: false,
@@ -485,6 +561,112 @@ fn profession_quests_are_kept_once_gray() {
     assert_eq!(score(&p, &without).1.missing_profession_quests, 0);
 }
 
+#[test]
+fn required_quest_repair_waits_for_profession_skill() {
+    let mut p = quests_at_start(2);
+    p.profile.to_level = 3;
+    let mut cooking = crate::model::ProfessionPlan::new(&crate::profession::ProfessionGoal {
+        key: "cooking".into(),
+        target: 100,
+        start_level: Some(1),
+        milestones: vec![],
+    })
+    .unwrap();
+    cooking.curve = vec![100; 61];
+    cooking.curve[1] = 1;
+    p.model.professions = vec![cooking];
+    p.model.quests[0].skill = Some((0, 100));
+    p.model.quests[0].mandatory = true;
+    p.model.quests[0].required = true;
+    p.model.quests[1].xp = 400;
+    let plan = planner(&p);
+    let route = vec![Stop::quest(1, Kind::Accept), Stop::quest(1, Kind::TurnIn)];
+    let repaired = plan.insert_missing_mandatory(route);
+    plan.validate_required(&repaired).unwrap();
+    let trained = repaired
+        .iter()
+        .position(|s| *s == Stop::quest(1, Kind::TurnIn))
+        .unwrap();
+    let accepted = repaired
+        .iter()
+        .position(|s| *s == Stop::quest(0, Kind::Accept))
+        .unwrap();
+    assert!(accepted > trained, "the skill threshold is reached at level 2");
+}
+
+#[test]
+fn required_quest_repair_can_follow_late_power_rewards() {
+    use crate::testing::{Q, Scenario};
+    for max_level in [None, Some(59)] {
+        let mut p = Scenario::new()
+            .levels(59, 60)
+            .quest(Q::new(800, "Guarded delivery").level(59).xp(0))
+            .quest(
+                Q::new(801, "Power reward")
+                    .level(59)
+                    .turn_in_at(1, 90.0, 50.0)
+                    .xp(1_000_000),
+            )
+            .required(800)
+            .build();
+        p.model.quests[0].end_guard = Guard {
+            level: 62,
+            count: 5,
+            elite: true,
+        };
+        p.model.quests[0].completion_window.max_level = max_level;
+        p.model.quests[1].power = Some((0, 1.3));
+        p.params.class_curve = vec![0.0; 61];
+        p.params.gear_dependence = 0.0;
+        let plan = planner(&p);
+        let route = vec![Stop::quest(1, Kind::Accept), Stop::quest(1, Kind::TurnIn)];
+        let repaired = plan.insert_missing_mandatory(route);
+        if max_level.is_some() {
+            assert!(
+                plan.validate_required(&repaired).is_err(),
+                "the player's deadline stays hard"
+            );
+        } else {
+            plan.validate_required(&repaired).unwrap();
+            let reward = repaired
+                .iter()
+                .position(|s| *s == Stop::quest(1, Kind::TurnIn))
+                .unwrap();
+            let delivery = repaired
+                .iter()
+                .position(|s| *s == Stop::quest(0, Kind::TurnIn))
+                .unwrap();
+            assert!(
+                delivery > reward,
+                "the reward makes the guards accessible at the level cap"
+            );
+        }
+    }
+}
+
+#[test]
+fn required_quest_repair_keeps_an_imported_quest_within_its_window() {
+    let mut p = quests_at_start(2);
+    p.profile.to_level = 3;
+    p.model.initial.accepted = vec![0];
+    p.model.quests[0].required = true;
+    p.model.quests[0].mandatory = true;
+    p.model.quests[0].completion_window.max_level = Some(1);
+    p.model.quests[1].xp = 400;
+    let plan = planner(&p);
+    let repaired = plan.insert_missing_mandatory(vec![Stop::quest(1, Kind::Accept), Stop::quest(1, Kind::TurnIn)]);
+    plan.validate_required(&repaired).unwrap();
+    let delivery = repaired
+        .iter()
+        .position(|s| *s == Stop::quest(0, Kind::TurnIn))
+        .unwrap();
+    let level_up = repaired
+        .iter()
+        .position(|s| *s == Stop::quest(1, Kind::TurnIn))
+        .unwrap();
+    assert!(delivery < level_up);
+}
+
 /// A road east of the start lined with mobs of level 1: three of quest 0's (its objective is
 /// done at the end of the road) and three others. Farming on the way is on, without a cap, and
 /// every mob met is killed (`farm_share` 1).
@@ -529,6 +711,7 @@ fn road_of_mobs() -> (Prepared, crate::world::Pos, crate::world::Pos) {
         pull: 1.0,
         spawns: 3,
         pack: 1.0,
+        pool: Pool::default(),
         spots: None,
         guard: Guard::default(),
         unopposed: false,
@@ -637,6 +820,7 @@ fn greedy_grinds_to_the_mobs_of_a_quest_in_reach() {
         pull: 1.0,
         spawns: 1,
         pack: 1.0,
+        pool: Pool::default(),
         spots: None,
         guard: Guard::default(),
         unopposed: false,
@@ -862,6 +1046,7 @@ fn timed_quest_taken_once_strong_enough_for_its_objectives() {
         pull: 1.0,
         spawns: 1,
         pack: 1.0,
+        pool: Pool::default(),
         spots: None,
         guard: Guard::default(),
         unopposed: false,
@@ -1194,4 +1379,451 @@ fn a_quest_never_turned_in_counts_as_grinding() {
     assert!(done.fighting > 1.0, "turned in: the quest's fighting {done:?}");
     assert!(left.fighting < 1.0, "never turned in: grinding {left:?}");
     assert!(left.grinding > done.grinding, "{} vs {}", left.grinding, done.grinding);
+}
+
+/// A town (50, 50) and boars 300 yards south: the ribs taken and turned in in town, the tools
+/// taken 20 yards away on the way back from the boars. `tools` moves the tools' giver, `ribs`
+/// where the ribs are turned in.
+fn town_and_boars(tools: (f64, f64), ribs: (f64, f64)) -> Prepared {
+    use crate::testing::{Q, Scenario};
+    Scenario::new()
+        .levels(1, 3)
+        .quest(
+            Q::new(1, "Ribs")
+                .level(1)
+                .xp(50)
+                .giver(1, 50.0, 50.0)
+                .turn_in_at(1, ribs.0, ribs.1)
+                .kill("Boar", 1, 6, 1, 50.0, 80.0),
+        )
+        .quest(
+            Q::new(2, "Tools")
+                .level(1)
+                .xp(50)
+                .giver(1, tools.0, tools.1)
+                .turn_in_at(1, 52.0, 50.0),
+        )
+        .build()
+}
+
+/// The ribs' boars killed, then the tools taken on the way back.
+fn ribs_then_tools() -> [Stop; 5] {
+    [
+        Stop::quest(0, Kind::Accept),
+        Stop::quest(0, Kind::Objective(0)),
+        Stop::quest(1, Kind::Accept),
+        Stop::quest(0, Kind::TurnIn),
+        Stop::quest(1, Kind::TurnIn),
+    ]
+}
+
+/// Whether tidying `ribs_then_tools` takes the tools before the boars.
+fn tools_taken_first(p: &Prepared) -> bool {
+    let route = ribs_then_tools();
+    let tidied = planner(p).tidy(&route).map_or(route.to_vec(), |(r, _)| r);
+    let at = |stop| tidied.iter().position(|&s| s == stop);
+    at(route[2]) < at(route[1])
+}
+
+/// A quest taken in town on the way back from a trip is taken before leaving: it costs nothing.
+#[test]
+fn a_quest_in_town_is_taken_before_leaving() {
+    assert!(tools_taken_first(&town_and_boars((52.0, 50.0), (50.0, 50.0))));
+}
+
+/// Not when it costs more than `tidy_slack` (no slack and a detour), nor when the giver is
+/// out of town (beyond `tidy_radius`).
+#[test]
+fn tidying_stays_within_its_slack_and_radius() {
+    // 40 yards north of town, the ribs turned in 100 yards north: the tools are on the way
+    // back, taking them first is a detour.
+    let mut p = town_and_boars((50.0, 46.0), (50.0, 40.0));
+    p.params.tidy_slack = 0.0;
+    assert!(!tools_taken_first(&p));
+    p.params.tidy_slack = 1000.0;
+    assert!(tools_taken_first(&p));
+    p.params.tidy_radius = 30.0;
+    assert!(!tools_taken_first(&p));
+}
+
+/// Elwynn's report: Thomas (70, 50) sends a report to Dughan (30, 50); the murlocs' bounty,
+/// given by Thomas, needs the report delivered. Quest indices: 0 the report, 1 the bounty, 2 a
+/// quest from Dughan back to Thomas.
+fn report_then_bounty() -> Prepared {
+    use crate::testing::{Q, Scenario};
+    Scenario::new()
+        .levels(1, 5)
+        .quest(
+            Q::new(1, "Report")
+                .level(1)
+                .giver(1, 70.0, 50.0)
+                .turn_in_at(1, 30.0, 50.0),
+        )
+        .quest(
+            Q::new(2, "Bounty")
+                .level(1)
+                .giver(1, 70.0, 50.0)
+                .turn_in_at(1, 70.0, 50.0)
+                .after_any(&[1])
+                .kill("Murloc", 1, 8, 1, 75.0, 60.0),
+        )
+        .quest(
+            Q::new(3, "Back east")
+                .level(1)
+                .giver(1, 30.0, 50.0)
+                .turn_in_at(1, 70.0, 50.0),
+        )
+        .build()
+}
+
+/// A quest reinserted by the large moves is taken once its prerequisites are turned in, not at
+/// the first visit of its giver: the bounty goes with the second visit to Thomas.
+#[test]
+fn a_reinserted_quest_is_taken_after_its_prerequisites() {
+    let p = report_then_bounty();
+    let planner = planner(&p);
+    let mut route = vec![
+        Stop::quest(0, Kind::Accept),
+        Stop::quest(0, Kind::TurnIn),
+        Stop::quest(2, Kind::Accept),
+        Stop::quest(2, Kind::TurnIn),
+    ];
+    let s0 = planner.sim().initial_state();
+    let mut levels = vec![1; route.len()];
+    let mut places: Vec<_> = route.iter().map(|&s| planner.sim().pos_from_start(&s0, s)).collect();
+    planner.insert_quest_leveled(&mut route, &mut levels, &mut places, &s0, 1);
+    let at = |stop| route.iter().position(|&s| s == stop).unwrap();
+    assert!(
+        at(Stop::quest(1, Kind::Accept)) > at(Stop::quest(0, Kind::TurnIn)),
+        "{route:?}"
+    );
+    assert!(planner.simulate(&route, None).is_some(), "{route:?}");
+}
+
+/// The quests a large move takes out are put back prerequisites first, whatever their order in
+/// the route.
+#[test]
+fn removed_quests_go_back_prerequisites_first() {
+    let p = report_then_bounty();
+    let mut remove = vec![1, 2, 0];
+    planner(&p).prerequisites_first(&mut remove);
+    let at = |q| remove.iter().position(|&r| r == q).unwrap();
+    assert!(at(0) < at(1), "{remove:?}");
+}
+
+/// Elwynn as the group guide did it. Goldshire (Dughan and the trainer, 30, 50) to the west,
+/// Thomas (70, 50) to the east, 400 yards apart. Quest indices:
+/// 0 Report to Thomas (Dughan to Thomas), 1 Deliver Thomas' Report (Thomas to Dughan, after 0),
+/// 2 Protect the Frontier (Thomas, wolves at 75, 40), 3 Bounty on Murlocs (Thomas, after 1,
+/// murlocs at 75, 65), 4 Westbrook (Dughan to Westbrook, 10, 50, once 3 is done), 5 Defias (Dughan once 0 is
+/// done, at 65, 45).
+fn elwynn_trips() -> Prepared {
+    use crate::model::testing::At;
+    use crate::testing::{Obj, Q, Scenario};
+    let (dughan, thomas) = ((30.0, 50.0), (70.0, 50.0));
+    let q = |id, name, from: (f64, f64), to: (f64, f64)| {
+        Q::new(id, name)
+            .level(1)
+            .xp(10)
+            .giver(1, from.0, from.1)
+            .turn_in_at(1, to.0, to.1)
+    };
+    Scenario::new()
+        .levels(1, 10)
+        .trainer(1, dughan.0, dughan.1)
+        .quest(q(1, "Report to Thomas", dughan, thomas).xp(3000))
+        .quest(q(2, "Deliver Thomas' Report", thomas, dughan).after(&[1]))
+        .quest(q(3, "Protect the Frontier", thomas, thomas).kill("Wolf", 1, 8, 1, 75.0, 40.0))
+        .quest(
+            q(4, "Bounty on Murlocs", thomas, thomas)
+                .after(&[2])
+                .kill("Murloc", 1, 8, 1, 75.0, 65.0),
+        )
+        .quest(q(5, "Westbrook", dughan, (10.0, 50.0)).after(&[4]))
+        .quest(q(6, "Defias", dughan, dughan).after(&[1]).objective(Obj::kill(
+            "Defias",
+            1,
+            8,
+            At {
+                zone: 1,
+                x: 65.0,
+                y: 45.0,
+            },
+        )))
+        .build()
+}
+
+fn stops(list: &[(u32, Kind)]) -> Vec<Stop> {
+    list.iter().map(|&(q, k)| Stop::quest(q, k)).collect()
+}
+
+/// The guide's route: east, west, east (the report taken late), west to deliver it, east again
+/// for the murlocs (the frontier turned in only then), west.
+fn elwynn_three_trips() -> Vec<Stop> {
+    use Kind::{Accept as A, Objective as O, TurnIn as T};
+    stops(&[
+        (0, A),
+        (0, T),
+        (2, A),
+        (2, O(0)), // east
+        (5, A),    // west
+        (5, O(0)),
+        (1, A), // east
+        (5, T),
+        (1, T), // west
+        (3, A),
+        (2, T),
+        (3, O(0)),
+        (3, T), // east
+        (4, A),
+        (4, T), // west
+    ])
+}
+
+/// The same quests in two trips: the report taken at once and delivered on the first way back.
+fn elwynn_two_trips() -> Vec<Stop> {
+    use Kind::{Accept as A, Objective as O, TurnIn as T};
+    stops(&[
+        (0, A),
+        (0, T),
+        (1, A),
+        (2, A),
+        (2, O(0)), // east
+        (1, T),
+        (5, A), // west
+        (3, A),
+        (5, O(0)),
+        (2, T),
+        (3, O(0)),
+        (3, T), // east
+        (5, T),
+        (4, A),
+        (4, T), // west
+    ])
+}
+
+/// The route best moving one stop, or a block of up to four, anywhere; with its cost.
+fn best_block_move(planner: &Planner<'_>, route: &[Stop]) -> (f64, Vec<Stop>) {
+    let mut best = (planner.simulate(route, None).unwrap(), route.to_vec());
+    for len in 1..=4.min(route.len()) {
+        for from in 0..=route.len() - len {
+            for to in 0..=route.len() - len {
+                let mut r = route.to_vec();
+                let block: Vec<Stop> = r.drain(from..from + len).collect();
+                r.splice(to..to, block);
+                if let Some(c) = planner.simulate(&r, None)
+                    && c < best.0 - 0.5
+                {
+                    best = (c, r);
+                }
+            }
+        }
+    }
+    best
+}
+
+/// The group guide's Elwynn: the report to Thomas levels the character up with its training
+/// late. When the trip to the trainer left at once, taking Thomas' report right then cost a trip
+/// there and back: every route that took it later was better, and the murlocs it opens took a
+/// third trip east no move of one stop or a few could save. The trip now leaves with the route:
+/// moving stops from the guide's three trips finds the report taken at once, and two trips.
+#[test]
+fn moves_from_the_guides_three_trips_find_two() {
+    let mut p = elwynn_trips();
+    p.params.hearth_min_saving = f64::INFINITY;
+    let planner = planner(&p);
+    let mut route = elwynn_three_trips();
+    loop {
+        let (_, better) = best_block_move(&planner, &route);
+        if better == route {
+            break;
+        }
+        route = better;
+    }
+    let at = |stop| route.iter().position(|&s| s == stop).unwrap();
+    assert_eq!(
+        at(Stop::quest(1, Kind::Accept)),
+        at(Stop::quest(0, Kind::TurnIn)) + 1,
+        "{route:?}"
+    );
+    let best = planner.simulate(&route, None).unwrap();
+    assert!(
+        best < planner.simulate(&elwynn_two_trips(), None).unwrap() + 0.5,
+        "{route:?}"
+    );
+}
+
+/// Thomas (70, 50) and the trainer in Goldshire (30, 50), 400 yards apart: the report to Thomas
+/// takes the character three levels up (its training late), the next quest is taken from
+/// Thomas too and handed in at Goldshire. Quest indices: 0 the report, 1 the next quest.
+fn late_training_at_thomas() -> Prepared {
+    use crate::testing::{Q, Scenario};
+    Scenario::new()
+        .levels(1, 10)
+        .trainer(1, 30.0, 50.0)
+        .quest(
+            Q::new(1, "Report to Thomas")
+                .level(1)
+                .xp(3000)
+                .giver(1, 30.0, 50.0)
+                .turn_in_at(1, 70.0, 50.0),
+        )
+        .quest(
+            Q::new(2, "Deliver Thomas' Report")
+                .level(1)
+                .xp(10)
+                .giver(1, 70.0, 50.0)
+                .turn_in_at(1, 30.0, 50.0),
+        )
+        .build()
+}
+
+/// A training trip due where the route has another stop at hand waits for it: the trip to the
+/// trainer leaves with the route, it does not go there and back first.
+#[test]
+fn a_late_training_waits_for_the_stops_at_hand() {
+    let p = late_training_at_thomas();
+    let planner = planner(&p);
+    let route = [
+        Stop::quest(0, Kind::Accept),
+        Stop::quest(0, Kind::TurnIn),
+        Stop::quest(1, Kind::Accept),
+        Stop::quest(1, Kind::TurnIn),
+    ];
+    let mut trace = Vec::new();
+    planner.simulate(&route, Some(&mut trace)).unwrap();
+    let at = |f: &dyn Fn(&super::Event) -> bool| trace.iter().position(|t| f(&t.event));
+    let train = at(&|e| matches!(e, super::Event::Train { .. })).expect("trained");
+    let taken = at(&|e| matches!(e, super::Event::Stop { stop, .. } if *stop == route[2])).unwrap();
+    assert!(
+        train > taken,
+        "{:?}",
+        trace.iter().map(|t| &t.event).collect::<Vec<_>>()
+    );
+}
+
+/// A town (50, 50) and a camp 480 yards south (50, 98): the camp's quest taken in town, two
+/// town quests taken and turned in on a return from the camp. Quest indices: 0 the camp's,
+/// 1 and 2 the town's.
+fn town_and_camp() -> Prepared {
+    use crate::testing::{Q, Scenario};
+    let town = |id, name| {
+        Q::new(id, name)
+            .level(1)
+            .xp(10)
+            .giver(1, 51.0, 50.0)
+            .turn_in_at(1, 52.0, 50.0)
+    };
+    Scenario::new()
+        .levels(1, 10)
+        .quest(
+            Q::new(1, "Camp")
+                .level(1)
+                .xp(10)
+                .giver(1, 50.0, 50.0)
+                .turn_in_at(1, 50.0, 99.0)
+                .kill("Boar", 1, 6, 1, 50.0, 98.0),
+        )
+        .quest(town(2, "Tools"))
+        .quest(town(3, "Supplies"))
+        .build()
+}
+
+/// A return to a place for stops it could have done before is merged into the earlier visit:
+/// the town's quests are done before leaving for the camp, not on a trip back.
+#[test]
+fn a_return_to_a_place_is_merged_into_the_visit_before() {
+    let p = town_and_camp();
+    let planner = planner(&p);
+    let (a, o, t) = (Kind::Accept, Kind::Objective(0), Kind::TurnIn);
+    let route = stops(&[(0, a), (0, o), (0, t), (1, a), (2, a), (1, t), (2, t)]);
+    let (merged, cost) = planner.merge_visits(&route).expect("merged");
+    assert_eq!(merged, stops(&[(0, a), (1, a), (2, a), (1, t), (2, t), (0, o), (0, t)]));
+    assert!(cost < planner.simulate(&route, None).unwrap());
+}
+
+#[test]
+fn timed_deliveries_defer_automatic_farming() {
+    use super::Event;
+    use crate::testing::{At, Obj, Q, Scenario};
+    for timed in [true, false] {
+        let mut delivery = Q::new(800, "Delivery")
+            .level(10)
+            .giver(1, 50.0, 50.0)
+            .turn_in_at(1, 90.0, 50.0)
+            .objective(Obj::visit(
+                "Deliver supplies",
+                At {
+                    zone: 1,
+                    x: 90.0,
+                    y: 50.0,
+                },
+            ))
+            .xp(100);
+        if timed {
+            delivery = delivery.timed(120.0);
+        }
+        let p = Scenario::new()
+            .levels(10, 11)
+            .quest(delivery)
+            .required(800)
+            .mobs(1, 70.0, 50.0, 10, 8)
+            .params(|p| {
+                p.farm_on_way = true;
+                p.farm_cap = 1.0;
+                p.farm_share = 1.0;
+                p.farm_corridor = 25.0;
+            })
+            .build();
+        let plan = Planner::new(&p.model, &p.world, &p.params, &p.profile);
+        let route = [
+            Stop::quest(0, Kind::Accept),
+            Stop::quest(0, Kind::Objective(0)),
+            Stop::quest(0, Kind::TurnIn),
+        ];
+        let mut trace = Vec::new();
+        plan.simulate_full(&route, Some(&mut trace)).unwrap();
+        plan.validate_required(&route).unwrap();
+        let accept = trace
+            .iter()
+            .position(|t| matches!(t.event, Event::Stop { stop, .. } if stop.kind == Kind::Accept))
+            .unwrap();
+        let turn_in = trace
+            .iter()
+            .position(|t| matches!(t.event, Event::Stop { stop, .. } if stop.kind == Kind::TurnIn))
+            .unwrap();
+        let farmed = trace[accept..turn_in]
+            .iter()
+            .any(|t| matches!(t.event, Event::Farm { .. }));
+        assert_eq!(farmed, !timed);
+        if timed {
+            assert!(trace[turn_in].time - trace[accept].time < 90.0);
+        }
+        let edited = plan.replaying().explicit().edit(&[
+            super::Edit::Stop {
+                stop: route[0],
+                farm: false,
+                spot: None,
+            },
+            super::Edit::Stop {
+                stop: route[1],
+                farm: true,
+                spot: None,
+            },
+            super::Edit::Stop {
+                stop: route[2],
+                farm: false,
+                spot: None,
+            },
+        ]);
+        if timed {
+            assert_eq!(
+                edited.steps[1].outcome,
+                super::Outcome::Invalid("quest time limit passed")
+            );
+        } else {
+            assert!(edited.breakdown.farm_xp > 0, "explicit farming remains available");
+            assert_eq!(edited.errors(), 0);
+        }
+    }
 }

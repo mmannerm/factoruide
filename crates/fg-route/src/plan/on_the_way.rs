@@ -214,6 +214,10 @@ impl Simulator<'_> {
         if !(p.farm_on_way || all) || p.farm_corridor <= 0.0 || a.continent != b.continent || a == b {
             return;
         }
+        // Optional farming waits until quest and carried-item clocks finish.
+        if !all && !s.timers.is_empty() {
+            return;
+        }
         let budget = if all { i64::MAX } else { self.growth().farm_budget(s) };
         if budget <= 0 || s.level >= self.profile.to_level {
             return;

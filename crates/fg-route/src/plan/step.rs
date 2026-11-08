@@ -10,6 +10,10 @@ use crate::xp;
 /// is a margin for the time estimates.
 const TIMED_SHARE: f64 = 0.75;
 
+/// A stop this close (yards) to where the character stands is at hand: a training trip waits
+/// for it.
+const AT_HAND: f64 = 100.0;
+
 impl Simulator<'_> {
     /// Training after a step: the class, then the professions. Not inside a dungeon (its steps
     /// of unknown places stand at its entrance, maybe by a trainer): once out of it.
@@ -67,9 +71,12 @@ impl Simulator<'_> {
             .enumerate()
             .min_by(|a, b| s.pos.dist(&a.1.pos).total_cmp(&s.pos.dist(&b.1.pos)))
             .expect("the model has trainers");
+        // A trip waits while the route's next stop is at hand: the character leaves for the
+        // trainer with the route, not there and back before the stops of the place it is at.
+        let at_hand = s.next.is_some_and(|next| s.pos.dist(&next) <= AT_HAND);
         let i = if s.pos.dist(&trainer.pos) <= self.params.train_radius {
             near
-        } else if late {
+        } else if late && !at_hand {
             // Nearest trainer by travel time (it may be worth a flight or the hearthstone).
             self.model
                 .trainers
@@ -840,28 +847,41 @@ impl Simulator<'_> {
 
     /// Kill or use what objective `k` of `quest` still needs at place `here`. Objects gathered
     /// among the mobs of an objective done just before (or mobs killed among the objects), close
-    /// by, take part of the time (`Together`).
+    /// by, take part of the time, and kills there wait for respawns with theirs (`Together`).
     fn complete_objective(&self, s: &mut State, quest: u32, k: u8, here: &Objective) {
         if s.objectives[quest as usize] & (1 << k) != 0 {
             return;
         }
-        let (kills, gathers) = self.objective_work(s, quest, k, here);
-        self.together(s, here, kills, gathers);
-    }
-
-    /// Add an objective done at `here` (`kills`, `gathers`: the time of each) to the objectives
-    /// done just before close by, and take off the time that saves (the same for the whole as when
-    /// done in one stop: gathering during `gather_overlap` of the kills).
-    fn together(&self, s: &mut State, here: &Objective, kills: f64, gathers: f64) {
-        let near = s.together.at.is_some_and(|at| {
-            at.continent == here.loc.pos.continent && at.dist(&here.loc.pos) <= self.params.gather_radius
-        });
-        if !near || here.dungeon_of().is_some() {
+        if !self.joins(&s.together, here) {
             s.together = Together {
                 at: (here.dungeon_of().is_none()).then_some(here.loc.pos),
                 ..Together::default()
             };
         }
+        let (kills, gathers) = self.objective_work(s, quest, k, here);
+        self.together(s, kills, gathers);
+    }
+
+    /// Whether an objective done at `here` is done with those of `t` (done just before, within
+    /// `gather_radius`; never in a dungeon).
+    pub(crate) fn joins(&self, t: &Together, here: &Objective) -> bool {
+        here.dungeon_of().is_none()
+            && t.at.is_some_and(|at| {
+                at.continent == here.loc.pos.continent && at.dist(&here.loc.pos) <= self.params.gather_radius
+            })
+    }
+
+    /// Respawns waited for by `mobs` kills of objective `o` done after those of `t`: what they
+    /// add to the wait of the whole (their own wait alone when not done with them).
+    pub(crate) fn shared_wait(&self, t: &Together, o: &Objective, mobs: f64) -> f64 {
+        let t = if self.joins(t, o) { *t } else { Together::default() };
+        t.with(kind_of(o), &o.pool, mobs).wait() - t.wait()
+    }
+
+    /// Add an objective done at the place of `s.together` (`kills`, `gathers`: the time of each)
+    /// to the objectives done just before, and take off the time that saves (the same for the
+    /// whole as when done in one stop: gathering during `gather_overlap` of the kills).
+    fn together(&self, s: &mut State, kills: f64, gathers: f64) {
         let t = &mut s.together;
         t.kills += kills;
         t.gathers += gathers;
@@ -890,19 +910,25 @@ impl Simulator<'_> {
         };
         // The fixed time too, by share of the targets left; common loot only for what the bags
         // lack.
-        let extra = match o.stock {
+        let share = match o.stock {
             Some(c) => {
                 let need = (o.count * left) as f32;
                 let have = s.stock[usize::from(c)].min(need).max(0.0);
                 s.stock[usize::from(c)] -= have;
                 if need > 0.0 {
-                    o.extra * left * f64::from((need - have) / need)
+                    left * f64::from((need - have) / need)
                 } else {
                     0.0
                 }
             }
-            None => o.extra * left,
+            None => left,
         };
+        // The respawns: waited for with the kills done there just before. Their mobs may spare
+        // the wait counted for those (less than nothing): the stops' waits add up to the whole's.
+        let mobs = o.kills * share;
+        let wait = self.shared_wait(&s.together, o, mobs);
+        s.together = s.together.with(kind_of(o), &o.pool, mobs);
+        let extra = (o.extra - o.pool.wait) * share + wait;
         let kill_work = kills * self.combat().kill_time(s.level, s.bonus, o);
         let other = uses * self.params.object_time + extra;
         self.growth().gather(s, o.loc.zone, kills);
@@ -1073,4 +1099,10 @@ pub(crate) fn recorder<'t>(trace: &'t mut Option<&mut Vec<Timed>>) -> impl FnMut
             });
         }
     }
+}
+
+/// The kind of an objective's mobs, for the spawns counted once at a place (`Together`): its
+/// first NPC, 0 for none.
+fn kind_of(o: &Objective) -> i64 {
+    o.mobs.first().map_or(0, |(id, _)| *id)
 }

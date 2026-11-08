@@ -38,7 +38,7 @@ pub use names::Names;
 pub(crate) use sources::{LinkKind, quest_links};
 pub use types::{
     ClassRequirement, CompletionWindow, Dungeon, DungeonDef, EntityKind, ExploreArea, FloorPoint, Guard, Initial, Loc,
-    Mate, MateStart, Model, Objective, ObjectiveOrder, ProfessionPlan, ProfessionTrainer, Profile, Quest,
+    Mate, MateStart, Model, Objective, ObjectiveOrder, Pool, ProfessionPlan, ProfessionTrainer, Profile, Quest,
     QuestOverride, QuestRequirement, SpellLevel, Spots, Teleport, TeleportDef, Vendor, race_bit,
 };
 
@@ -260,7 +260,10 @@ pub(crate) fn settle_quests(
     let versions = chains::class_quest_versions(quests, requirements, params.all_class_quests);
     for q in quests.iter_mut() {
         let forced = |d: usize| params.forced_dungeon_quests.contains(&dungeons[d].area);
-        q.mandatory |= q.objectives.iter().any(|o| o.dungeon_of().is_some_and(forced));
+        q.mandatory |= (0..dungeons.len()).any(|d| forced(d) && q.in_dungeon(d));
+    }
+    if let Some(area) = profile.dungeon_guide {
+        force_dungeon_guide_quests(quests, dungeons, area);
     }
     chains::require_alternatives(quests, requirements);
     chains::require_prerequisites(quests);
@@ -272,17 +275,39 @@ pub(crate) fn settle_quests(
     chains::default_completion_windows(quests, profile, params);
 }
 
+/// The quests of a dungeon guide's dungeon (area `area`): those of it (`Quest::in_dungeon`) or
+/// started there, whatever their level (the guide recommends the level they need,
+/// `job::dungeon_guide_level`). Every one of them is done, the guide going on until they are, as
+/// the quests of a forced zone (`zone_forced`, prerequisites included by
+/// `chains::require_prerequisites`).
+fn force_dungeon_guide_quests(quests: &mut [Quest], dungeons: &[Dungeon], area: i64) {
+    let Some(d) = dungeons.iter().position(|d| d.area == area) else {
+        return;
+    };
+    for q in quests.iter_mut() {
+        if q.in_dungeon(d) || q.start_dungeon == Some(d) {
+            q.mandatory = true;
+            q.zone_forced = true;
+        }
+    }
+}
+
 /// A dungeon holding an objective of a must-have quest is run like a forced one, and past its
 /// levels too: the quest asks for it. A dungeon the player forced stays within its levels, the
-/// route being refused when it cannot be run there.
-pub(crate) fn settle_dungeons(dungeons: &mut [Dungeon], quests: &[Quest], profile: &Profile) {
+/// route being refused when it cannot be run there. A dungeon guide's dungeon is run at any level
+/// (up to `max_level`, the game's): the player chose it.
+pub(crate) fn settle_dungeons(dungeons: &mut [Dungeon], quests: &[Quest], profile: &Profile, max_level: i64) {
     for q in quests.iter().filter(|q| q.required) {
-        for d in q.objectives.iter().filter_map(Objective::dungeon_of) {
-            dungeons[d].needed = true;
+        for (d, dungeon) in dungeons.iter_mut().enumerate() {
+            dungeon.needed |= q.in_dungeon(d);
         }
     }
     for d in dungeons.iter_mut().filter(|d| d.needed) {
         d.max_level = d.max_level.max(profile.to_level);
+    }
+    for d in dungeons.iter_mut().filter(|d| Some(d.area) == profile.dungeon_guide) {
+        d.needed = true;
+        d.max_level = max_level;
     }
 }
 
@@ -334,7 +359,7 @@ fn build_quests(
     params: &Params,
     starts: &[&crate::job::StartState],
 ) -> (Vec<Quest>, Vec<(i64, String, String)>) {
-    let builder = QuestBuilder::new(sources, world, profile, params, starts);
+    let mut builder = QuestBuilder::new(sources, world, profile, params, starts);
     // The quests the player asked for (see `asked_quests`) are done even when their mobs are
     // elites, or an item they ask for is only sold at the auction house.
     let for_asked = Params {
@@ -342,7 +367,12 @@ fn build_quests(
         auction_house: true,
         ..params.clone()
     };
-    let asked = QuestBuilder::new(sources, world, profile, &for_asked, starts);
+    let mut asked = QuestBuilder::new(sources, world, profile, &for_asked, starts);
+    // A dungeon guide's quests and their chains are its whatever their level (the last of a
+    // chain is often above the dungeon's); the others are left out once its quests are known
+    // (`derive::settle`).
+    builder.any_level = profile.dungeon_guide.is_some();
+    asked.any_level = builder.any_level;
     let asked_ids = asked_quests(sources, profile, params);
     let mut quests = Vec::new();
     let mut skipped = Vec::new();
@@ -367,13 +397,17 @@ fn build_quests(
     (quests, skipped)
 }
 
-/// The quests the player asked for: the must-haves, those of a dungeon forced with its quests
-/// (filed under it), and every quest they need first.
+/// The quests the player asked for: the must-haves, those of a dungeon forced with its quests or
+/// of the dungeon guide's (filed under it), and every quest they need first.
 fn asked_quests(sources: &Sources, profile: &Profile, params: &Params) -> HashSet<i64> {
     let mut todo: Vec<i64> = profile.required_quests.iter().map(|q| q.id).collect();
     todo.extend(
         (sources.rows.iter())
-            .filter(|r| r.sort.is_some_and(|zone| params.forced_dungeon_quests.contains(&zone)))
+            .filter(|r| {
+                r.sort.is_some_and(|zone| {
+                    params.forced_dungeon_quests.contains(&zone) || profile.dungeon_guide == Some(zone)
+                })
+            })
             .map(|r| r.id),
     );
     let mut asked = HashSet::new();

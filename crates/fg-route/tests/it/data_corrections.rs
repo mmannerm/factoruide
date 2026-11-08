@@ -315,3 +315,51 @@ fn present_quest_corrections_reject_unknown_prerequisites() {
         );
     }
 }
+
+#[test]
+fn forever_call_of_fire_keeps_braziers_as_interactions() {
+    let conn = database_of("forever");
+    let o = overrides(Edition::Forever);
+    let mut req = request(&json!([97257]));
+    req.race = "skyborne_horde".into();
+    req.class = "shaman".into();
+    req.from_level = 10;
+    req.to_level = 60;
+    req.start = Some(StartState {
+        level: 10,
+        completed: vec![QuestId(97245)],
+        ..StartState::default()
+    });
+    let p = job::prepare(&conn, &o, &req, &|_| {}).unwrap();
+    let q = &p.model.quests[p.model.index[&97257]];
+    assert_eq!(q.time_limit, Some(360.0));
+    assert_eq!(q.objectives.len(), 2);
+    for (o, (npc, slot)) in q.objectives.iter().zip([(268762, 1), (268679, 2)]) {
+        assert_eq!((o.loc.id, o.kills, o.uses, o.slot), (npc, 0.0, 1.0, Some(slot)));
+    }
+    assert!(q.objectives[0].text.contains("ritual with Olariaan"));
+    assert!(q.objectives[1].text.contains("Torch of Eternal Flame"));
+    let lightning = &p.model.quests[p.model.index[&92550]];
+    assert!(
+        lightning
+            .objectives
+            .iter()
+            .any(|o| o.loc.id == 251662 && (o.kills - 4.0).abs() < f64::EPSILON),
+        "neutral combat objectives remain kills"
+    );
+    let mut stale = o;
+    stale
+        .quest_overrides
+        .iter_mut()
+        .find(|q| q.id == 97257)
+        .unwrap()
+        .interactions
+        .as_mut()
+        .unwrap()[0]
+        .npc = 999_999_999;
+    let error = job::prepare(&conn, &stale, &req, &|_| {}).err().unwrap();
+    assert!(
+        format!("{error:#}").contains("interaction target is not an NPC objective"),
+        "{error:#}"
+    );
+}

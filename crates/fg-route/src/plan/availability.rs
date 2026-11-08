@@ -15,6 +15,8 @@ pub(crate) struct Availability<'v> {
     /// Replaying an imposed route: gray quests are taken as it says.
     pub(crate) replaying: bool,
     pub(crate) followers: &'v [Vec<u32>],
+    /// The mandatory breadcrumbs to each quest (`Indexes::breadcrumbs`).
+    pub(crate) breadcrumbs: &'v [Vec<u32>],
 }
 
 impl Availability<'_> {
@@ -109,9 +111,19 @@ impl Availability<'_> {
             && s.log < self.params.quest_log_size
             && self.prereqs_met(s, i)
             && !self.blocked(s, q)
+            && !self.breadcrumb_first(s, i)
             && q.skill
                 .is_none_or(|(p, value)| self.model.professions[p].skill_at(s.level) >= value)
             && !self.gray_dead_end(s, q, i)
+    }
+
+    /// A breadcrumb to quest `i` the route must do is not taken yet: taking `i` would close it
+    /// (Trouble in the Deeps, needed by Allegiance to the Old Gods, before The Essence of
+    /// Aku'Mai). An imposed route being replayed takes what it says.
+    fn breadcrumb_first(&self, s: &State, i: u32) -> bool {
+        !self.replaying
+            && (self.breadcrumbs[i as usize].iter())
+                .any(|&b| !s.accepted[b as usize] && !s.rewarded(b as usize) && !self.blocked(s, self.quest_at(b)))
     }
 
     /// Whether quest `q` gives reputation a goal still misses.
@@ -241,10 +253,9 @@ impl Availability<'_> {
         Some(chain)
     }
 
-    /// Quests with objectives inside dungeon `d`.
+    /// The quests of dungeon `d` (`Quest::in_dungeon`).
     pub(crate) fn dungeon_quests(&self, d: usize) -> impl Iterator<Item = u32> + '_ {
-        (0..self.model.quests.len() as u32)
-            .filter(move |&i| self.quest_at(i).objectives.iter().any(|o| o.dungeon_of() == Some(d)))
+        (0..self.model.quests.len() as u32).filter(move |&i| self.quest_at(i).in_dungeon(d))
     }
 
     /// Dungeon `d` may be entered now: allowed, not entered before, within its levels.

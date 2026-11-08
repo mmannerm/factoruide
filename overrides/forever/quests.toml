@@ -76,3 +76,12 @@ stealth_object = 673394
 [[quest]]
 id = 98396 # Night elf
 stealth_object = 673394
+
+# The ritual and torch use give creature credits for the braziers.
+# https://www.wowhead.com/forever/quest=97257/call-of-fire
+[[quest]]
+id = 97257
+interactions = [
+    { npc = 268762, text = "Complete the ritual with Olariaan at the Brazier of Offering" },
+    { npc = 268679, text = "Use Torch of Eternal Flame to light the Brazier of Eternal Flame" },
+]
