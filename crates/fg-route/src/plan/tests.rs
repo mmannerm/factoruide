@@ -561,6 +561,39 @@ fn profession_quests_are_kept_once_gray() {
     assert_eq!(score(&p, &without).1.missing_profession_quests, 0);
 }
 
+#[test]
+fn required_quest_repair_waits_for_profession_skill() {
+    let mut p = quests_at_start(2);
+    p.profile.to_level = 3;
+    let mut cooking = crate::model::ProfessionPlan::new(&crate::profession::ProfessionGoal {
+        key: "cooking".into(),
+        target: 100,
+        start_level: Some(1),
+        milestones: vec![],
+    })
+    .unwrap();
+    cooking.curve = vec![100; 61];
+    cooking.curve[1] = 1;
+    p.model.professions = vec![cooking];
+    p.model.quests[0].skill = Some((0, 100));
+    p.model.quests[0].mandatory = true;
+    p.model.quests[0].required = true;
+    p.model.quests[1].xp = 400;
+    let plan = planner(&p);
+    let route = vec![Stop::quest(1, Kind::Accept), Stop::quest(1, Kind::TurnIn)];
+    let repaired = plan.insert_missing_mandatory(route);
+    plan.validate_required(&repaired).unwrap();
+    let trained = repaired
+        .iter()
+        .position(|s| *s == Stop::quest(1, Kind::TurnIn))
+        .unwrap();
+    let accepted = repaired
+        .iter()
+        .position(|s| *s == Stop::quest(0, Kind::Accept))
+        .unwrap();
+    assert!(accepted > trained, "the skill threshold is reached at level 2");
+}
+
 /// A road east of the start lined with mobs of level 1: three of quest 0's (its objective is
 /// done at the end of the road) and three others. Farming on the way is on, without a cap, and
 /// every mob met is killed (`farm_share` 1).

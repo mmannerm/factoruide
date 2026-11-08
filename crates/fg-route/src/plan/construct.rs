@@ -681,12 +681,14 @@ impl Planner<'_> {
                 .filter(|s| !s.is_quest() || s.index != q)
                 .collect();
             let Some(run) = self.run(&candidate) else { continue };
-            // Not before the level it needs, nor before its prerequisites.
+            // Not before it can be taken (including profession skill), unless already in the log.
             let quest = self.quest(q);
             let after = run
                 .states
                 .iter()
-                .position(|st| st.level >= quest.min_level && self.availability().prereqs_met(st, q))
+                .position(|st| {
+                    st.level >= quest.min_level && (self.in_log_at_start(q) || self.availability().can_accept(st, q))
+                })
                 .unwrap_or(candidate.len())
                 .min(candidate.len());
             self.insert_quest_after(&mut candidate, q, after);

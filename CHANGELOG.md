@@ -12,6 +12,7 @@ An addon change also goes, in the same words, under Unreleased in that addon's o
 
 - Timed quests postpone optional farming on walks until the delivery is finished; explicitly farmed walks still use the quest's timer.
 - WoW Forever: Call of Fire guides complete Olariaan's ritual and light the Brazier of Eternal Flame.
+- Required profession quests are reinserted after the character reaches their skill requirement.
 
 ### WoW data
 
