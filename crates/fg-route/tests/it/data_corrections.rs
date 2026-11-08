@@ -344,7 +344,7 @@ fn forever_call_of_fire_keeps_neutral_braziers_as_interactions() {
         lightning
             .objectives
             .iter()
-            .any(|o| o.loc.id == 251662 && o.kills == 4.0),
+            .any(|o| o.loc.id == 251662 && (o.kills - 4.0).abs() < f64::EPSILON),
         "neutral combat objectives remain kills"
     );
     let mut stale = o;
