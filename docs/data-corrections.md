@@ -1,8 +1,8 @@
 # Data corrections
 
 The fork uses upstream's bundled databases without editing their archives. The current Forever
-import records identify QuestieDB `8086696078`, Questie `a2800fd3ae`, AllTheThings `7bf3b5e17b`
-and client cache build `70790` in the [upstream snapshot](https://github.com/brouznouf/factoruide/blob/5def9b54150bbd57a3f35a6273972123a636634a/data/forever.sqlite.zst).
+import records identify QuestieDB `aa1d7e7294`, Questie `90417a4c7d`, AllTheThings `aa43dec3b6`
+and client cache builds `70790` and `70862` in the [upstream snapshot](https://github.com/brouznouf/factoruide/blob/c27f59d1804367fe367407b74483ac89a5d4f64b/data/forever.sqlite.zst).
 
 Source-data corrections live in `overrides/database/`; upstream's database builder reapplies them
 at each build. The builder is not included in this checkout. The fork's remaining runtime

@@ -47,6 +47,9 @@ pub struct Profile {
     pub mates: Vec<Mate>,
     /// The character's "Name-Realm" in a group guide (empty alone).
     pub player: String,
+    /// A dungeon guide's dungeon (instance area): the guide does every quest of it the character
+    /// can take by `to_level`, and what they need first, nothing else (`PlanRequest::dungeon`).
+    pub dungeon_guide: Option<i64>,
 }
 
 /// A class quest the route must do (`m_class_requirement`): the quests teaching a spell, or the
@@ -263,6 +266,9 @@ pub struct Objective {
     /// come in each pull there (1: they stand alone).
     pub spawns: u32,
     pub pack: f64,
+    /// Its normal mobs' respawns at its spot, for the wait shared with the objectives done
+    /// there just before (`Pool`): default (none) for the others.
+    pub pool: Pool,
     /// Hostile mobs around where it is done.
     pub guard: Guard,
     /// Accessible without combat: beside the giver, or protected by the quest's blessing.
@@ -294,6 +300,32 @@ pub struct Objective {
     /// Seconds the item it gets lasts (a Fresh Zhevra Carcass rots in 30 minutes): the
     /// objectives using it are done before.
     pub lasts: Option<f64>,
+}
+
+/// The mobs of a kill objective at its spot, as the respawn wait sees them: the spawns the
+/// character has for itself (shared with the crowd), how many of them come back each second,
+/// the kill time the wait was measured with, and the wait when the objective is done alone
+/// (part of `Objective::extra`). Kill objectives done one after the other at one place wait for
+/// the respawns of all their mobs together (`plan::Together`): while some come back, the
+/// others are killed.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct Pool {
+    pub mine: f64,
+    pub rate: f64,
+    pub each: f64,
+    pub wait: f64,
+}
+
+impl Pool {
+    /// Seconds waited for respawns killing `work` mobs of `each` seconds among `mine` spawns
+    /// coming back `rate` a second: once those are killed, the time between two respawns beyond
+    /// the kill itself, for each mob left. Nothing at an unknown spot.
+    pub fn wait_for(work: f64, mine: f64, rate: f64, each: f64) -> f64 {
+        if mine <= 0.0 || rate <= 0.0 || work <= mine {
+            return 0.0;
+        }
+        (1.0 / rate - each).max(0.0) * (work - mine)
+    }
 }
 
 /// A vendor selling an objective's item: where it stands, and its supply when limited (how many
@@ -549,6 +581,13 @@ pub struct Quest {
 }
 
 impl Quest {
+    /// Whether it is a quest of dungeon `d`: an objective inside, or handed in inside (Deathstalkers
+    /// in Shadowfang, ended to Deathstalker Vincent in the keep).
+    pub fn in_dungeon(&self, d: usize) -> bool {
+        self.objectives.iter().any(|o| o.dungeon_of() == Some(d))
+            || self.ends.iter().any(|l| l.inside.is_some_and(|i| usize::from(i) == d))
+    }
+
     /// The dungeon one of its objectives belongs to (`Objective::dungeon_of`), else the one it is
     /// handed in inside.
     pub fn dungeon(&self) -> Option<usize> {
