@@ -1635,3 +1635,89 @@ fn a_return_to_a_place_is_merged_into_the_visit_before() {
     assert_eq!(merged, stops(&[(0, a), (1, a), (2, a), (1, t), (2, t), (0, o), (0, t)]));
     assert!(cost < planner.simulate(&route, None).unwrap());
 }
+
+#[test]
+fn timed_deliveries_defer_automatic_farming() {
+    use super::Event;
+    use crate::testing::{At, Obj, Q, Scenario};
+    for timed in [true, false] {
+        let mut delivery = Q::new(800, "Delivery")
+            .level(10)
+            .giver(1, 50.0, 50.0)
+            .turn_in_at(1, 90.0, 50.0)
+            .objective(Obj::visit(
+                "Deliver supplies",
+                At {
+                    zone: 1,
+                    x: 90.0,
+                    y: 50.0,
+                },
+            ))
+            .xp(100);
+        if timed {
+            delivery = delivery.timed(120.0);
+        }
+        let p = Scenario::new()
+            .levels(10, 11)
+            .quest(delivery)
+            .required(800)
+            .mobs(1, 70.0, 50.0, 10, 8)
+            .params(|p| {
+                p.farm_on_way = true;
+                p.farm_cap = 1.0;
+                p.farm_share = 1.0;
+                p.farm_corridor = 25.0;
+            })
+            .build();
+        let plan = Planner::new(&p.model, &p.world, &p.params, &p.profile);
+        let route = [
+            Stop::quest(0, Kind::Accept),
+            Stop::quest(0, Kind::Objective(0)),
+            Stop::quest(0, Kind::TurnIn),
+        ];
+        let mut trace = Vec::new();
+        plan.simulate_full(&route, Some(&mut trace)).unwrap();
+        plan.validate_required(&route).unwrap();
+        let accept = trace
+            .iter()
+            .position(|t| matches!(t.event, Event::Stop { stop, .. } if stop.kind == Kind::Accept))
+            .unwrap();
+        let turn_in = trace
+            .iter()
+            .position(|t| matches!(t.event, Event::Stop { stop, .. } if stop.kind == Kind::TurnIn))
+            .unwrap();
+        let farmed = trace[accept..turn_in]
+            .iter()
+            .any(|t| matches!(t.event, Event::Farm { .. }));
+        assert_eq!(farmed, !timed);
+        if timed {
+            assert!(trace[turn_in].time - trace[accept].time < 90.0);
+        }
+        let edited = plan.replaying().explicit().edit(&[
+            super::Edit::Stop {
+                stop: route[0],
+                farm: false,
+                spot: None,
+            },
+            super::Edit::Stop {
+                stop: route[1],
+                farm: true,
+                spot: None,
+            },
+            super::Edit::Stop {
+                stop: route[2],
+                farm: false,
+                spot: None,
+            },
+        ]);
+        if timed {
+            assert_eq!(
+                edited.steps[1].outcome,
+                super::Outcome::Invalid("quest time limit passed")
+            );
+        } else {
+            assert!(edited.breakdown.farm_xp > 0, "explicit farming remains available");
+            assert_eq!(edited.errors(), 0);
+        }
+    }
+}

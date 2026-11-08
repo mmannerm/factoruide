@@ -17,7 +17,8 @@ Duplicate prerequisite links from different sources count once. Race and class a
 keep eligible branches when any exist. Edition-specific `quests.toml` can replace `pre_all`
 or `pre_any`, and list the `spells` a quest grants. These corrections apply whenever a database
 is loaded, including after a refresh.
-Availability, exclusivity and child links come from the database.
+Availability, exclusivity and child links come from the database. Quest `interactions` specify
+NPC credits completed by acting on the target, preserving the quest's wording and objective slots.
 For a trial with `stealth_object`, the model adds a visit to the blessing's object before its
 collection objectives and omits their guard fights. The guide asks the player to renew the
 blessing as needed; detection failures and blessing expiry are not simulated.
@@ -108,6 +109,8 @@ level:
   `farm_share` (80%) of the mobs met are killed, fewer on a crowded server (the other players
   take their share, as at an objective's spot); the mobs of the log's quests are left to their
   objectives, which count them where they are done.
+  Automatic farming waits while a quest or carried-item timer runs; explicitly farmed walks
+  remain subject to the timer.
   By default professions add no time or steps: only their quests are planned, once the skill curve reaches
   them (optional in the guide). Their reward is the profession's, not XP: they are kept once gray,
   and each one left out costs `profession_quest_weight`. With `profession_trainers` (off by

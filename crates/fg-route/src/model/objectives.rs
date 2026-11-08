@@ -91,6 +91,24 @@ impl QuestBuilder<'_> {
     pub(super) fn objectives(&self, r: &QuestRow, givers: &Givers) -> Result<Vec<Objective>, Skip> {
         let quest = self.context(r, givers);
         let rows = self.sources.objectives.get(&r.id).cloned().unwrap_or_default();
+        if let Some(interactions) = self
+            .profile
+            .quest_overrides
+            .iter()
+            .find(|q| q.id == r.id)
+            .and_then(|q| q.interactions.as_ref())
+        {
+            for interaction in interactions {
+                if !rows.iter().any(|(kind, id, ..)| {
+                    matches!(
+                        kind,
+                        ObjectiveKind::Creature | ObjectiveKind::KillCredit | ObjectiveKind::Talk
+                    ) && *id == Some(interaction.npc)
+                }) {
+                    return Err("interaction target is not an NPC objective");
+                }
+            }
+        }
         // Filed under a dungeon, objectives unknown ("Look for Daewyn in Whelgar's Excavation
         // Site"): done by running the dungeon, not free.
         if rows.is_empty()
@@ -270,7 +288,21 @@ impl QuestBuilder<'_> {
     }
 
     /// One objective; None when there is nothing to do for it (the item is given on accepting).
-    fn objective(&self, quest: &QuestContext<'_>, row: ObjectiveRow) -> Result<Option<Objective>, Skip> {
+    fn objective(&self, quest: &QuestContext<'_>, mut row: ObjectiveRow) -> Result<Option<Objective>, Skip> {
+        if matches!(
+            row.0,
+            ObjectiveKind::Creature | ObjectiveKind::KillCredit | ObjectiveKind::Talk
+        ) && let Some(interaction) = self
+            .profile
+            .quest_overrides
+            .iter()
+            .find(|q| q.id == quest.row.id)
+            .and_then(|q| q.interactions.as_ref())
+            .and_then(|actions| actions.iter().find(|a| Some(a.npc) == row.1))
+        {
+            row.0 = ObjectiveKind::Talk;
+            row.2 = Some(interaction.text.clone());
+        }
         if self.sources.pvp.contains(&quest.row.id) {
             return Ok(Some(self.battleground(quest, row)));
         }

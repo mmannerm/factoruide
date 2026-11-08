@@ -8,6 +8,11 @@ An addon change also goes, in the same words, under Unreleased in that addon's o
 
 ## Unreleased
 
+### Guides
+
+- Timed quests postpone optional farming on walks until the delivery is finished; explicitly farmed walks still use the quest's timer.
+- WoW Forever: Call of Fire guides complete Olariaan's ritual and light the Brazier of Eternal Flame.
+
 ### WoW data
 
 - WoW Forever: the latest quest data and the game's new build, with 26 more contributions from players (quests seen in game, measured XP, creature places) and 55 Spanish, French and English names checked; Lakeshire's guards no longer count as hostile creatures around Guard Howe and Deputy Feldon.

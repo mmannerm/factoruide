@@ -717,6 +717,14 @@ pub struct QuestOverride {
     /// Object granting the quest's temporary stealth for its collection objectives.
     pub stealth_object: Option<i64>,
     pub auction_start: Option<AuctionStart>,
+    /// Creature credits completed by an interaction, with the quest's instructions.
+    pub interactions: Option<Vec<QuestInteraction>>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct QuestInteraction {
+    pub npc: i64,
+    pub text: String,
 }
 
 /// A quest starter made from bought inputs. Stock and affordability are assumed, as for
