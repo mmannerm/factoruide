@@ -82,6 +82,9 @@ impl Worth<'_> {
     /// Whether a quest beats grinding, counting the trip from where we are.
     pub(crate) fn worth_it(&self, s: &State, i: u32, level: i64, trip: f64) -> bool {
         let q = self.quest(i);
+        if self.model.levels_ignored {
+            return q.mandatory;
+        }
         let might = s.might();
         // Content far beyond our reach would block a quest log slot until we level up.
         let hardest = q
@@ -131,6 +134,9 @@ impl Worth<'_> {
     /// weighs a quest to take.
     pub(crate) fn finish_worth_it(&self, s: &State, i: u32) -> bool {
         let q = self.quest(i);
+        if self.model.levels_ignored {
+            return q.mandatory;
+        }
         let level = s.level;
         let left: Vec<_> = (q.objectives.iter().enumerate())
             .filter(|(k, _)| s.objectives[i as usize] & (1 << k) == 0)

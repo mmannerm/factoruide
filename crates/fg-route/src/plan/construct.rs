@@ -276,7 +276,7 @@ impl Planner<'_> {
             // done one after the other, while the clock runs.
             let class = if self.on_clock(s, i) { class * 0.2 } else { class };
             // Givers and turn-ins among mobs too strong for the character wait.
-            let reach = self.params.reach(s.level, s.might());
+            let reach = self.quest_reach(s);
             let guarded = |g| self.combat().guard_need(g) > reach;
             if s.accepted[iu] {
                 if self.availability().objectives_done(s, i) {
@@ -1166,7 +1166,7 @@ impl Planner<'_> {
         {
             return None;
         }
-        let reach = self.params.reach(s.level, s.might());
+        let reach = self.quest_reach(s);
         let bound = self.trips().bound(s);
         let pick_up = self.availability().dungeon_quests(d).find(|&i| {
             let iu = i as usize;

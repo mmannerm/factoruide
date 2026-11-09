@@ -13,10 +13,19 @@ An addon change also goes, in the same words, under Unreleased in that addon's o
 - Timed quests postpone optional farming on walks until the delivery is finished; explicitly farmed walks still use the quest's timer.
 - WoW Forever: Call of Fire guides complete Olariaan's ritual and light the Brazier of Eternal Flame.
 - Required quests are reinserted after their skill requirement is reached, trying the route's end when an earlier placement fails.
+- Objective guides honor explicit quest completion windows and include the prerequisites and dungeons of individually selected quests. Choosing Shipping Label adds the crate purchase and filling steps when needed.
+
+### App
+
+- Objective guides replace the dungeon guide: pick several dungeons, zones and quests at once, and get every quest of them with what leads to them, in the best order, whatever their level; the guide tells the level its quests ask and lists those above yours.
+
+### Addon
+
+- An objective guide done below the level its quests ask says so on the current step until you reach it.
 
 ### WoW data
 
-- WoW Forever: the latest quest data and the game's new build, with 34 more contributions from players (quests seen in game, measured XP and drop rates, creature places) and 105 Spanish, French, German and English names checked; Lakeshire's guards no longer count as hostile creatures around Guard Howe and Deputy Feldon.
+- WoW Forever: the latest quest data and the game's new build, with 58 more contributions from players (quests seen in game, measured XP and drop rates, creature places) and 134 Spanish, French, German and English names checked; most of the Riverglades quests are in the guides, dungeon quests give their new, higher XP, and Lakeshire's guards and Guard Parker's supply crates no longer count as hostile creatures.
 
 ## 0.16.0 (2026-11-07)
 

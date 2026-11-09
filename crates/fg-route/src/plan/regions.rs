@@ -173,7 +173,7 @@ impl Planner<'_> {
         let q = self.quest(i);
         q.objectives.iter().enumerate().find_map(|(k, o)| {
             let stop = Stop::quest(i, Kind::Objective(k as u8));
-            let level_ok = self.combat().need(q, o) <= self.params.reach(s.level, s.might());
+            let level_ok = self.combat().need(q, o) <= self.quest_reach(s);
             (self.availability().objective_open(s, i, k)
                 && level_ok
                 && o.dungeon_of().is_none()
@@ -276,7 +276,7 @@ impl Planner<'_> {
                 } else {
                     for (k, o) in q.objectives.iter().enumerate() {
                         let stop = Stop::quest(i, Kind::Objective(k as u8));
-                        let level_ok = self.combat().need(q, o) <= self.params.reach(s.level, s.might());
+                        let level_ok = self.combat().need(q, o) <= self.quest_reach(s);
                         if self.availability().objective_open(s, i, k)
                             && level_ok
                             && o.dungeon_of().is_none()
@@ -431,7 +431,7 @@ impl Planner<'_> {
                 "prerequisites not done"
             } else if self.availability().blocked(s, q) {
                 "exclusive"
-            } else if hardest > self.params.reach(s.level + 1, s.might()) {
+            } else if !self.model.levels_ignored && hardest > self.params.reach(s.level + 1, s.might()) {
                 "mobs too high"
             } else if !self.worth().worth_it(s, i as u32, s.level, 0.0) {
                 "not worth it"

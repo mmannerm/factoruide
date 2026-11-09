@@ -1,8 +1,8 @@
 # Data corrections
 
 The fork uses upstream's bundled databases without editing their archives. The current Forever
-import records identify QuestieDB `aa1d7e7294`, Questie `90417a4c7d`, AllTheThings `1528abd825`,
-EG Link `45f58b070b`, and client cache builds `70790` and `70862` in the [upstream snapshot](https://github.com/brouznouf/factoruide/blob/01b04cfd91c0056164946ecf8cf0280415a85b69/data/forever.sqlite.zst).
+import records identify QuestieDB `c1b50fefb1`, Questie `d6f33444c2`, AllTheThings `40f463983d`,
+EG Link `156f29c9af`, and client cache builds `70790` and `70862` in the [upstream snapshot](https://github.com/brouznouf/factoruide/blob/1c8e8352cdf7c1cac35e59efbc04e6d81b0d00e5/data/forever.sqlite.zst).
 The archive's `import_run` table and [NOTICE](../NOTICE.md) record the complete source provenance.
 
 Source-data corrections live in `overrides/database/`; upstream's database builder reapplies them
@@ -15,7 +15,7 @@ corrections add behavior or facts the bundled data does not yet supply:
 | Cat relic trials | The [Skyborne](https://www.wowhead.com/forever/quest=98404/the-great-windborne-cat-spirit), [Tauren](https://www.wowhead.com/forever/quest=98342/the-great-cat-spirit) and [Night elf](https://www.wowhead.com/forever/quest=98396/the-great-cat-spirit) trials use the entrance statue's temporary stealth to collect relics. Guards keep their actual levels. The guide asks the player to renew the blessing; expiry and detection failures are not simulated. |
 | Druid training | [Blizzard's October 1](https://us.forums.blizzard.com/en/wow/t/2360696/4) and [October 15](https://us.forums.blizzard.com/en/wow/t/2360696/6) updates and [client spell levels](https://wago.tools/db2/SpellLevels?build=1.60.1.70532&useHotfixes=1): Shred rank 1 at level 20, Tiger's Fury omitted from training estimates. |
 | Wind bridge | [Path 12018](https://wago.tools/db2/TaxiPathNode?build=1.60.1.70532&useHotfixes=1) is one way and available while the faction's Confront Lorthuna is held. The bundled client path now contains the same geometry, but its node is not a faction flight node, so ordinary flight routing does not expose it. |
-| Shipping Label | Requiring #98247 (Alliance) or #98248 (Horde) adds an Auction House stop for one Apprentice Herbs crate and 20 Peacebloom per character needing a label, then filling it before accepting the quest. Sources are linked in `overrides/forever/quests.toml`. |
+| Shipping Label | Requiring #98247 (Alliance) or #98248 (Horde), or choosing it as a quest objective, adds an Auction House stop for one Apprentice Herbs crate and 20 Peacebloom per character needing a label. Fill the crate before accepting the quest. Sources are linked in `overrides/forever/quests.toml`. |
 
 Shipping Label estimates assume auction stock and affordability, using the ordinary purchase-time
 estimate. Use owned inputs when possible. Random crate drops, other bundles and repeat deliveries

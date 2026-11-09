@@ -153,7 +153,7 @@ impl Trips<'_> {
     }
 
     pub(crate) fn walk(&self, a: &Pos, b: &Pos, level: i64) -> f64 {
-        let closed = if self.open_walks {
+        let closed = if self.open_walks || self.model.levels_ignored {
             0
         } else {
             self.world.walk_level(level)
@@ -184,6 +184,8 @@ impl Trips<'_> {
         let band = ((level.clamp(1, 250) + 4) / 5 * 5) as u8;
         if self.params.gold_weight > 0.0 && f64::from(band) > crate::params::GOLD_WEIGHT_LEVEL {
             band
+        } else if self.model.levels_ignored {
+            0
         } else {
             self.world.walk_level(level)
         }

@@ -260,7 +260,7 @@ impl<'s> Simulator<'s> {
     /// The level a walk at `level` is made at: the zones closed to it (`World::walk_level`), none
     /// when the walks are open.
     pub(crate) fn walk_level(&self, level: i64) -> u8 {
-        if self.open_walks {
+        if self.open_walks || self.model.levels_ignored {
             0
         } else {
             self.world.walk_level(level)

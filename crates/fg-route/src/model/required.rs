@@ -1,6 +1,6 @@
 //! Select a feasible prerequisite branch for every exact quest requirement.
 
-use super::{Profile, Quest};
+use super::{GuideObjective, Profile, Quest};
 use crate::params::Params;
 use anyhow::{Context, Result, bail};
 use std::collections::{HashMap, HashSet};
@@ -110,11 +110,15 @@ pub(super) fn apply(
     quests: &mut Vec<Quest>,
     rows: &[super::sources::QuestRow],
     class_quests: &HashSet<i64>,
-    skipped: &[(i64, String, String)],
+    skipped: &mut Vec<(i64, String, String)>,
     profile: &Profile,
     params: &Params,
 ) -> Result<()> {
-    if profile.required_quests.is_empty() {
+    let objectives = profile.objectives.iter().filter_map(|o| match *o {
+        GuideObjective::Quest(id) => Some(id),
+        _ => None,
+    });
+    if profile.required_quests.is_empty() && objectives.clone().next().is_none() {
         return Ok(());
     }
     let roots: Vec<_> = profile.required_quests.iter().map(|r| r.id).collect();
@@ -141,6 +145,20 @@ pub(super) fn apply(
             }
         }
     }
+    // Select prerequisites for individually chosen objectives. The preview can report an
+    // unavailable objective, while an unavailable must-have still rejects the request.
+    let mut objective_chains = selected.clone();
+    let mut excluded_objectives = Vec::new();
+    for id in objectives {
+        let Some(&i) = required.index.get(&id) else {
+            continue;
+        };
+        let mut branch = objective_chains.clone();
+        match required.add(id, &mut branch, &mut HashSet::new()) {
+            Ok(()) => objective_chains = branch,
+            Err(error) => excluded_objectives.push((id, quests[i].name.clone(), format!("{error:#}"))),
+        }
+    }
     // Optional quests must not close an explicitly selected branch before it can be done.
     let incompatible: HashSet<_> = quests
         .iter()
@@ -155,6 +173,10 @@ pub(super) fn apply(
         .collect();
     for q in quests.iter_mut() {
         q.required = selected.contains(&q.id);
+        if profile.objective_guide() && objective_chains.contains(&q.id) {
+            q.zone_forced = true;
+            q.mandatory = true;
+        }
         q.priority_deadline = deadlines.get(&q.id).copied();
         if let Some(request) = profile.required_quests.iter().find(|r| r.id == q.id) {
             q.completion_window = request.window;
@@ -174,8 +196,10 @@ pub(super) fn apply(
         .map(|r| r.id)
         .collect();
     quests.retain(|q| {
-        !incompatible.contains(&q.id) && (q.required || class_quests.contains(&q.id) || ordinary.contains(&q.id))
+        !incompatible.contains(&q.id)
+            && (profile.objective_guide() || q.required || class_quests.contains(&q.id) || ordinary.contains(&q.id))
     });
+    skipped.extend(excluded_objectives);
     Ok(())
 }
 
@@ -189,7 +213,7 @@ mod tests {
     #[test]
     fn a_must_have_quest_left_out_says_why() {
         let mut quests = Vec::new();
-        let skipped = [(21, "Skirmish".to_owned(), "excluded by configuration".to_owned())];
+        let mut skipped = vec![(21, "Skirmish".to_owned(), "excluded by configuration".to_owned())];
         let profile = Profile {
             required_quests: vec![super::super::QuestRequirement {
                 id: 21,
@@ -201,7 +225,7 @@ mod tests {
             &mut quests,
             &[],
             &HashSet::new(),
-            &skipped,
+            &mut skipped,
             &profile,
             &Params::default(),
         )
