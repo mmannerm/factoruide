@@ -96,7 +96,7 @@ zone = 17
 xp = 1950
 starts = [{ object = 415106 }, { object = 415107 }, { object = 417072 }, { object = 424010 }]
 ends = [{ object = 424005 }]
-pre_all = [79007, 79008]
+pre_any = [79007, 79008]
 objectives = []
 rewards = [{ item = 221498, count = 1, choice = true }]
 

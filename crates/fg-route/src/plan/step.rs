@@ -668,6 +668,14 @@ impl Simulator<'_> {
 
     fn stop_gate(&self, s: &State, stop: Stop, spot: Option<&Objective>) -> i64 {
         let i = stop.index as usize;
+        if self.model.levels_ignored {
+            return match stop.kind {
+                Kind::Accept if self.quest(stop.index).time_limit.is_some() => self.completion_gate(s, stop.index),
+                Kind::TurnIn => self.completion_gate(s, stop.index),
+                Kind::Dungeon => self.dungeon_completion_gate(s, i),
+                _ => 0,
+            };
+        }
         match stop.kind {
             Kind::Accept => {
                 let q = self.quest(stop.index);
@@ -690,14 +698,19 @@ impl Simulator<'_> {
             ),
             // A must-have quest the player asked at a level has its dungeon run from it (not the
             // default window: it only keeps the hand-in at a fair level).
-            Kind::Dungeon => self.ix.in_dungeon[i]
-                .iter()
-                .map(|&(q, _)| q as usize)
-                .filter(|&q| self.model.quests[q].mandatory && !self.model.quests[q].implicit_window && !s.turned[q])
-                .filter_map(|q| self.model.quests[q].completion_window.min_level)
-                .fold(self.model.dungeons[i].min_level, i64::max),
+            Kind::Dungeon => self.model.dungeons[i].min_level.max(self.dungeon_completion_gate(s, i)),
             _ => 0,
         }
+    }
+
+    fn dungeon_completion_gate(&self, s: &State, dungeon: usize) -> i64 {
+        self.ix.in_dungeon[dungeon]
+            .iter()
+            .map(|&(q, _)| q as usize)
+            .filter(|&q| self.model.quests[q].mandatory && !self.model.quests[q].implicit_window && !s.turned[q])
+            .filter_map(|q| self.model.quests[q].completion_window.min_level)
+            .max()
+            .unwrap_or_default()
     }
 
     fn completion_gate(&self, s: &State, i: u32) -> i64 {

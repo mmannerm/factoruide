@@ -112,6 +112,13 @@ impl QuestBuilder<'_> {
     /// Whether the quest is one of a forced zone: filed under it (or a subzone), else given
     /// there (class and profession quests); taken before the target level, outside dungeons.
     fn zone_forced(&self, r: &QuestRow, givers: &Givers, objectives: &[Objective]) -> bool {
+        if self.profile.objective_guide() {
+            return r
+                .sort
+                .is_some_and(|area| self.profile.objectives.contains(&super::GuideObjective::Dungeon(area)))
+                || (super::zone_objective_row(self.sources, self.profile, r)
+                    && !objectives.iter().any(|o| o.dungeon_of().is_some()));
+        }
         let zones = &self.params.forced_zones;
         if zones.is_empty()
             || objectives.iter().any(|o| o.dungeon_of().is_some())

@@ -4,7 +4,7 @@
 use super::builder::{QuestBuilder, Skip};
 use super::entities::best_cluster;
 use super::sources::{LinkKind, ObjectiveKind, QuestRow, Role, SourceKind};
-use super::types::{EntityKind, Loc, Spots};
+use super::types::{EntityKind, GuideObjective, Loc, Spots};
 
 pub(super) struct Givers {
     pub(super) starts: Vec<Loc>,
@@ -110,9 +110,10 @@ impl QuestBuilder<'_> {
                 ItemStart::Nowhere => {}
             }
         }
-        // Only an explicitly selected requirement authorizes buying its starter's inputs.
+        // Only an individually selected quest authorizes buying its starter's inputs.
         if givers.starts.is_empty()
-            && self.profile.required_quests.iter().any(|q| q.id == r.id)
+            && (self.profile.required_quests.iter().any(|q| q.id == r.id)
+                || self.profile.objectives.contains(&GuideObjective::Quest(r.id)))
             && let Some(purchase) = self
                 .profile
                 .quest_overrides

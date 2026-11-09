@@ -47,9 +47,30 @@ pub struct Profile {
     pub mates: Vec<Mate>,
     /// The character's "Name-Realm" in a group guide (empty alone).
     pub player: String,
-    /// A dungeon guide's dungeon (instance area): the guide does every quest of it the character
-    /// can take by `to_level`, and what they need first, nothing else (`PlanRequest::dungeon`).
-    pub dungeon_guide: Option<i64>,
+    /// An objective guide's objectives (empty: a leveling guide): the guide does every quest of
+    /// them the character can take, and what they need first, nothing else, whatever their
+    /// levels (`PlanRequest::objectives`).
+    pub objectives: Vec<GuideObjective>,
+}
+
+impl Profile {
+    /// Whether the guide is an objective guide (`objectives`).
+    pub fn objective_guide(&self) -> bool {
+        !self.objectives.is_empty()
+    }
+}
+
+/// What an objective guide completes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum GuideObjective {
+    /// Every quest filed under a dungeon (instance area), done inside it, or started there.
+    Dungeon(i64),
+    /// Every quest of a zone (area), as a forced zone's: filed under it or a subzone, else given
+    /// there; not those of a dungeon, nor class or profession quests.
+    Zone(i64),
+    /// One quest.
+    Quest(i64),
 }
 
 /// A class quest the route must do (`m_class_requirement`): the quests teaching a spell, or the
@@ -671,6 +692,11 @@ pub struct Model {
     /// The paths NPCs who patrol walk (NPC ID -> its points in order): the guide shows places
     /// along them, the planner goes to their usual place.
     pub patrols: HashMap<i64, Vec<Pos>>,
+    /// An objective guide's quests gated above the character's level at the start (quest ID,
+    /// the level it asks), highest first, for the guide's level recommendation.
+    pub above_level: Vec<(i64, i64)>,
+    /// Ordinary level gates are advisory. Explicit completion windows still apply.
+    pub levels_ignored: bool,
 }
 
 /// A class spell taking the character to a city (a mage's "Teleport: Stormwind"): learned at the

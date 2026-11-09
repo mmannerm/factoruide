@@ -1,10 +1,3 @@
-# Stepping Stones follows the note quest of either faction.
-# https://www.wowhead.com/forever/quest=79192/stepping-stones
-[[quest]]
-id = 79192
-pre_all = []
-pre_any = [79007, 79008]
-
 # Forever's Cat Form quests grant the form, Claw, Rip and Prowl:
 # https://wowseer.gg/guides/druid-cat-form
 # https://us.forums.blizzard.com/en/wow/t/druid-cat-form-quest/2384010/56

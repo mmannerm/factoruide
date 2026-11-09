@@ -2,6 +2,7 @@
 
 use crate::common::{database_of, repo};
 use fg_route::job::{self, Overrides, PlanRequest};
+use fg_route::model::GuideObjective;
 use fg_route::plan::{Kind, Planner, Stop};
 use fg_route::xp::Edition;
 use serde_json::json;
@@ -154,6 +155,72 @@ fn shipping_label_waits_until_level_ten() {
         .unwrap();
     assert!(accept.level >= 10);
     assert_eq!(accept.min_level, Some(10));
+}
+
+#[test]
+fn a_shipping_label_objective_uses_the_acquisition_path() {
+    let conn = database_of("forever");
+    let mut o = Overrides::load_edition(&repo().join("overrides"), Edition::Forever).unwrap();
+    o.params.effort = 0.0;
+    let mut req = request("skyborne_horde", 98248);
+    req.required_quests.clear();
+    req.objectives = vec![GuideObjective::Quest(98248)];
+    let guide = job::plan(&conn, &o, &req, &|_| {}).unwrap();
+    let accept = guide
+        .route
+        .steps
+        .iter()
+        .find(|s| s.quest == Some(98248) && s.kind == fg_route::export::StepKind::Accept)
+        .unwrap();
+    assert!(accept.text.contains("20 Peacebloom"));
+    assert!(guide.plan.contains(&job::RouteStep::TurnIn { quest: 98248 }));
+
+    req.start.as_mut().unwrap().log = vec![job::LogQuest {
+        id: job::QuestId(98248),
+        complete: true,
+        objectives: vec![],
+    }];
+    let guide = job::plan(&conn, &o, &req, &|_| {}).unwrap();
+    assert!(guide.plan.contains(&job::RouteStep::TurnIn { quest: 98248 }));
+    assert!(!guide.plan.contains(&job::RouteStep::Accept { quest: 98248 }));
+}
+
+#[test]
+fn a_legacy_dungeon_request_retains_its_required_quest_window() {
+    let conn = database_of("forever");
+    let o = Overrides::load_edition(&repo().join("overrides"), Edition::Forever).unwrap();
+    let mut req = request("skyborne_horde", 98248);
+    req.dungeon = Some(2437);
+    req.required_quests = serde_json::from_value(json!([{"quest":98248,"max_level":10}])).unwrap();
+    let prepared = job::prepare(&conn, &o, &req, &|_| {}).unwrap();
+    assert!(prepared.model.index.contains_key(&5761));
+    assert!(prepared.model.quests[prepared.model.index[&5724]].zone_forced);
+    let label = &prepared.model.quests[prepared.model.index[&98248]];
+    assert!(label.required);
+    assert_eq!(label.completion_window.max_level, Some(10));
+
+    req.start.as_mut().unwrap().level = 11;
+    let error = job::Editor::open(&conn, &o, &req, None).err().unwrap();
+    assert!(format!("{error:#}").contains("already above completion level 10"));
+}
+
+#[test]
+fn an_objective_guide_reaches_an_explicit_completion_floor() {
+    let conn = database_of("forever");
+    let mut o = Overrides::load_edition(&repo().join("overrides"), Edition::Forever).unwrap();
+    o.params.effort = 0.0;
+    let mut req = request("skyborne_horde", 98248);
+    req.objectives = vec![GuideObjective::Quest(98248)];
+    req.required_quests = serde_json::from_value(json!([{"quest":98248,"min_level":11,"max_level":11}])).unwrap();
+    let guide = job::plan(&conn, &o, &req, &|_| {}).unwrap();
+    let turnin = guide
+        .route
+        .steps
+        .iter()
+        .find(|s| s.quest == Some(98248) && s.kind == fg_route::export::StepKind::TurnIn)
+        .unwrap();
+    assert_eq!(turnin.level, 11);
+    assert!(guide.route.breakdown.grinding > 0.0);
 }
 
 #[test]
