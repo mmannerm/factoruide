@@ -836,6 +836,7 @@ impl Scenario {
         let mut skipped = Vec::new();
         let mut known = super::derive::Knowledge {
             assumed: true,
+            logged: members.iter().flat_map(|s| s.log.iter().map(|q| q.id.0)).collect(),
             ..super::derive::Knowledge::default()
         };
         super::derive::settle(

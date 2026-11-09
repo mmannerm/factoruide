@@ -1249,10 +1249,13 @@ impl Planner<'_> {
 
     /// Whether the run of dungeon `d` waits for a quest of it the route must do (a dungeon forced
     /// with its quests) and has not taken yet, its chain under way: entered once, the dungeon
-    /// would leave it undone. Up to the dungeon's last level; not for a quest gated above the
-    /// game's levels (never taken).
+    /// would leave it undone. Leveling routes wait only below the dungeon's last level.
+    /// Objective guides also wait at the cap while an outside prerequisite can progress.
     fn waits_for_quests(&self, s: &State, d: usize) -> bool {
         let dungeon = &self.model.dungeons[d];
+        if self.model.levels_ignored && s.level == dungeon.max_level {
+            return self.toward_waited_quest(s, d).is_some();
+        }
         s.level < dungeon.max_level
             && self.availability().dungeon_quests(d).any(|i| {
                 let iu = i as usize;
@@ -1390,6 +1393,51 @@ mod deadline_tests {
 mod forced_dungeon_tests {
     use super::*;
     use crate::testing::{At, Obj, Q, Scenario};
+
+    #[test]
+    fn an_objective_dungeon_at_the_level_cap_waits_for_its_prerequisite() {
+        use crate::job::RouteStep;
+        use crate::model::GuideObjective;
+
+        let (_, guide) = Scenario::new()
+            .levels(60, 60)
+            .start(crate::job::StartState {
+                level: 60,
+                ..crate::job::StartState::default()
+            })
+            .zone(1, "Westfall")
+            .dungeon("The Deadmines", 1, 55.0, 55.0)
+            .objectives(&[GuideObjective::Dungeon(900)])
+            .quest(Q::new(330, "First lead").level(18).giver(1, 90.0, 10.0))
+            .quest(Q::new(331, "Second lead").level(18).giver(1, 95.0, 10.0))
+            .quest(
+                Q::new(332, "Into the mine")
+                    .level(18)
+                    .after_any(&[330, 331])
+                    .giver(1, 92.0, 10.0)
+                    .objective(
+                        Obj::kill(
+                            "Defias",
+                            18,
+                            6,
+                            At {
+                                zone: 1,
+                                x: 55.0,
+                                y: 55.0,
+                            },
+                        )
+                        .inside(0),
+                    ),
+            )
+            .guide();
+        let at = |step| guide.plan.iter().position(|s| *s == step).expect("planned step");
+        let lead = at(RouteStep::TurnIn { quest: 330 });
+        let accept = at(RouteStep::Accept { quest: 332 });
+        let enter = at(RouteStep::Dungeon { dungeon: 900 });
+        let turnin = at(RouteStep::TurnIn { quest: 332 });
+        assert!(lead < accept && accept < enter && enter < turnin, "{:?}", guide.plan);
+        assert!(!guide.plan.contains(&RouteStep::TurnIn { quest: 331 }));
+    }
 
     /// A dungeon forced with its quests, at its level, waits for one of them whose prerequisite is
     /// a delivery far away (Dragonmaw Rumors before Open the Maw, GitHub #125): the next stop is
