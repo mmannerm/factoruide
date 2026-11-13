@@ -9,7 +9,7 @@ struct Requirements<'a> {
     quests: &'a [Quest],
     index: HashMap<i64, usize>,
     completed: &'a HashSet<i64>,
-    logged: Option<&'a HashSet<i64>>,
+    logged: &'a HashSet<i64>,
     skipped: &'a [(i64, String, String)],
     roots: &'a [i64],
     prefer_objectives: bool,
@@ -37,7 +37,6 @@ impl Requirements<'_> {
         if let Some(other) = selected
             .iter()
             .chain(self.completed)
-            .chain(self.logged.into_iter().flatten())
             .chain(self.roots)
             .chain(visiting.iter())
             .copied()
@@ -66,8 +65,8 @@ impl Requirements<'_> {
                 .is_some_and(|&i| self.quests[i].exclusive.contains(&q.id))
     }
 
-    /// Adds `count` of `alternatives` to the selection (the cheapest first), the ones already
-    /// done or selected counting.
+    /// Adds `count` of `alternatives`, counting those already done or selected. Objective
+    /// guides prefer logged and in-area branches, then lower-level prerequisites.
     fn some_of(
         &self,
         alternatives: &[i64],
@@ -88,9 +87,14 @@ impl Requirements<'_> {
             .copied()
             .collect();
         candidates.sort_by_key(|id| {
-            self.index.get(id).map_or((true, i64::MAX, *id), |&i| {
+            self.index.get(id).map_or((true, true, i64::MAX, *id), |&i| {
                 let q = &self.quests[i];
-                (self.prefer_objectives && !q.zone_forced, q.min_level, *id)
+                (
+                    self.prefer_objectives && !self.logged.contains(id),
+                    self.prefer_objectives && !q.zone_forced,
+                    q.min_level,
+                    *id,
+                )
             })
         });
         let mut reasons = Vec::new();
@@ -136,7 +140,7 @@ pub(super) fn apply(
         quests,
         index: quests.iter().enumerate().map(|(i, q)| (q.id, i)).collect(),
         completed: &profile.completed_quests,
-        logged: profile.objective_guide().then_some(logged),
+        logged,
         skipped,
         roots: &roots,
         prefer_objectives: false,

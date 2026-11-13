@@ -42,9 +42,11 @@ still needing the quest, including after travel; imported completion already sat
 Planning and edited-guide saves reject missed player-specified windows.
 
 Objective guides combine dungeon, zone and quest targets. The planner selects feasible
-prerequisite branches, including quests outside the selected area. Saved guides retain available
-alternative chains and their follow-ups. Routes show the level the quests
-recommend, and explicit completion windows still apply at turn-in. Saved dungeon requests
+prerequisite branches, including quests outside the selected area. Logged branches are preferred
+when choosing alternatives, but may be abandoned for explicit choices or a saved guide's route.
+Completed quests still satisfy prerequisites even when outside the model's level window, including
+in leveling guides. Saved guides retain available alternative chains and their follow-ups. Routes
+show the level the quests recommend, and explicit completion windows still apply at turn-in. Saved dungeon requests
 resolve to a dungeon objective.
 
 `world.rs` gives the geography: zone coordinates converted to world coordinates, the passes
@@ -67,9 +69,9 @@ embedded in `fg-route` (`build.rs`) and written into a guide whenever it is show
 A guide can start from a character met in game (`job/start.rs`): the profile the addon saves
 (`Profile.lua`, read by the app from the SavedVariables) becomes the simulation's initial state:
 quests turned in, position, hearthstone, known flight paths, XP and rested XP, gear worn, last
-training (from the spells learned). Profession curves go through the character's skill. The
-quests of its log count as never taken: the optimizer takes again those it wants, the export
-abandons the others as the guide's first steps.
+training (from the spells learned). Profession curves go through the character's skill. The route
+keeps recorded progress for logged quests it uses; unbegun quests can be taken again. Other logged
+quests are abandoned as the guide's first steps. Accepting a quest is not an irreversible choice.
 
 `xp.rs` holds the rules of each game version (WoW Forever, Classic Era, TBC): XP per level,
 quest XP penalty by level difference, mob XP, max level, quest log size, mount level.

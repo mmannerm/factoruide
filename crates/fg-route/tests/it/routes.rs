@@ -647,6 +647,13 @@ fn bulk_objectives_take_one_prerequisite_outside_the_selected_area() {
             (vec![], vec![], false, false, vec![90001, target]),
             (vec![], vec![90001], false, false, vec![90002, target]),
             (vec![job::QuestId(90002)], vec![90002], false, false, vec![target]),
+            (
+                vec![job::QuestId(90002)],
+                vec![90001, 90002],
+                false,
+                false,
+                vec![target],
+            ),
             (vec![], vec![90001, 90002], false, false, vec![]),
             (vec![], vec![], true, false, vec![90002, target]),
             (vec![], vec![], false, true, vec![90002, target]),
@@ -726,30 +733,57 @@ fn bulk_objectives_take_one_prerequisite_outside_the_selected_area() {
         objectives: vec![],
     });
     let preview = job::objective_preview(&conn, &overrides, &req).unwrap();
-    assert!(
-        preview
-            .excluded
-            .iter()
-            .any(|q| q.id == 90001 && q.reason.contains("conflicts"))
-    );
+    assert!(!preview.excluded.iter().any(|q| q.id == 90001));
     assert!(!preview.excluded.iter().any(|q| q.id == 90002));
 }
 
-#[test]
-fn a_saved_bulk_guide_keeps_the_successor_of_an_alternate_branch() {
+fn exclusive_bulk_branches() -> Connection {
     let quest = |id: i64, extra: &str| {
         format!(
             "[[quest]]\nid = {id}\nname = \"Quest {id}\"\nlevel = 18\nmin_level = 14\nraces_mask = 77\nzone = 40\n\
              xp = 300\nobjectives_text = \"Speak with Wilder Thistlenettle.\"\nstarts = [{{ npc = 234 }}]\nends = [{{ npc = 656 }}]\n{extra}\n"
         )
     };
-    let conn = Fixture::new(Edition::Classic)
+    Fixture::new(Edition::Classic)
         .file("classic_dungeons")
         .toml(&quest(90001, "exclusive = [90002]"))
         .toml(&quest(90002, "exclusive = [90001]"))
         .toml(&quest(90003, "pre_all = [90002]"))
         .toml(&quest(90004, ""))
-        .open();
+        .open()
+}
+
+#[test]
+fn bulk_guides_honor_explicit_choices_over_unbegun_logged_alternatives() {
+    let conn = exclusive_bulk_branches();
+    let overrides = overrides();
+    for must_have in [true, false] {
+        let mut req = request("human", "warrior", 25, &[]);
+        req.params.as_mut().unwrap().effort = 0.0;
+        req.objectives = vec![GuideObjective::Zone(40)];
+        if must_have {
+            req.required_quests = vec![RequiredQuest::Id(90002)];
+        } else {
+            req.objectives.push(GuideObjective::Quest(90002));
+        }
+        req.start = Some(StartState {
+            log: vec![LogQuest {
+                id: job::QuestId(90001),
+                complete: false,
+                objectives: vec![],
+            }],
+            ..player("Tester", 1, "warrior", 25)
+        });
+        let guide = job::plan(&conn, &overrides, &req, &|_| {}).unwrap();
+        assert!(guide.plan.contains(&job::RouteStep::TurnIn { quest: 90002 }));
+        assert!(guide.plan.contains(&job::RouteStep::TurnIn { quest: 90003 }));
+        assert!(!guide.plan.contains(&job::RouteStep::TurnIn { quest: 90001 }));
+    }
+}
+
+#[test]
+fn a_saved_bulk_guide_keeps_the_successor_of_an_alternate_branch() {
+    let conn = exclusive_bulk_branches();
     let overrides = overrides();
     let mut req = request("human", "warrior", 25, &[]);
     req.objectives = vec![GuideObjective::Zone(40)];
@@ -767,18 +801,34 @@ fn a_saved_bulk_guide_keeps_the_successor_of_an_alternate_branch() {
         )
         .unwrap();
 
-    // Alternate chains remain unavailable when an explicit choice or recorded progress
-    // already commits the character to the other branch.
-    for fixed in ["must-have", "objective", "logged", "completed"] {
+    // A logged alternative can be abandoned; it must not make a saved branch unavailable.
+    for complete in [false, true] {
+        let mut logged = req.clone();
+        logged.start.as_mut().unwrap().log.push(LogQuest {
+            id: job::QuestId(90001),
+            complete,
+            objectives: vec![],
+        });
+        job::Editor::open(&conn, &overrides, &logged, None)
+            .unwrap()
+            .save(
+                &[
+                    job::RouteStep::Accept { quest: 90002 },
+                    job::RouteStep::TurnIn { quest: 90002 },
+                    job::RouteStep::Accept { quest: 90003 },
+                    job::RouteStep::TurnIn { quest: 90003 },
+                ],
+                vec![],
+            )
+            .unwrap();
+    }
+
+    // Explicit choices and completed quests still commit the character to that branch.
+    for fixed in ["must-have", "objective", "completed"] {
         let mut req = req.clone();
         match fixed {
             "must-have" => req.required_quests = vec![RequiredQuest::Id(90001)],
             "objective" => req.objectives.push(GuideObjective::Quest(90001)),
-            "logged" => req.start.as_mut().unwrap().log.push(LogQuest {
-                id: job::QuestId(90001),
-                complete: true,
-                objectives: vec![],
-            }),
             "completed" => req.start.as_mut().unwrap().completed.push(job::QuestId(90001)),
             _ => unreachable!(),
         }
