@@ -77,10 +77,6 @@ id = 94465
 races_mask = 4
 
 [[quest]]
-id = 94466
-races_mask = 4
-
-[[quest]]
 id = 94467
 races_mask = 4
 
@@ -352,7 +348,10 @@ objectives = [
 
 [[quest]]
 # From the Ashes: only described; the four Attack Plans are objects in the Angerfang Encampment.
+# Offered with War Banners, also without Report to Captain Stoutfist (series: War Banners and
+# From the Ashes side by side).
 id = 98221
+remove_pre = [473]
 objectives = [
   { type = "object", id = 671481, amount = 1, text = "Destroy the Attack Plan: Menethil Harbor" },
   { type = "object", id = 671486, amount = 1, text = "Destroy the Attack Plan: Thelsamar" },
@@ -902,6 +901,7 @@ objectives = [{ type = "object", id = 460003, amount = 1, text = "Sit by the Bas
 [[quest]]
 id = 96101
 objectives = [{ type = "object", id = 460003, amount = 1, text = "Sit by the Basic Campfire until you get Boosted Rest" }]
+races_mask = 12884901888 # both Skyborne: they start on Zephras Isle, the quest page shows both sides
 
 [[quest]]
 id = 96604
@@ -1036,19 +1036,16 @@ id = 94489
 amounts = [{ type = "killcredit", id = 258134, amount = 7 }]
 
 [[quest]]
-# An Alarming Request (level 30) only leads to Heart of Disruption (level 24, series:
-# An Alarming Request, Heart of Disruption, Friend of the Kirin Tor): a breadcrumb, not what
-# Starving Arcane and Heart of Disruption need first (the sources' links).
-id = 92432
-breadcrumb_for = 92458
-
-[[quest]]
+# Starving Arcane does not need An Alarming Request first (the sources' link).
 id = 92457
 remove_pre = [92432]
 
 [[quest]]
+# Heart of Disruption (Alliance) comes after An Alarming Request (level 30, series: An Alarming
+# Request, Heart of Disruption, Friend of the Kirin Tor), as the Horde's comes after Blood in the
+# Streets: in game, Image of Archmage Modera does not offer it to a level 28 character.
 id = 92458
-remove_pre = [92432]
+pre_all = [92432]
 
 [[quest]]
 # Call of Air (Skyborne shaman): taken back by Prate Cloudseer in Thousand Needles (the quest's
@@ -1534,11 +1531,6 @@ races_mask = 146
 
 [[quest]]
 # (as above)
-id = 1960
-races_mask = 146
-
-[[quest]]
-# (as above)
 id = 1962
 races_mask = 146
 
@@ -1598,11 +1590,6 @@ races_mask = 4294967304
 [[quest]]
 # (as above)
 id = 6123
-races_mask = 4294967304
-
-[[quest]]
-# (as above)
-id = 6124
 races_mask = 4294967304
 
 [[quest]]
@@ -2055,3 +2042,280 @@ starts = [
   { type = "object", id = 143985 }, # Mailbox, Thunder Bluff
   { type = "object", id = 177044 }, # Mailbox, Undercity
 ]
+
+# Order and class checks seen in game by players (2026-11-09).
+
+[[quest]]
+# Alonso's Dragonslayer quests, Mystral Lake in Ashenvale: Warrior quests. Paladins and a Shaman
+# found no Alonso there.
+id = 78132 # Dragonslayer's Helm
+classes_mask = 1
+
+[[quest]]
+id = 78133 # Dragonslayer's Shield
+classes_mask = 1
+
+[[quest]]
+id = 78134 # Dragonslayer's Lance
+classes_mask = 1
+
+[[quest]]
+# Lightforge Ingots follows The Lost Ingots, the end of the Lightforge Iron chain (series), not
+# instead of it: Glorin Steelbrow does not offer it before.
+id = 526
+pre_all = [324]
+
+[[quest]]
+# The Broodmother: Muln Earthfury offers it only once Defending the Dead is handed in to him.
+id = 96261
+pre_all = [96259]
+
+[[quest]]
+# Daily Delivery only leads to James Halloran, who gives Young Crocolisk Skins: Einar Stonegrip
+# no longer offers it once Young Crocolisk Skins is taken.
+id = 469
+breadcrumb_for = 484
+
+[[quest]]
+# Highland Hides: James Halloran offers Young Crocolisk Skins first, Highland Hides only once it
+# is handed in.
+id = 98815
+pre_all = [484]
+
+[[quest]]
+# Forgotten Loa Idols: Master Vornal offers it only once Report to Sen'jin Village is handed in.
+id = 97225
+pre_all = [805]
+
+[[quest]]
+# Whuut's the Rush: Yelmak offers it only once Yelmak's Medley is handed in to Kor'geld.
+id = 97275
+pre_all = [97242]
+
+# Corma Villard's chain in the Wetlands (Hearts of the Lost, then Essene Villard's Accessories and
+# Sentiments of the Lost): players' reports since the launch, Corma offers no quest at any level and
+# Essene is gone (GitHub #161).
+[[quest]]
+id = 87318
+status = "removed"
+reason = "Corma Villard offers no quest in game, Essene Villard is gone"
+
+[[quest]]
+id = 88757
+status = "removed"
+reason = "Started by Essene Villard, gone"
+
+[[quest]]
+id = 88758
+status = "removed"
+reason = "Started by Essene Villard, gone"
+
+[[quest]]
+# Murloc Gills: Alba Fairmoon offers it after Testing the Wells, the step before it in her Westfall
+# storyline.
+id = 92744
+pre_all = [92742]
+
+[[quest]]
+# The Gurubashi Legends of Old: Kin'weelay speaks of "this piece of the tablet you have brought
+# me", the Tablet Shard of The Vile Reef, which comes first.
+id = 95748
+pre_all = [629]
+
+# Foal Play (94615) and Apple of My Eye (95561), Riverglades: their quest items come from objects
+# new to the game, every one opened gives it: the Pawprint Tracing from the Tracks, the Fresh
+# Apples from the Fresh Apple objects.
+[[object]]
+id = 625779
+name = "Track"
+zone = 16591
+
+[[object]]
+id = 645233
+name = "Fresh Apple"
+zone = 16591
+
+[[drop]]
+item = 267223 # Pawprint Tracing
+objects = [625779]
+chance = 1.0
+
+[[drop]]
+item = 271431 # Fresh Apple
+objects = [645233]
+chance = 1.0
+
+[[spawn]]
+type = "object"
+id = 625779
+zone = 16591
+x = 54.2
+y = 77.9
+
+[[spawn]]
+type = "object"
+id = 625779
+zone = 16591
+x = 54.8
+y = 77.9
+
+[[spawn]]
+type = "object"
+id = 625779
+zone = 16591
+x = 54.9
+y = 78.5
+
+[[spawn]]
+type = "object"
+id = 645233
+zone = 16591
+x = 61.1
+y = 86.1
+
+[[spawn]]
+type = "object"
+id = 645233
+zone = 16591
+x = 61.3
+y = 83.3
+
+[[spawn]]
+type = "object"
+id = 645233
+zone = 16591
+x = 61.9
+y = 86.1
+
+[[spawn]]
+type = "object"
+id = 645233
+zone = 16591
+x = 62.9
+y = 83.8
+
+[[spawn]]
+type = "object"
+id = 645233
+zone = 16591
+x = 64.8
+y = 83.2
+
+[[spawn]]
+type = "object"
+id = 645233
+zone = 16591
+x = 65.4
+y = 83.5
+
+[[spawn]]
+type = "object"
+id = 645233
+zone = 16591
+x = 65.6
+y = 81.6
+
+# The Drowned City, the Alliance's chain (players' reports, the quests' texts): Brother Nimetz sends
+# to Southshore once Troll Witchery is done; Loremaster Dibbs gives the two dungeon quests after
+# that report, then one follow-up for each: the fetish after the fetishes, the translations after
+# the tablets. The sources know none of these links and offered the blue rewards from level 30.
+[[quest]]
+id = 95786
+pre_all = [205]
+
+[[quest]]
+id = 95787
+pre_all = [95786]
+
+[[quest]]
+id = 95788
+pre_all = [95786]
+
+[[quest]]
+id = 95798
+pre_all = [95788]
+
+[[quest]]
+# Findings for the Explorer's League: the translations go to Historian Karnik in Ironforge, not
+# back to Loremaster Dibbs.
+id = 95799
+pre_all = [95787]
+ends = [{ type = "npc", id = 2916 }]
+remove_ends = [{ type = "npc", id = 2277 }]
+
+# Corrections from players' reports on each guide quest (2026-11-12).
+
+[[quest]]
+# Swelling Forces: offered once Return to Onu is handed in.
+id = 98013
+pre_all = [950]
+
+[[quest]]
+# Returning to Port: Wendel Mathers offers it after The Cook in the Cage.
+id = 97048
+pre_all = [97047]
+
+[[quest]]
+# Deliver the Second Shipment: after Driftwood, as Deliver the First Shipment from the same giver.
+id = 94929
+pre_all = [1398]
+
+[[quest]]
+# Razormaw Needling: taken without Crimson Crate Delivery, which only leads to it.
+id = 98245
+remove_pre = [98240]
+
+[[quest]]
+id = 98240
+breadcrumb_for = 98245
+
+[[drop]]
+# Primitive Key (Where's the Key?): 20 to 60 Bloodscalps killed for it.
+item = 277957
+npcs = [588, 595, 597, 660, 671, 699, 701]
+chance = 0.03
+
+[[drop]]
+# Fenris Isle Key: about 40 Rot Hides killed for it.
+item = 267412
+npcs = [1942, 1943, 1944, 1948]
+chance = 0.025
+
+[[drop]]
+# Malignant Rotclaw Flesh (Carnage), which brings Carnage out once placed at the cave: about 20
+# Maddened Rotclaws killed for it.
+item = 280331
+npcs = [271334]
+chance = 0.05
+
+[[respawn]]
+# Whispering Horror: about 10 minutes.
+type = "npc"
+id = 260396
+seconds = 600
+
+[[respawn]]
+# Encroaching Soldier and Outraged Pillager (Wrongly Blamed, Justly Corrected): about 6 minutes.
+type = "npc"
+id = 268622
+seconds = 360
+
+[[respawn]]
+type = "npc"
+id = 268623
+seconds = 360
+
+[[spawn]]
+# Discarded Fishing Toolbox (Silver of the Waves): more places along the shore.
+type = "object"
+id = 665289
+zone = 38
+x = 48.9
+y = 54.2
+
+[[spawn]]
+type = "object"
+id = 665289
+zone = 38
+x = 48.0
+y = 40.0

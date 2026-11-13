@@ -124,10 +124,11 @@ fn overrides(edition: Edition) -> Overrides {
 }
 
 #[test]
-fn lightforge_ingots_is_an_alternative_after_the_reports_in_forever_only() {
+fn lightforge_ingots_follows_the_lost_ingots_in_forever_only() {
     for edition in Edition::ALL {
         let conn = database_of(edition.key());
         let o = overrides(edition);
+        let names = Names::load(&conn, "enUS").unwrap();
         let mut req = request(&json!([526]));
         req.start = Some(StartState {
             level: 25,
@@ -135,16 +136,34 @@ fn lightforge_ingots_is_an_alternative_after_the_reports_in_forever_only() {
             ..StartState::default()
         });
         let editor = Editor::open(&conn, &o, &req, None).unwrap();
-        let report = editor.simulate(
-            &[RouteStep::Accept { quest: 526 }],
-            &Names::load(&conn, "enUS").unwrap(),
-        );
-        assert_eq!(report.errors, usize::from(edition != Edition::Forever));
+        let report = editor.simulate(&[RouteStep::Accept { quest: 526 }], &names);
+        assert_eq!(report.errors, 1, "{}: before The Lost Ingots", edition.key());
+
+        req.start.as_mut().unwrap().completed.push(QuestId(324));
         if edition == Edition::Forever {
-            req.required_quests = serde_json::from_value(json!([324, 526])).unwrap();
+            let editor = Editor::open(&conn, &o, &req, None).unwrap();
+            let report = editor.simulate(&[RouteStep::Accept { quest: 526 }], &names);
+            assert_eq!(report.errors, 0, "after The Lost Ingots");
+        } else {
             let error = job::prepare(&conn, &o, &req, &|_| {}).err().unwrap();
-            assert!(format!("{error:#}").contains("conflicts with quest"));
+            assert!(format!("{error:#}").contains("conflicts with quest 324"));
         }
+    }
+}
+
+#[test]
+fn forever_can_require_both_lost_ingots_and_lightforge_ingots() {
+    let conn = database_of("forever");
+    let o = overrides(Edition::Forever);
+    let mut req = request(&json!([324, 526]));
+    req.start = Some(StartState {
+        level: 25,
+        completed: vec![QuestId(321)],
+        ..StartState::default()
+    });
+    let p = job::prepare(&conn, &o, &req, &|_| {}).unwrap();
+    for id in [324, 526] {
+        assert!(p.model.quests[p.model.index[&id]].required, "quest {id}");
     }
 }
 

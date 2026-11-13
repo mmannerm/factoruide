@@ -1,8 +1,8 @@
 # Data corrections
 
 The fork uses upstream's bundled databases without editing their archives. The current Forever
-import records identify QuestieDB `c1b50fefb1`, Questie `d6f33444c2`, AllTheThings `40f463983d`,
-EG Link `156f29c9af`, and client cache builds `70790` and `70862` in the [upstream snapshot](https://github.com/brouznouf/factoruide/blob/1c8e8352cdf7c1cac35e59efbc04e6d81b0d00e5/data/forever.sqlite.zst).
+import records identify QuestieDB `d57637f490`, Questie `84b9da17fb`, AllTheThings `ab0d11aecd`,
+EG Link `3067c69190`, and client cache builds `70790` and `70862` in the [v0.19.0 snapshot](https://github.com/brouznouf/factoruide/blob/469aa5a20e0676f3f8e01de6bbd34715e014e53a/data/forever.sqlite.zst).
 The archive's `import_run` table and [NOTICE](../NOTICE.md) record the complete source provenance.
 
 Source-data corrections live in `overrides/database/`; upstream's database builder reapplies them
@@ -39,3 +39,9 @@ After a database refresh, review every `import_run` record and the source credit
 supplies. Run the affected guide tests and `fg audit`; audit acceptance files record exceptions
 rather than correcting data.
 Fork-specific corrections apply only to Forever. Every edition retains upstream's bundled archive.
+
+The v0.19.0 Forever snapshot also incorporates the [in-game prerequisite correction](https://github.com/brouznouf/factoruide/commit/673513fa65c7641f75625eaaf8b4816c5ca5ee2d)
+for Lightforge Ingots (#526): it follows The Lost Ingots (#324), rather than replacing it.
+The Forever regression tests reject taking #526 before #324, allow it afterwards, and allow
+requiring both quests together. Classic and TBC still reject #526 when #324 is completed.
+No runtime override restores the older Forever alternative.
