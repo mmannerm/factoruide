@@ -59,14 +59,14 @@ pub(super) fn join(
     let init = &mut model.initial;
     init.accepted.retain(|&i| shared(i));
     init.progress.retain(|p| init.accepted.contains(&p.0));
-    // A dungeon pickup already carried by everyone who needs it must not be repeated, even
-    // when the character leading the route turned it in. Continue from the least progress
-    // among those members, so the leader's completed objective cannot hide a mate's work.
+    // Dungeon quests already carried by everyone who needs them must not be picked up again,
+    // even when the character leading the route turned one in. Continue from the least progress
+    // among those members, so a required dungeon run still shows a mate's unfinished work.
     for (i, q) in model
         .quests
         .iter()
         .enumerate()
-        .filter(|(_, q)| q.start_dungeon.is_some())
+        .filter(|(_, q)| q.start_dungeon.is_some() || q.dungeon().is_some())
     {
         let carried: Option<Vec<_>> = std::iter::once(character)
             .chain(mates.iter().copied())
