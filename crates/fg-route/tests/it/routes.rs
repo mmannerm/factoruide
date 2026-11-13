@@ -3037,6 +3037,104 @@ fn quests_done_by_some_stay_for_the_others() {
     // For B only (A and B have the same XP: A, the guide's character, is planned for).
     assert_eq!(p.model.initial.need(index(one)), 0b10);
 }
+
+/// A dungeon run must still show the work a mate has left, using each objective's least
+/// progress rather than the leader's log or another objective's share.
+#[test]
+fn a_shared_dungeon_quest_keeps_each_members_remaining_objectives() {
+    use fg_route::export::StepKind;
+
+    let at = At {
+        zone: 1,
+        x: 60.0,
+        y: 50.0,
+    };
+    let first = |done| LogObjective {
+        text: "First x10".into(),
+        done,
+        need: 10,
+        finished: false,
+    };
+    let second = |done| LogObjective {
+        text: "Second x20".into(),
+        done,
+        need: 20,
+        finished: false,
+    };
+    let member = |name: &str, complete, objectives| StartState {
+        log: vec![LogQuest {
+            id: 701.into(),
+            complete,
+            objectives,
+        }],
+        ..player(name, 2, "warrior", 20)
+    };
+    for leader_ready in [true, false] {
+        let p = Scenario::new()
+            .levels(20, 20)
+            .dungeon("Shared dungeon", 1, 60.0, 50.0)
+            .params(|p| {
+                p.dungeons = false;
+                p.effort = 0.0;
+            })
+            .quest(
+                Q::new(701, "Shared work")
+                    .level(20)
+                    .objective(Obj::kill("First", 20, 10, at).inside(0))
+                    .objective(Obj::kill("Second", 20, 20, at).inside(0)),
+            )
+            .required(701)
+            .start(member("Leader", leader_ready, vec![first(8), second(10)]))
+            .mates(vec![
+                member("Partner", false, vec![second(14), first(6)]),
+                member("Third", false, vec![first(9), second(5)]),
+            ])
+            .build();
+        let q = p.model.index[&701];
+        for (objective, expected) in [(0, 0.6), (1, 0.25)] {
+            let share = p
+                .model
+                .initial
+                .progress
+                .iter()
+                .find_map(|&(i, k, share)| (i == q && k == objective).then_some(share));
+            assert_eq!(
+                share,
+                Some(expected),
+                "leader ready={leader_ready}, objective={objective}"
+            );
+        }
+        assert!(p.model.dungeons[0].needed);
+        let planner = planner(&p);
+        let route = planner.construct(|_| {});
+        let guide = fg_route::export::build(&planner, &p.profile, &route);
+        assert_eq!(guide.steps.iter().filter(|s| s.kind == StepKind::Dungeon).count(), 1);
+        // Objectives wholly inside one dungeon share a quest step in the exported guide.
+        let work: Vec<_> = guide
+            .steps
+            .iter()
+            .filter(|s| s.kind == StepKind::Objective && s.quest == Some(701))
+            .collect();
+        assert_eq!(work.len(), 1);
+        assert!(
+            work[0].inside && work[0].text.contains("First x10") && work[0].text.contains("Second x20"),
+            "{:?}",
+            work[0]
+        );
+        assert!(
+            !guide
+                .steps
+                .iter()
+                .any(|s| s.kind == StepKind::Accept && s.quest == Some(701))
+        );
+        assert!(
+            guide
+                .steps
+                .iter()
+                .any(|s| s.kind == StepKind::TurnIn && s.quest == Some(701))
+        );
+    }
+}
 /// A guide is saved without a language: it is written in any of them when shown or installed.
 /// The guide saved is the same whatever language it is made in, but for its texts.
 #[test]

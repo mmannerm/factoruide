@@ -188,16 +188,18 @@ impl StartState {
         // those it wants (only the turn-in left for one complete), the others are abandoned at
         // its start.
         for q in &self.log {
-            // A quest with nothing done is left aside: the guide takes it, or not, as any other (its
-            // giver's step is done in a moment when it is already in the log), instead of being tied
-            // to a quest the character has not begun. Done or begun ones are finished or given up.
-            let begun = q.complete || q.objectives.iter().any(|o| o.finished || o.done > 0);
-            if !begun {
-                continue;
-            }
+            // A quest with nothing done can be left aside or taken again. A quest started by
+            // dungeon loot has already cost a pickup, so keep it even without objective progress.
             if let Some(&i) = model.index.get(&q.id.0) {
+                let quest = &model.quests[i];
+                let begun = q.complete
+                    || q.objectives.iter().any(|o| o.finished || o.done > 0)
+                    || quest.start_dungeon.is_some();
+                if !begun {
+                    continue;
+                }
                 init.accepted.push(i);
-                for (k, share) in objective_progress(&model.quests[i], q) {
+                for (k, share) in objective_progress(quest, q) {
                     init.progress.push((i, k, share));
                 }
             }
@@ -376,7 +378,7 @@ fn at(world: &World, p: MapPos) -> Option<(crate::world::Pos, i64)> {
 /// log lists them in its own order and its own language: matched by the name of their target,
 /// else by the amount asked when only one objective asks it, else the only objective. One left
 /// unmatched counts as not started (the guide goes to do it, the game shows it done).
-fn objective_progress(q: &Quest, log: &LogQuest) -> Vec<(u8, f64)> {
+pub(super) fn objective_progress(q: &Quest, log: &LogQuest) -> Vec<(u8, f64)> {
     let n = q.objectives.len().min(32);
     if log.complete {
         return (0..n).map(|k| (k as u8, 1.0)).collect();

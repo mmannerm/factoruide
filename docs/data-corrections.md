@@ -11,6 +11,7 @@ corrections add behavior or facts the bundled data does not yet supply:
 
 | Correction | Source and behavior |
 | --- | --- |
+| The Glowing Shard (all editions) | The bundled quest text sends the player to Ratchet, but its objective row classifies Sputtervalve (#3442) as a creature credit under Wailing Caverns. The common `overrides/quests.toml` entry treats that credit as an outdoor conversation, using ordinary talk timing and translation without requiring the quest's level; nearby enemies still guard the NPC. Item #10441 still comes from Mutanus (#3654); the dungeon is needed until each eligible party member has accepted the quest. Save a fresh addon profile and regenerate existing guides. |
 | Call of Fire | The Skyborne Horde [ritual and torch delivery](https://www.wowhead.com/forever/quest=97257/call-of-fire) uses two NPC credits as interactions. The guide follows the quest's instructions and retains its six-minute limit. |
 | Cat relic trials | The [Skyborne](https://www.wowhead.com/forever/quest=98404/the-great-windborne-cat-spirit), [Tauren](https://www.wowhead.com/forever/quest=98342/the-great-cat-spirit) and [Night elf](https://www.wowhead.com/forever/quest=98396/the-great-cat-spirit) trials use the entrance statue's temporary stealth to collect relics. Guards keep their actual levels. The guide asks the player to renew the blessing; expiry and detection failures are not simulated. |
 | Druid training | [Blizzard's October 1](https://us.forums.blizzard.com/en/wow/t/2360696/4) and [October 15](https://us.forums.blizzard.com/en/wow/t/2360696/6) updates and [client spell levels](https://wago.tools/db2/SpellLevels?build=1.60.1.70532&useHotfixes=1): Shred rank 1 at level 20, Tiger's Fury omitted from training estimates. |
@@ -34,11 +35,16 @@ downtime and actual crossing time remain unverified. Trial blessing steps are ap
 the relic objective indices stable. Older fork guides using the inserted blessing layout should
 be recomputed before editing.
 
+For The Glowing Shard, save a fresh addon profile after accepting the quest or completing its
+conversation, then regenerate the guide. Previously saved routes retain their old dungeon
+steps; updating the planner does not rewrite those routes.
+
 After a database refresh, review every `import_run` record and the source credits in
 [NOTICE](../NOTICE.md). Check changed facts and remove runtime corrections the baseline now
 supplies. Run the affected guide tests and `fg audit`; audit acceptance files record exceptions
 rather than correcting data.
-Fork-specific corrections apply only to Forever. Every edition retains upstream's bundled archive.
+The corrections above apply to Forever, except The Glowing Shard also applies to Classic and TBC.
+Every edition retains upstream's bundled archive.
 
 The v0.19.0 Forever snapshot also incorporates the [in-game prerequisite correction](https://github.com/brouznouf/factoruide/commit/673513fa65c7641f75625eaaf8b4816c5ca5ee2d)
 for Lightforge Ingots (#526): it follows The Lost Ingots (#324), rather than replacing it.

@@ -1,0 +1,7 @@
+# All editions: The Glowing Shard starts with item 10441 from Mutanus (3654) in
+# Wailing Caverns, but the bundled m_quest_objective creature credit for Sputtervalve
+# (3442) is an outdoor conversation in Ratchet. The quest text asks the player to
+# speak to someone there, then deliver the shard to Falla Sagewind (8418).
+[[quest]]
+id = 6981
+interactions = [{ npc = 3442, text = "Talk to Sputtervalve", conversation = true }]

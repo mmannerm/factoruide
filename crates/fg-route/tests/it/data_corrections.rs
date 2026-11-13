@@ -14,6 +14,313 @@ fn request(quests: &serde_json::Value) -> PlanRequest {
     .unwrap()
 }
 
+#[test]
+fn glowing_shard_only_enters_wailing_caverns_for_the_pickup() {
+    use fg_route::export::StepKind;
+    use fg_route::model::GuideObjective;
+
+    for (db, edition) in [
+        ("forever", Edition::Forever),
+        ("classic", Edition::Classic),
+        ("tbc", Edition::Tbc),
+    ] {
+        let conn = database_of(db);
+        let overrides = overrides(edition);
+        let mut req = request(&json!([]));
+        req.race = "orc".into();
+        req.objectives = vec![GuideObjective::Quest(6981)];
+        req.start = Some(StartState {
+            name: "Tester".into(),
+            level: 26,
+            position: Some(job::MapPos {
+                map: 1413,
+                x: 62.98,
+                y: 37.22,
+            }),
+            ..StartState::default()
+        });
+        for (accepted, talked) in [(true, false), (false, false), (true, true)] {
+            req.start.as_mut().unwrap().log = if accepted {
+                vec![job::LogQuest {
+                    id: QuestId(6981),
+                    complete: talked,
+                    objectives: vec![],
+                }]
+            } else {
+                vec![]
+            };
+            let outcome = job::plan(&conn, &overrides, &req, &|_| {}).unwrap();
+            let steps = &outcome.route.steps;
+            let pickup = |step: &&fg_route::export::Step| step.kind == StepKind::Accept && step.quest == Some(6981);
+            let dungeons = steps.iter().filter(|s| s.kind == StepKind::Dungeon).count();
+            assert_eq!(dungeons, usize::from(!accepted), "{db}, accepted={accepted}");
+            assert_eq!(steps.iter().filter(pickup).count(), usize::from(!accepted), "{db}");
+            if !accepted {
+                let start = steps.iter().find(pickup).unwrap();
+                assert!(start.inside && start.mob_ids.contains(&3654), "{db}");
+            }
+            let talk = steps
+                .iter()
+                .find(|s| s.kind == StepKind::Objective && s.quest == Some(6981));
+            assert_eq!(talk.is_some(), !talked, "{db}");
+            if let Some(talk) = talk {
+                assert!(
+                    !talk.inside
+                        && talk.zone_id == Some(17)
+                        && talk.target.as_ref().is_some_and(|p| p.id == 3442)
+                        && talk.text.contains("Talk to Sputtervalve"),
+                    "{db}"
+                );
+            }
+            assert!(
+                steps.iter().any(|s| s.kind == StepKind::TurnIn
+                    && s.quest == Some(6981)
+                    && s.target.as_ref().is_some_and(|p| p.id == 8418)),
+                "{db}"
+            );
+        }
+    }
+}
+
+#[test]
+fn forever_glowing_shard_conversation_needs_no_extra_levels() {
+    shard_conversation_at_twenty(Edition::Forever);
+}
+
+#[test]
+fn classic_glowing_shard_conversation_needs_no_extra_levels() {
+    shard_conversation_at_twenty(Edition::Classic);
+}
+
+#[test]
+fn tbc_glowing_shard_conversation_needs_no_extra_levels() {
+    shard_conversation_at_twenty(Edition::Tbc);
+}
+
+fn shard_conversation_at_twenty(edition: Edition) {
+    use fg_route::export::StepKind;
+    use fg_route::model::Guard;
+    use fg_route::params::Progression;
+    use fg_route::plan::Planner;
+
+    let conn = database_of(edition.key());
+    let mut o = overrides(edition);
+    o.params.progression = Progression::Normal;
+    o.params.dungeons = false;
+    let mut req = request(&json!([6981]));
+    req.race = "orc".into();
+    req.to_level = 21;
+    req.start = Some(StartState {
+        name: "Tester".into(),
+        level: 20,
+        position: Some(job::MapPos {
+            map: 1413,
+            x: 62.98,
+            y: 37.22,
+        }),
+        log: vec![job::LogQuest {
+            id: QuestId(6981),
+            ..Default::default()
+        }],
+        ..StartState::default()
+    });
+    let outcome = job::plan(&conn, &o, &req, &|_| {}).unwrap();
+    assert!(!outcome.route.steps.iter().any(|s| s.kind == StepKind::Dungeon));
+    assert!(
+        !outcome
+            .route
+            .steps
+            .iter()
+            .any(|s| s.quest == Some(6981) && matches!(s.kind, StepKind::Abandon | StepKind::Accept))
+    );
+    let is_talk = |s: &&fg_route::export::Step| {
+        s.quest == Some(6981) && s.kind == StepKind::Objective && s.target.as_ref().is_some_and(|t| t.id == 3442)
+    };
+    let talk = outcome.route.steps.iter().find(is_talk).unwrap();
+    assert_eq!(talk.level, 20, "{}: {}", edition.key(), talk.text);
+    assert!(!talk.inside);
+    assert!(
+        outcome
+            .route
+            .steps
+            .iter()
+            .any(|s| s.quest == Some(6981) && s.kind == StepKind::TurnIn)
+    );
+    let french = fg_route::export::render(&outcome.route, &Names::load(&conn, "frFR").unwrap());
+    let translated = french.steps.iter().find(is_talk).unwrap();
+    assert!(translated.text.starts_with("Parler à "), "{}", translated.text);
+
+    let prepared = job::prepare(&conn, &o, &req, &|_| {}).unwrap();
+    let quest = &prepared.model.quests[prepared.model.index[&6981]];
+    let conversation = quest.objectives.iter().find(|o| o.loc.id == 3442).unwrap();
+    assert_eq!((conversation.kills, conversation.uses), (0.0, 0.0));
+    let mut guarded = conversation.clone();
+    guarded.guard = Guard {
+        level: 40,
+        count: 3,
+        elite: false,
+    };
+    let planner = Planner::new(&prepared.model, &prepared.world, &prepared.params, &prepared.profile);
+    assert!(
+        planner.combat().need(quest, &guarded) >= 40.0,
+        "talking must not bypass nearby enemies"
+    );
+}
+
+#[test]
+fn a_group_needs_the_shard_pickup_until_all_its_members_have_the_quest() {
+    let conn = database_of("forever");
+    let mut overrides = overrides(Edition::Forever);
+    overrides.params.dungeons = false;
+    let mut req = request(&json!([6981]));
+    req.race = "orc".into();
+    req.to_level = 27;
+    let leader = StartState {
+        name: "Leader".into(),
+        race: 2,
+        class: "WARRIOR".into(),
+        faction: Some(fg_route::faction::Faction::Horde),
+        level: 26,
+        log: vec![job::LogQuest {
+            id: QuestId(6981),
+            complete: true,
+            objectives: vec![],
+        }],
+        ..StartState::default()
+    };
+    req.start = Some(leader.clone());
+    req.mates = vec![StartState {
+        name: "Partner".into(),
+        log: vec![],
+        ..leader
+    }];
+
+    for (partner_has_quest, needs_run) in [(false, true), (true, false)] {
+        if partner_has_quest {
+            req.mates[0].log = vec![job::LogQuest {
+                id: QuestId(6981),
+                ..Default::default()
+            }];
+        }
+        let prepared = job::prepare(&conn, &overrides, &req, &|_| {}).unwrap();
+        let wc = prepared.model.dungeons.iter().find(|d| d.area == 718).unwrap();
+        assert_eq!(wc.needed, needs_run, "partner has quest = {partner_has_quest}");
+    }
+}
+
+#[test]
+fn group_shard_steps_follow_the_members_who_still_need_it() {
+    use fg_route::export::StepKind;
+    use fg_route::model::GuideObjective;
+
+    let conn = database_of("forever");
+    let mut req = request(&json!([]));
+    req.race = "orc".into();
+    let leader = StartState {
+        name: "Leader".into(),
+        race: 2,
+        class: "WARRIOR".into(),
+        faction: Some(fg_route::faction::Faction::Horde),
+        level: 26,
+        // Every other Wailing Caverns quest in the frozen Forever snapshot is already done.
+        completed: [914, 959, 962, 999, 1486, 1487, 1489, 1490, 1491, 1500, 3366]
+            .into_iter()
+            .map(QuestId)
+            .collect(),
+        position: Some(job::MapPos {
+            map: 1413,
+            x: 62.98,
+            y: 37.22,
+        }),
+        ..StartState::default()
+    };
+    for objective in [GuideObjective::Quest(6981), GuideObjective::Dungeon(718)] {
+        req.objectives = vec![objective];
+        for (leader_turned_in, partner_accepted, partner_ready) in [
+            (true, true, false),
+            (true, false, false),
+            (false, true, false),
+            (true, true, true),
+        ] {
+            let mut start = leader.clone();
+            if leader_turned_in {
+                start.completed.push(QuestId(6981));
+            } else {
+                start.log = vec![job::LogQuest {
+                    id: QuestId(6981),
+                    complete: true,
+                    objectives: vec![],
+                }];
+            }
+            req.start = Some(start);
+            req.mates = vec![StartState {
+                name: "Partner".into(),
+                log: if partner_accepted {
+                    vec![job::LogQuest {
+                        id: QuestId(6981),
+                        complete: partner_ready,
+                        objectives: vec![],
+                    }]
+                } else {
+                    vec![]
+                },
+                ..leader.clone()
+            }];
+            let outcome = job::plan(&conn, &overrides(Edition::Forever), &req, &|_| {}).unwrap();
+            let steps = &outcome.route.steps;
+            let label = format!(
+                "{objective:?}: leader turned in={leader_turned_in}, partner accepted={partner_accepted}, ready={partner_ready}"
+            );
+            assert_eq!(
+                steps.iter().filter(|s| s.kind == StepKind::Dungeon).count(),
+                usize::from(!partner_accepted),
+                "{label}"
+            );
+            assert_eq!(
+                steps
+                    .iter()
+                    .filter(|s| s.kind == StepKind::Accept && s.quest == Some(6981))
+                    .count(),
+                usize::from(!partner_accepted),
+                "{label}"
+            );
+            assert_eq!(
+                steps
+                    .iter()
+                    .filter(|s| s.kind == StepKind::Objective
+                        && s.quest == Some(6981)
+                        && s.target.as_ref().is_some_and(|p| p.id == 3442)
+                        && !s.inside)
+                    .count(),
+                usize::from(!partner_ready),
+                "{label}"
+            );
+            assert!(
+                steps
+                    .iter()
+                    .any(|s| s.kind == StepKind::TurnIn && s.quest == Some(6981)),
+                "{label}"
+            );
+        }
+    }
+}
+
+#[test]
+fn mothers_milk_still_requires_blackrock_spire() {
+    use fg_route::model::GuideObjective;
+
+    let conn = database_of("forever");
+    let mut req = request(&json!([]));
+    req.objectives = vec![GuideObjective::Quest(4866)];
+    req.start = Some(StartState {
+        level: 60,
+        ..StartState::default()
+    });
+    let prepared = job::prepare(&conn, &overrides(Edition::Forever), &req, &|_| {}).unwrap();
+    let spire = prepared.model.dungeons.iter().find(|d| d.area == 1583).unwrap();
+    assert!(spire.needed);
+}
+
 fn druid_at_twenty() -> PlanRequest {
     let mut req = request(&json!([]));
     req.race = "skyborne_horde".into();

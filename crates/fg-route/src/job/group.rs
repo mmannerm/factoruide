@@ -59,6 +59,45 @@ pub(super) fn join(
     let init = &mut model.initial;
     init.accepted.retain(|&i| shared(i));
     init.progress.retain(|p| init.accepted.contains(&p.0));
+    // Dungeon quests already carried by everyone who needs them must not be picked up again,
+    // even when the character leading the route turned one in. Continue from the least progress
+    // among those members, so a required dungeon run still shows a mate's unfinished work.
+    for (i, q) in model
+        .quests
+        .iter()
+        .enumerate()
+        .filter(|(_, q)| q.start_dungeon.is_some() || q.dungeon().is_some())
+    {
+        let carried: Option<Vec<_>> = std::iter::once(character)
+            .chain(mates.iter().copied())
+            .enumerate()
+            .filter(|(m, _)| need[i] & (1 << m) != 0)
+            .map(|(_, m)| m.log.iter().find(|log| log.id.0 == q.id))
+            .collect();
+        let Some(carried) = carried else { continue };
+        let Some((first, rest)) = carried.split_first() else {
+            continue;
+        };
+        if !init.accepted.contains(&i) {
+            init.accepted.push(i);
+        }
+        init.progress.retain(|p| p.0 != i);
+        let mut progress = super::start::objective_progress(q, first);
+        for log in rest {
+            let member = super::start::objective_progress(q, log);
+            progress.retain_mut(|(k, share)| {
+                *share = share.min(
+                    member
+                        .iter()
+                        .find_map(|(mk, ms)| (*mk == *k).then_some(*ms))
+                        .unwrap_or(0.0),
+                );
+                *share > 0.0
+            });
+        }
+        init.progress
+            .extend(progress.into_iter().map(|(k, share)| (i, k, share)));
+    }
     let index = &model.index;
     init.log.retain(|(id, _)| {
         index
