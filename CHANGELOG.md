@@ -8,6 +8,10 @@ An addon change also goes, in the same words, under Unreleased in that addon's o
 
 ## Unreleased
 
+### App
+
+- Saved objective guides show their must-have quests and completion bounds, and let you remove them.
+
 ### Guides
 
 - Timed quests postpone optional farming on walks until the delivery is finished; explicitly farmed walks still use the quest's timer.
