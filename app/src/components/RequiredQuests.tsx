@@ -9,10 +9,11 @@ interface Props {
   locale: string | null;
   quests: RequiredQuest[];
   onChange: (quests: RequiredQuest[]) => void;
+  removeOnly?: boolean;
 }
 
 /** Must-have quests: searched by name, zone, level or ID among those of the race and class, kept by ID. */
-export function RequiredQuests({ race, klass, locale, quests, onChange }: Props) {
+export function RequiredQuests({ race, klass, locale, quests, onChange, removeOnly = false }: Props) {
   const t = useT();
   const [query, setQuery] = useState("");
   const [found, setFound] = useState<QuestChoice[]>([]);
@@ -65,7 +66,7 @@ export function RequiredQuests({ race, klass, locale, quests, onChange }: Props)
   return (
     <section className="panel">
       <h3>{t("Quêtes indispensables")}</h3>
-      <p className="muted">{t("Cherchez une quête par son nom, sa zone, son niveau ou son ID (« barrens 20 »). Ses prérequis sont inclus et le guide la termine, même après le niveau cible.")}</p>
+      {!removeOnly && <p className="muted">{t("Cherchez une quête par son nom, sa zone, son niveau ou son ID (« barrens 20 »). Ses prérequis sont inclus et le guide la termine, même après le niveau cible.")}</p>}
       <div className="quest-windows">
         {quests.map((entry) => {
           const quest = questChoice(entry);
@@ -74,41 +75,43 @@ export function RequiredQuests({ race, klass, locale, quests, onChange }: Props)
             <button className="chip" title={typeof quest === "number" ? `#${quest}` : undefined} onClick={() => onChange(quests.filter((q) => q !== entry))}>
               {label(quest)} ×
             </button>
-            <label className="field quest-level"><span>{t("Niveau minimum (facultatif)")}</span><input type="number" min={1} step={1} value={window.min_level ?? ""} placeholder="—" onChange={(e) => setBound(entry, "min_level", e.target.value)} /></label>
-            <label className="field quest-level"><span>{t("Niveau maximum (facultatif)")}</span><input type="number" min={1} step={1} value={window.max_level ?? ""} placeholder="—" onChange={(e) => setBound(entry, "max_level", e.target.value)} /></label>
+            <label className="field quest-level"><span>{t("Niveau minimum (facultatif)")}</span><input type="number" min={1} step={1} readOnly={removeOnly} value={window.min_level ?? ""} placeholder="—" onChange={(e) => setBound(entry, "min_level", e.target.value)} /></label>
+            <label className="field quest-level"><span>{t("Niveau maximum (facultatif)")}</span><input type="number" min={1} step={1} readOnly={removeOnly} value={window.max_level ?? ""} placeholder="—" onChange={(e) => setBound(entry, "max_level", e.target.value)} /></label>
           </div>;
         })}
       </div>
       {quests.length > 0 && <p className="muted">{t("Les niveaux incluent les deux bornes et s'appliquent au rendu, avant l'XP de la récompense. Les prérequis peuvent être faits plus tôt.")}</p>}
-      <input
-        type="search"
-        aria-label={t("Nom, zone, niveau ou ID")}
-        placeholder={t("Nom, zone, niveau ou ID")}
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key !== "Enter" || !query.trim()) return;
-          const first = shown[0];
-          if (first) add(first.id, first);
-          else add(questChoice(requiredQuest(query)));
-        }}
-      />
-      {shown.length > 0 && (
-        <ul className="pick-list quest-choices">
-          {shown.map((q) => (
-            <li key={q.id}>
-              <button className="link" disabled={quests.some((entry) => questChoice(entry) === q.id)} onClick={() => add(q.id, q)}>
-                {q.name}
-              </button>
-              <span className="muted">
-                {" "}
-                · {t("niveau {level}", { level: q.level })}
-                {q.zone ? ` · ${q.zone}` : ""} · #{q.id}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
+      {!removeOnly && (<>
+        <input
+          type="search"
+          aria-label={t("Nom, zone, niveau ou ID")}
+          placeholder={t("Nom, zone, niveau ou ID")}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key !== "Enter" || !query.trim()) return;
+            const first = shown[0];
+            if (first) add(first.id, first);
+            else add(questChoice(requiredQuest(query)));
+          }}
+        />
+        {shown.length > 0 && (
+          <ul className="pick-list quest-choices">
+            {shown.map((q) => (
+              <li key={q.id}>
+                <button className="link" disabled={quests.some((entry) => questChoice(entry) === q.id)} onClick={() => add(q.id, q)}>
+                  {q.name}
+                </button>
+                <span className="muted">
+                  {" "}
+                  · {t("niveau {level}", { level: q.level })}
+                  {q.zone ? ` · ${q.zone}` : ""} · #{q.id}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </>)}
     </section>
   );
 }
