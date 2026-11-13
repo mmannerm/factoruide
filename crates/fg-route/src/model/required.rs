@@ -1,4 +1,4 @@
-//! Select a feasible prerequisite branch for every exact quest requirement.
+//! Select prerequisite branches for must-have quests and objective guides.
 
 use super::{GuideObjective, Profile, Quest};
 use crate::params::Params;
@@ -9,8 +9,10 @@ struct Requirements<'a> {
     quests: &'a [Quest],
     index: HashMap<i64, usize>,
     completed: &'a HashSet<i64>,
+    logged: Option<&'a HashSet<i64>>,
     skipped: &'a [(i64, String, String)],
     roots: &'a [i64],
+    prefer_objectives: bool,
 }
 
 impl Requirements<'_> {
@@ -32,20 +34,14 @@ impl Requirements<'_> {
             bail!("quest {id}: {why}");
         };
         let q = &self.quests[i];
-        let conflicts = |other: i64| {
-            q.exclusive.contains(&other)
-                || self
-                    .index
-                    .get(&other)
-                    .is_some_and(|&j| self.quests[j].exclusive.contains(&id))
-        };
         if let Some(other) = selected
             .iter()
             .chain(self.completed)
+            .chain(self.logged.into_iter().flatten())
             .chain(self.roots)
             .chain(visiting.iter())
             .copied()
-            .find(|&other| other != id && conflicts(other))
+            .find(|&other| other != id && self.conflicts(q, other))
         {
             bail!("quest {} ({id}) conflicts with quest {other}", q.name);
         }
@@ -60,6 +56,14 @@ impl Requirements<'_> {
         visiting.remove(&id);
         selected.insert(id);
         Ok(())
+    }
+
+    fn conflicts(&self, q: &Quest, other: i64) -> bool {
+        q.exclusive.contains(&other)
+            || self
+                .index
+                .get(&other)
+                .is_some_and(|&i| self.quests[i].exclusive.contains(&q.id))
     }
 
     /// Adds `count` of `alternatives` to the selection (the cheapest first), the ones already
@@ -84,9 +88,10 @@ impl Requirements<'_> {
             .copied()
             .collect();
         candidates.sort_by_key(|id| {
-            self.index
-                .get(id)
-                .map_or((i64::MAX, *id), |&i| (self.quests[i].min_level, *id))
+            self.index.get(id).map_or((true, i64::MAX, *id), |&i| {
+                let q = &self.quests[i];
+                (self.prefer_objectives && !q.zone_forced, q.min_level, *id)
+            })
         });
         let mut reasons = Vec::new();
         for id in candidates {
@@ -110,24 +115,31 @@ pub(super) fn apply(
     quests: &mut Vec<Quest>,
     rows: &[super::sources::QuestRow],
     class_quests: &HashSet<i64>,
+    logged: &HashSet<i64>,
     skipped: &mut Vec<(i64, String, String)>,
     profile: &Profile,
     params: &Params,
 ) -> Result<()> {
-    let objectives = profile.objectives.iter().filter_map(|o| match *o {
-        GuideObjective::Quest(id) => Some(id),
-        _ => None,
-    });
-    if profile.required_quests.is_empty() && objectives.clone().next().is_none() {
+    let objectives: Vec<_> = profile
+        .objectives
+        .iter()
+        .filter_map(|o| match *o {
+            GuideObjective::Quest(id) => Some(id),
+            _ => None,
+        })
+        .collect();
+    if profile.required_quests.is_empty() && !profile.objective_guide() {
         return Ok(());
     }
     let roots: Vec<_> = profile.required_quests.iter().map(|r| r.id).collect();
-    let required = Requirements {
+    let mut required = Requirements {
         quests,
         index: quests.iter().enumerate().map(|(i, q)| (q.id, i)).collect(),
         completed: &profile.completed_quests,
+        logged: profile.objective_guide().then_some(logged),
         skipped,
         roots: &roots,
+        prefer_objectives: false,
     };
     let mut selected = HashSet::new();
     let mut requests: Vec<_> = profile.required_quests.iter().collect();
@@ -145,25 +157,55 @@ pub(super) fn apply(
             }
         }
     }
-    // Select prerequisites for individually chosen objectives. The preview can report an
-    // unavailable objective, while an unavailable must-have still rejects the request.
+    // Exact choices take priority over bulk objectives. Unavailable objectives are reported
+    // in the preview, while an unavailable must-have still rejects the request.
     let mut objective_chains = selected.clone();
     let mut excluded_objectives = Vec::new();
-    for id in objectives {
-        let Some(&i) = required.index.get(&id) else {
-            continue;
-        };
-        let mut branch = objective_chains.clone();
-        match required.add(id, &mut branch, &mut HashSet::new()) {
-            Ok(()) => objective_chains = branch,
-            Err(error) => excluded_objectives.push((id, quests[i].name.clone(), format!("{error:#}"))),
+    let mut bulk: Vec<_> = quests
+        .iter()
+        .filter(|q| profile.objective_guide() && q.zone_forced && !objectives.contains(&q.id))
+        .map(|q| q.id)
+        .collect();
+    bulk.sort_unstable_by_key(|id| (!logged.contains(id), *id));
+    required.prefer_objectives = profile.objective_guide();
+    let mut alternate_chains = HashSet::new();
+    for (ids, bulk) in [(objectives, false), (bulk, true)] {
+        let fixed = objective_chains.clone();
+        for id in ids {
+            let Some(&i) = required.index.get(&id) else {
+                continue;
+            };
+            if objective_chains.contains(&id) || profile.completed_quests.contains(&id) {
+                continue;
+            }
+            let branch = |chosen: &HashSet<i64>| {
+                let mut next = chosen.clone();
+                required.add(id, &mut next, &mut HashSet::new()).map(|()| next)
+            };
+            match branch(&objective_chains) {
+                Ok(next) => objective_chains = next,
+                // Two bulk quests can offer mutually exclusive routes. Keep both in the
+                // model so a saved guide can still use either path.
+                Err(_)
+                    if bulk
+                        && objective_chains
+                            .iter()
+                            .any(|&other| required.conflicts(&quests[i], other))
+                        && let Ok(next) = branch(&fixed) =>
+                {
+                    alternate_chains.extend(next);
+                }
+                Err(error) => excluded_objectives.push((id, quests[i].name.clone(), format!("{error:#}"))),
+            }
         }
     }
+    objective_chains.extend(alternate_chains);
     // Optional quests must not close an explicitly selected branch before it can be done.
     let incompatible: HashSet<_> = quests
         .iter()
         .filter(|q| {
-            !selected.contains(&q.id)
+            !selected.is_empty()
+                && !selected.contains(&q.id)
                 && (q.exclusive.iter().any(|id| selected.contains(id))
                     || quests
                         .iter()
@@ -173,9 +215,9 @@ pub(super) fn apply(
         .collect();
     for q in quests.iter_mut() {
         q.required = selected.contains(&q.id);
-        if profile.objective_guide() && objective_chains.contains(&q.id) {
-            q.zone_forced = true;
-            q.mandatory = true;
+        if profile.objective_guide() {
+            q.zone_forced = objective_chains.contains(&q.id);
+            q.mandatory = q.zone_forced;
         }
         q.priority_deadline = deadlines.get(&q.id).copied();
         if let Some(request) = profile.required_quests.iter().find(|r| r.id == q.id) {
@@ -224,6 +266,7 @@ mod tests {
         let error = apply(
             &mut quests,
             &[],
+            &HashSet::new(),
             &HashSet::new(),
             &mut skipped,
             &profile,

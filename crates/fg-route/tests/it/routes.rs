@@ -609,9 +609,185 @@ fn an_objective_preview_counts_the_zone_and_tells_what_is_left_out() {
     .unwrap();
     assert!(preview.quests >= 4, "{}", preview.quests);
     let excluded = |id| preview.excluded.iter().find(|q| q.id == id).map(|q| q.reason.as_str());
-    assert_eq!(excluded(941), Some("a quest it needs first cannot be planned"));
+    assert_eq!(
+        excluded(941),
+        Some("no supported prerequisite alternative: quest 927: started by a rare drop")
+    );
     assert!(excluded(456).is_none());
     assert!(preview.recommended.is_some());
+}
+
+#[test]
+fn bulk_objectives_take_one_prerequisite_outside_the_selected_area() {
+    let quest = |id: i64, sort: i64, min_level: i64, extra: &str| {
+        format!(
+            "[[quest]]\nid = {id}\nname = \"Quest {id}\"\nlevel = 18\nmin_level = {min_level}\nraces_mask = 77\nzone = {sort}\n             xp = 300\nobjectives_text = \"Speak with Wilder Thistlenettle.\"\nstarts = [{{ npc = 234 }}]\nends = [{{ npc = 656 }}]\n{extra}\n"
+        )
+    };
+    let conn = Fixture::new(Edition::Classic)
+        .file("classic_dungeons")
+        .toml(&quest(90001, 12, 14, "exclusive = [90002]"))
+        .toml(&quest(90002, 12, 15, "exclusive = [90001]"))
+        .toml(&quest(90003, 40, 16, "pre_any = [90001, 90002]"))
+        .toml(&quest(90004, 1581, 16, "pre_any = [90001, 90002]"))
+        .toml(&quest(90005, 12, 14, ""))
+        .toml(&quest(90006, 40, 14, ""))
+        .toml(&quest(90007, 1581, 14, ""))
+        .open();
+    let overrides = overrides();
+    for (objective, target) in [
+        (GuideObjective::Zone(40), 90003),
+        (GuideObjective::Dungeon(1581), 90004),
+    ] {
+        let sort = match objective {
+            GuideObjective::Zone(area) | GuideObjective::Dungeon(area) => area,
+            GuideObjective::Quest(_) => unreachable!(),
+        };
+        for (completed, excluded, logged, in_area, expected) in [
+            (vec![], vec![], false, false, vec![90001, target]),
+            (vec![], vec![90001], false, false, vec![90002, target]),
+            (vec![job::QuestId(90002)], vec![90002], false, false, vec![target]),
+            (vec![], vec![90001, 90002], false, false, vec![]),
+            (vec![], vec![], true, false, vec![90002, target]),
+            (vec![], vec![], false, true, vec![90002, target]),
+            (vec![], vec![], true, true, vec![90002, target]),
+        ] {
+            conn.execute(
+                "UPDATE m_quest SET zone_or_sort = ?1 WHERE id = 90002",
+                [if in_area { sort } else { 12 }],
+            )
+            .unwrap();
+            let mut req = request("human", "warrior", 25, &[]);
+            let params = req.params.as_mut().unwrap();
+            params.effort = 0.0;
+            params.excluded_quests.extend(excluded);
+            req.objectives = vec![objective];
+            req.start = Some(StartState {
+                completed,
+                log: logged
+                    .then_some(LogQuest {
+                        id: job::QuestId(90002),
+                        complete: true,
+                        objectives: vec![],
+                    })
+                    .into_iter()
+                    .collect(),
+                ..player("Tester", 1, "warrior", 25)
+            });
+            let preview = job::objective_preview(&conn, &overrides, &req).unwrap();
+            let excluded = preview.excluded.iter().find(|q| q.id == target);
+            if expected.is_empty() {
+                assert!(
+                    excluded
+                        .unwrap()
+                        .reason
+                        .contains("no supported prerequisite alternative")
+                );
+            } else {
+                assert!(excluded.is_none(), "{excluded:?}");
+            }
+            let guide = job::plan(&conn, &overrides, &req, &|_| {}).unwrap();
+            let turned: Vec<_> = guide
+                .plan
+                .iter()
+                .filter_map(|step| match step {
+                    job::RouteStep::TurnIn { quest } if (90001..=90005).contains(quest) => Some(*quest),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(turned, expected);
+            if logged {
+                assert!(!guide.plan.contains(&job::RouteStep::Accept { quest: 90002 }));
+            }
+        }
+    }
+    // Both introductions are in the selected zone. A saved guide may have taken either one.
+    conn.execute("UPDATE m_quest SET zone_or_sort = 40 WHERE id IN (90001, 90002)", [])
+        .unwrap();
+    let mut req = request("human", "warrior", 25, &[]);
+    req.objectives = vec![GuideObjective::Zone(40)];
+    req.start = Some(player("Tester", 1, "warrior", 25));
+    let editor = job::Editor::open(&conn, &overrides, &req, None).unwrap();
+    editor
+        .save(
+            &[
+                job::RouteStep::Accept { quest: 90002 },
+                job::RouteStep::TurnIn { quest: 90002 },
+                job::RouteStep::Accept { quest: 90003 },
+                job::RouteStep::TurnIn { quest: 90003 },
+            ],
+            vec![],
+        )
+        .unwrap();
+
+    req.start.as_mut().unwrap().log.push(LogQuest {
+        id: job::QuestId(90002),
+        complete: true,
+        objectives: vec![],
+    });
+    let preview = job::objective_preview(&conn, &overrides, &req).unwrap();
+    assert!(
+        preview
+            .excluded
+            .iter()
+            .any(|q| q.id == 90001 && q.reason.contains("conflicts"))
+    );
+    assert!(!preview.excluded.iter().any(|q| q.id == 90002));
+}
+
+#[test]
+fn a_bulk_objective_can_use_an_item_already_handed_by_a_completed_quest() {
+    let (_, guide) = Scenario::new()
+        .levels(20, 20)
+        .zone(1, "Westfall")
+        .dungeon("The Deadmines", 1, 60.0, 60.0)
+        .start(StartState {
+            completed: vec![job::QuestId(800)],
+            ..player("Tester", 1, "warrior", 20)
+        })
+        .objectives(&[GuideObjective::Zone(1)])
+        .quest(
+            Q::new(800, "Item giver").level(18).giver(1, 50.0, 50.0).objective(
+                Obj::visit(
+                    "Inside",
+                    At {
+                        zone: 1,
+                        x: 60.0,
+                        y: 60.0,
+                    },
+                )
+                .inside(0),
+            ),
+        )
+        .quest(Q::new(801, "Other item giver").level(18).giver(1, 60.0, 60.0))
+        .quest(
+            Q::new(802, "Deliver the item")
+                .level(18)
+                .giver(1, 51.0, 50.0)
+                .zone_forced()
+                .objective(
+                    Obj::visit(
+                        "Item",
+                        At {
+                            zone: 1,
+                            x: 51.0,
+                            y: 50.0,
+                        },
+                    )
+                    .handed_by(&[800, 801]),
+                ),
+        )
+        .guide();
+    let turned: Vec<_> = guide
+        .plan
+        .iter()
+        .filter_map(|s| match s {
+            job::RouteStep::TurnIn { quest } => Some(*quest),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(turned, [802]);
+    assert!(!guide.plan.contains(&job::RouteStep::Dungeon { dungeon: 900 }));
 }
 
 /// The guide goes on past the target level until the quests of the forced zones are done: a

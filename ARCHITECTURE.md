@@ -41,8 +41,8 @@ work needing grinding beyond a player-specified deadline. Turn-ins check each me
 still needing the quest, including after travel; imported completion already satisfies the goal.
 Planning and edited-guide saves reject missed player-specified windows.
 
-Objective guides combine dungeon, zone and quest targets. Individual quest targets use the
-same prerequisite selection as must-have quests. Their routes show the level the quests
+Objective guides combine dungeon, zone and quest targets. The planner selects feasible
+prerequisite branches, including quests outside the selected area. Routes show the level the quests
 recommend, and explicit completion windows still apply at turn-in. Saved dungeon requests
 resolve to a dungeon objective.
 
