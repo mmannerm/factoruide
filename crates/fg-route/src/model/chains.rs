@@ -389,7 +389,7 @@ pub(super) fn release_impossible_class_quests(
             if !doable.contains(&q.id) || completed.contains(&q.id) {
                 continue;
             }
-            let satisfied = |p: &i64| doable.contains(p) || known.contains(p);
+            let satisfied = |p: &i64| doable.contains(p) || known.contains(p) || completed.contains(p);
             let blocked = q.pre_all.iter().any(|p| !satisfied(p))
                 || q.pre_held.iter().any(|p| !doable.contains(p) || completed.contains(p))
                 || (!q.pre_any.is_empty()

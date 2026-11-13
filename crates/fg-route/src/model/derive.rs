@@ -2,7 +2,7 @@
 //! for a model read from a database (`load`) and one built by hand (`testing::Scenario`).
 
 use super::sources::QuestRow;
-use super::{Dungeon, Profile, Quest, chains, dungeons, required};
+use super::{Dungeon, GuideObjective, Profile, Quest, chains, dungeons, required};
 use crate::params::Params;
 use anyhow::Result;
 use rustc_hash::FxHashMap;
@@ -44,7 +44,24 @@ pub(crate) fn settle(
     profile: &Profile,
     params: &Params,
 ) -> Result<HashSet<String>> {
-    required::apply(quests, rows, &knowledge.class_quests, skipped, profile, params)?;
+    // Quests with work inside a selected dungeon also belong to its objective, even if they
+    // are filed under another area. Zone and dungeon categories were marked when built.
+    for (d, dungeon) in dungeons.iter().enumerate() {
+        if profile.objectives.contains(&GuideObjective::Dungeon(dungeon.area)) {
+            for q in quests.iter_mut() {
+                q.zone_forced |= q.in_dungeon(d) || q.start_dungeon == Some(d);
+            }
+        }
+    }
+    required::apply(
+        quests,
+        rows,
+        &knowledge.class_quests,
+        &knowledge.logged,
+        skipped,
+        profile,
+        params,
+    )?;
     if knowledge.assumed {
         for q in quests.iter().filter(|q| q.required) {
             knowledge.rewards.remove(&q.id);
@@ -85,7 +102,16 @@ pub(crate) fn settle(
     );
     // An objective guide plans its objectives' quests and what leads to them, nothing else.
     if profile.objective_guide() {
-        quests.retain(|q| q.zone_forced);
+        // Keep completed item givers for the simulator's history, without forcing their work.
+        let handed: HashSet<i64> = quests
+            .iter()
+            .filter(|q| q.zone_forced)
+            .flat_map(|q| &q.objectives)
+            .flat_map(|o| &o.handed_by)
+            .filter(|id| profile.completed_quests.contains(id))
+            .copied()
+            .collect();
+        quests.retain(|q| q.zone_forced || handed.contains(&q.id));
     }
     dungeons::set_dungeon_levels(
         dungeons,
