@@ -8,6 +8,10 @@ An addon change also goes, in the same words, under Unreleased in that addon's o
 
 ## Unreleased
 
+### App
+
+- Saved objective guides show their must-have quests and completion bounds, and let you remove them.
+
 ### Guides
 
 - Zone and dungeon guides follow available prerequisite branches, even at maximum level; saved guides keep valid alternative quest chains.
