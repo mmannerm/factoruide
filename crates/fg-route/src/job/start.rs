@@ -378,7 +378,7 @@ fn at(world: &World, p: MapPos) -> Option<(crate::world::Pos, i64)> {
 /// log lists them in its own order and its own language: matched by the name of their target,
 /// else by the amount asked when only one objective asks it, else the only objective. One left
 /// unmatched counts as not started (the guide goes to do it, the game shows it done).
-fn objective_progress(q: &Quest, log: &LogQuest) -> Vec<(u8, f64)> {
+pub(super) fn objective_progress(q: &Quest, log: &LogQuest) -> Vec<(u8, f64)> {
     let n = q.objectives.len().min(32);
     if log.complete {
         return (0..n).map(|k| (k as u8, 1.0)).collect();

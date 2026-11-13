@@ -124,6 +124,95 @@ fn a_group_needs_the_shard_pickup_until_all_its_members_have_the_quest() {
 }
 
 #[test]
+fn group_shard_steps_follow_the_members_who_still_need_it() {
+    use fg_route::export::StepKind;
+    use fg_route::model::GuideObjective;
+
+    let conn = database_of("forever");
+    let mut req = request(&json!([]));
+    req.race = "orc".into();
+    req.objectives = vec![GuideObjective::Quest(6981)];
+    let leader = StartState {
+        name: "Leader".into(),
+        race: 2,
+        class: "WARRIOR".into(),
+        faction: Some(fg_route::faction::Faction::Horde),
+        level: 26,
+        position: Some(job::MapPos {
+            map: 1413,
+            x: 62.98,
+            y: 37.22,
+        }),
+        ..StartState::default()
+    };
+    for (leader_turned_in, partner_accepted, partner_ready) in [
+        (true, true, false),
+        (true, false, false),
+        (false, true, false),
+        (true, true, true),
+    ] {
+        let mut start = leader.clone();
+        if leader_turned_in {
+            start.completed = vec![QuestId(6981)];
+        } else {
+            start.log = vec![job::LogQuest {
+                id: QuestId(6981),
+                complete: true,
+                objectives: vec![],
+            }];
+        }
+        req.start = Some(start);
+        req.mates = vec![StartState {
+            name: "Partner".into(),
+            log: if partner_accepted {
+                vec![job::LogQuest {
+                    id: QuestId(6981),
+                    complete: partner_ready,
+                    objectives: vec![],
+                }]
+            } else {
+                vec![]
+            },
+            ..leader.clone()
+        }];
+        let outcome = job::plan(&conn, &overrides(Edition::Forever), &req, &|_| {}).unwrap();
+        let steps = &outcome.route.steps;
+        let label =
+            format!("leader turned in={leader_turned_in}, partner accepted={partner_accepted}, ready={partner_ready}");
+        assert_eq!(
+            steps.iter().filter(|s| s.kind == StepKind::Dungeon).count(),
+            usize::from(!partner_accepted),
+            "{label}"
+        );
+        assert_eq!(
+            steps
+                .iter()
+                .filter(|s| s.kind == StepKind::Accept && s.quest == Some(6981))
+                .count(),
+            usize::from(!partner_accepted),
+            "{label}"
+        );
+        assert_eq!(
+            steps
+                .iter()
+                .filter(|s| s.kind == StepKind::Objective
+                    && s.quest == Some(6981)
+                    && s.target.as_ref().is_some_and(|p| p.id == 3442)
+                    && !s.inside)
+                .count(),
+            usize::from(!partner_ready),
+            "{label}"
+        );
+        assert!(
+            steps
+                .iter()
+                .any(|s| s.kind == StepKind::TurnIn && s.quest == Some(6981)),
+            "{label}"
+        );
+    }
+}
+
+#[test]
 fn mothers_milk_still_requires_blackrock_spire() {
     use fg_route::model::GuideObjective;
 
