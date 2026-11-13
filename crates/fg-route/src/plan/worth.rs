@@ -55,6 +55,7 @@ impl Worth<'_> {
         let work: f64 = places.iter().map(|o| work_at(o)).sum();
         let start = q.start_kills * self.params.kill_time(level, bonus, q.start_mob_level)
             + q.start_uses * self.params.object_time
+            + q.start_wait
             + q.auction_start
                 .as_ref()
                 .map_or(0.0, |purchase| purchase.time(self.params, level));

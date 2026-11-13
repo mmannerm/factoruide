@@ -1,5 +1,6 @@
 //! What a guide is made of: its steps, their kinds and targets, and the route around them.
 
+use super::notes::StepNote;
 use super::phrase::Phrase;
 use crate::faction::Faction;
 use crate::model::EntityKind;
@@ -182,6 +183,13 @@ pub struct Step {
     /// The step's sentences, language-neutral.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub say: Vec<Phrase>,
+    /// How its quest is taken or its objective done (`notes::ICONS`), written with the notes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+    /// What the quest notes (`notes/`) tell about it, in the guide's language, the one that
+    /// matters most first: written when the guide is shown or installed (`render`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<StepNote>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target: Option<Target>,
     /// Zone of the step (its English name, written in a language by `render`) and its ID.
@@ -312,6 +320,8 @@ impl Step {
             child_name: None,
             text: String::new(),
             say: Vec::new(),
+            icon: None,
+            notes: Vec::new(),
             target: None,
             zone: None,
             zone_id: None,
@@ -423,6 +433,10 @@ pub struct Route {
     /// character's level anyway: the app and the addon warn.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recommended: Option<Recommended>,
+    /// An objective guide: its steps' levels are only where the character would be, the addon
+    /// does not leave the steps planned well below the character's level behind.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub levels_ignored: bool,
     pub steps: Vec<Step>,
 }
 

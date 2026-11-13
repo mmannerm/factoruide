@@ -111,6 +111,52 @@ local KINDS = {
 -- A step of a kind this addon does not know (made by a newer app): its text, done right away.
 local OTHER = { icon = "Interface\\GossipFrame\\GossipGossipIcon", color = "ffffff", label = T("Step") }
 
+-- How a quest is taken or an objective done (the step's `ic`, from the app): its icon instead of
+-- its kind's. Textures of the Forever, Classic Era and TBC clients alike; "npc" keeps the kind's.
+local ICONS = {
+    object = "Interface\\Icons\\INV_Box_01",
+    item = "Interface\\Icons\\INV_Scroll_03",
+    item_drop = "Interface\\Icons\\INV_Misc_Bag_09",
+    kill = "Interface\\Icons\\Ability_DualWield",
+    elite = "Interface\\TargetingFrame\\UI-TargetingFrame-Skull",
+    get = "Interface\\Icons\\INV_Misc_Bag_08",
+    use = "Interface\\Icons\\INV_Misc_Gear_01",
+    talk = "Interface\\GossipFrame\\GossipGossipIcon",
+    buy = "Interface\\GossipFrame\\VendorGossipIcon",
+    text = "Interface\\Icons\\INV_Misc_Spyglass_03",
+    rare = "Interface\\Icons\\Ability_Hunter_SniperShot",
+    event = "Interface\\Icons\\INV_Misc_PocketWatch_01",
+    pickup = "Interface\\Icons\\INV_Crate_02",
+}
+
+-- Quest notes (the step's `nt`: { l = 1-3, t = text }): a mark after the step's name, yellow
+-- (good to know), orange (watch for it) or red (must read), the notes in the step's tooltip.
+local NOTE_TEXTURE = "Interface\\DialogFrame\\UI-Dialog-Icon-AlertNew"
+local NOTE_TINT = { { 255, 255, 255 }, { 255, 140, 60 }, { 255, 40, 40 } }
+local NOTE_COLOR = { { 1, 0.82, 0 }, { 1, 0.55, 0.15 }, { 1, 0.25, 0.25 } }
+
+--- The icon of a step: how it is done when the app says, else its kind's.
+local function StepIcon(step, kind) return (step.ic and ICONS[step.ic]) or kind.icon end
+
+--- The highest level of a step's notes, nil without notes.
+local function NoteLevel(step)
+    local top
+    for _, n in ipairs(step.nt or {}) do
+        local l = math.max(1, math.min(3, tonumber(n.l) or 1))
+        if not top or l > top then top = l end
+    end
+    return top
+end
+
+--- The mark of a step's notes to put after its name (" " and an inline texture), "" without notes.
+local function NoteMark(step, size)
+    local level = NoteLevel(step)
+    if not level then return "" end
+    local c = NOTE_TINT[level]
+    size = size or 14
+    return string.format(" |T%s:%d:%d:0:0:64:64:0:64:0:64:%d:%d:%d|t", NOTE_TEXTURE, size, size, c[1], c[2], c[3])
+end
+
 -- Steps of a group at most (checkpoints apart).
 local GROUP_MAX = 6
 -- Steps ahead looked at for the quests to pick up.
@@ -122,6 +168,13 @@ local state -- per character: { route = name, step = n, point = {...}, flightLea
 local route
 local acceptIndex = {} -- quest -> index of its accept step
 local turninIndex = {} -- quest -> index of its turn-in step
+
+--- An objective guide (a dungeon's, a zone's, quests chosen): no level to reach. Those made before
+--- `levelsIgnored` was exported end at the level they start at, unlike a leveling guide.
+local function ObjectiveGuide()
+    return route ~= nil
+        and (route.levelsIgnored == true or (route.fromLevel ~= nil and route.fromLevel == route.toLevel))
+end
 local objectiveQuests = {} -- quests with an objective step
 local questMobs = {} -- creature -> indexes of the objective steps done on it (killed, or dropping an item)
 local childQuests = {} -- child quests handed in on the way to their parent's turn-in
@@ -248,8 +301,14 @@ function IsDone(step, index)
         if not group:ForMe(step) then return group:Passed(step, index or state.step), true end
     end
     -- Planned well below our level: left behind (a character resuming the route, a quest
-    -- added to the game after we went through that zone), unless the quest is in the log.
-    if step.lvl and UnitLevel("player") - step.lvl >= OUTDATED_LEVELS and not (q and QuestLog.IsOnQuest(q)) then
+    -- added to the game after we went through that zone), unless the quest is in the log. Not in
+    -- an objective guide: its levels are only the character's when it was made.
+    if
+        step.lvl
+        and not ObjectiveGuide()
+        and UnitLevel("player") - step.lvl >= OUTDATED_LEVELS
+        and not (q and QuestLog.IsOnQuest(q))
+    then
         return true, true
     end
     -- An exclusive alternative (or the quest a breadcrumb leads to) is done or in progress:
@@ -705,7 +764,7 @@ end
 local function TaskView(step, index, withProgress)
     local kind = KINDS[step.k] or OTHER
     local title = QuestTitle(step)
-    local v = { index = index, step = step, kind = step.k, icon = kind.icon, color = kind.color, chips = {} }
+    local v = { index = index, step = step, kind = step.k, icon = StepIcon(step, kind), color = kind.color, chips = {} }
     if step.k == "accept" or step.k == "turnin" then
         v.name = title or step.t
         if title then v.sub = kind.label .. (step.n and (" • " .. step.n) or "") end
@@ -765,6 +824,8 @@ local function TaskView(step, index, withProgress)
         v.name = step.t
     end
     FG.Group:Chips(step, index, function(text, color) Chip(v, text, color) end, IsDone(step, index))
+    -- Drawn after the name (the name alone goes to the compass and the arrow).
+    v.mark = NoteMark(step)
     -- An objective guide done below the level its quests ask: said on the current step until reached.
     local recommended = route and route.recommendedLevel
     if recommended and state and index == state.step and UnitLevel("player") < recommended then
@@ -777,7 +838,7 @@ end
 local function NextView(step, index)
     local kind = KINDS[step.k] or OTHER
     local title = QuestTitle(step)
-    local v = { index = index, step = step, kind = step.k, color = kind.color, icon = kind.icon }
+    local v = { index = index, step = step, kind = step.k, color = kind.color, icon = StepIcon(step, kind) }
     if title and (step.k == "accept" or step.k == "turnin") then
         v.text, v.who = kind.label .. " " .. title, step.n
     elseif step.k == "train" then
@@ -785,6 +846,7 @@ local function NextView(step, index)
     else
         v.text = step.t
     end
+    v.text = (v.text or "") .. NoteMark(step, 12)
     return v
 end
 
@@ -873,6 +935,12 @@ function Guide:StepTooltip(owner, index)
     if not step then return end
     GameTooltip:SetOwner(owner, "ANCHOR_LEFT")
     GameTooltip:AddLine(step.t, 1, 1, 1, true)
+    -- Its quest notes, the one that matters most first (as the app sorts them).
+    for _, n in ipairs(step.nt or {}) do
+        local level = math.max(1, math.min(3, tonumber(n.l) or 1))
+        local c = NOTE_COLOR[level]
+        GameTooltip:AddLine(NoteMark({ nt = { n } }, 12) .. " " .. (n.t or ""), c[1], c[2], c[3], true)
+    end
     if step.fx or step.fk then GameTooltip:AddLine(L.farmTip, 0.75, 0.5, 1, true) end
     GameTooltip:AddLine(L.pointHint, 0.6, 0.6, 0.6, true)
     GameTooltip:AddLine(L.skipHint, 0.6, 0.6, 0.6, true)
@@ -1191,16 +1259,28 @@ end
 
 local VISITS = { flight_master = true, train = true, sell = true, bind = true, profession = true }
 
---- The visits (merchant, trainer, flight master, inn) before the last quest the game knows as
---- handed in are done: their marks are lost with a new version of the guide or a character
---- joining it halfway, and the game cannot say whether a merchant was seen.
+local QUEST_STEPS = { accept = true, turnin = true, objective = true }
+
+--- The visits (merchant, trainer, flight master, inn) followed by a quest step the character
+--- did are done: their marks are lost with a new version of the guide or a character joining it
+--- halfway, and the game cannot say whether a merchant was seen. Only up to the first quest step
+--- not done: a quest handed in far ahead of the guide does not pass the visits on the way to it.
 local function PassVisits()
-    local last = 0
+    local pending = {}
     for i, step in ipairs(route.steps) do
-        if step.k == "turnin" and step.q and QuestLog.IsQuestFlaggedCompleted(step.q) then last = i end
-    end
-    for i = 1, last - 1 do
-        if VISITS[route.steps[i].k] and not state.marks[i] then state.marks[i] = true end
+        if VISITS[step.k] then
+            if not state.marks[i] then table.insert(pending, i) end
+        elseif QUEST_STEPS[step.k] and not step.bg then
+            local done, passed = IsDone(step, i)
+            if not done then break end
+            -- Marked by hand: says nothing of where the character went.
+            if not passed then
+                for _, index in ipairs(pending) do
+                    state.marks[index] = true
+                end
+                pending = {}
+            end
+        end
     end
 end
 
@@ -1879,4 +1959,5 @@ end
 --- The kinds of steps: { icon, color, label }; OTHER for a kind not among them.
 Guide.KINDS = KINDS
 Guide.OTHER = OTHER
+Guide.NoteMark = NoteMark
 Guide.L = L

@@ -15,6 +15,64 @@ An addon change also goes, in the same words, under Unreleased in that addon's o
 - Required quests are reinserted after their skill requirement is reached, trying the route's end when an earlier placement fails.
 - Objective guides honor explicit quest completion windows and include the prerequisites and dungeons of individually selected quests. Choosing Shipping Label adds the crate purchase and filling steps when needed.
 
+## 0.19.0 (2026-11-12)
+
+Quest notes in the guides, with tips and warnings on tricky quests, and fixes to the quest data from players' reports.
+
+### App
+
+- Steps show how their quest is taken (an item, an object, a mob's drop, an event) or their objective done, and a mark when a note tells more about the quest.
+
+### Guides
+
+- Quest notes: tips and warnings about a quest (good to know, watch out, must read), written in the guide's language; Jungle Secrets says how to get it from Private Thorsen.
+
+### Addon
+
+- Steps show how their quest is taken or their objective done, and a yellow, orange or red mark when a note tells more about the quest; the step's tooltip lists the notes.
+- A quest handed in far ahead of the guide no longer marks the merchants, trainers and flight masters before it as visited.
+
+### WoW data
+
+- WoW Forever: the latest quest data, with 115 more quests a guide can take (most in Riverglades and Desolace), the Duskwood Missions left out again, and more names checked in Spanish and Korean.
+- About 200 more NPCs who walk a road (Gann Stonespire, the Defias Messenger, Duskwing...) show where to find them along their path.
+- Classic Era: hundreds of quest objectives shown in English again, not French.
+- Fixes from players' reports: rare drops and long respawns counted as players see them (Thick Yeti Hide, Book: The Powers Below, Zzarc' Vul...), quests that need an event or a rare item first (Assassin's Contract, Arena Master, Dagun, Gahz'rilla), the teleport up to Xylem's tower, and a few WoW Forever chains.
+
+## 0.18.0 (2026-11-11)
+
+WoW Forever's guide map on one seamless map of Azeroth, and the latest WoW Forever data.
+
+### App
+
+- The web app no longer runs out of memory while making a guide, nor after making a few.
+- A web app built on Windows includes its game databases and map images.
+- The guide map zooms in further, draws only the steps from the current one (a slider sets how many of the zone's), and arrows show which way the route goes.
+- WoW Forever: the guide map is one seamless map of Azeroth, every zone's art blended into its neighbours, the game's minimap showing through as you zoom in; Zephras Isle floats in its frame between the continents.
+- Zoomed in on the guide map, caves, Ironforge and Undercity show as the game's minimap draws them inside.
+- The zone maps no longer miss pieces of their explored areas (Duskwood's Twilight Grove, among others).
+
+### Guides
+
+- A forced dungeon is run even when it has no quest for your character (Shadowfang Keep for the Alliance).
+- Loot is no longer sold to warlock-only demon trainers in a guide for another class.
+- The quests inside a dungeon are finished before leaving for another forced dungeon.
+
+### Addon
+
+- No more blocked-action errors from the quest panel during a fight; its layout catches up afterwards.
+- Guides pasted on Windows no longer fail to import on large numbers.
+
+### WoW data
+
+- WoW Forever: the latest quest data, with 85 more quests a guide can take (Riverglades, the Duskwood Missions) and more names checked in French and Spanish.
+- WoW Forever: Corma Villard's Wetlands quests, no longer offered in game, are left out of the guides.
+- WoW Forever: Murloc Gills, The Gurubashi Legends of Old and Blackfathom Villainy come after the quest that opens them.
+
+## 0.17.0 (2026-11-09)
+
+Objective guides: several dungeons, zones and quests at once, in the best order whatever their level, and the latest WoW Forever data.
+
 ### App
 
 - Objective guides replace the dungeon guide: pick several dungeons, zones and quests at once, and get every quest of them with what leads to them, in the best order, whatever their level; the guide tells the level its quests ask and lists those above yours.
@@ -22,10 +80,12 @@ An addon change also goes, in the same words, under Unreleased in that addon's o
 ### Addon
 
 - An objective guide done below the level its quests ask says so on the current step until you reach it.
+- World map pins and the walk's dots keep their size on a map enlarged by another addon.
 
 ### WoW data
 
 - WoW Forever: the latest quest data and the game's new build, with 58 more contributions from players (quests seen in game, measured XP and drop rates, creature places) and 134 Spanish, French, German and English names checked; most of the Riverglades quests are in the guides, dungeon quests give their new, higher XP, and Lakeshire's guards and Guard Parker's supply crates no longer count as hostile creatures.
+- WoW Forever: quests offered only after another one in game (Heart of Disruption, The Broodmother, Lightforge Ingots, Highland Hides, Forgotten Loa Idols, Whuut's the Rush) wait for it in the guides, From the Ashes is taken with War Banners, and Alonso's Dragonslayer quests in Ashenvale are for Warriors only.
 
 ## 0.16.0 (2026-11-07)
 

@@ -103,6 +103,67 @@ fn fixture(files: &[&str]) -> Connection {
         .open()
 }
 
+/// Loot stops must work for everyone whose bags the shared route empties. Demon shops use
+/// a warlock-only gossip option even though their NPCs carry the ordinary vendor flag.
+#[test]
+fn loot_vendors_require_access_for_every_group_member() {
+    for edition in [Edition::Classic, Edition::Forever] {
+        for (class, mates, expected) in [
+            ("rogue", vec![], vec![990001, 990002]),
+            ("warlock", vec![], vec![5749, 12807, 14437, 990001, 990002]),
+            ("warlock", vec!["rogue"], vec![990001, 990002]),
+            ("rogue", vec!["warlock"], vec![990001, 990002]),
+            ("warlock", vec!["warlock"], vec![5749, 12807, 14437, 990001, 990002]),
+        ] {
+            let got = loot_vendors_for(edition, class, &mates);
+            assert_eq!(got, expected, "{edition:?}: {class} with {mates:?}");
+        }
+    }
+}
+
+/// TBC's NPC flags and gossip menus differ. Its snapshot does not carry the Classic class
+/// gate, so do not invent that restriction for its vendors.
+#[test]
+fn tbc_loot_vendors_keep_their_own_service_rules() {
+    assert_eq!(
+        loot_vendors_for(Edition::Tbc, "rogue", &[]),
+        [5749, 12807, 14437, 990001, 990002]
+    );
+}
+
+fn loot_vendors_for(edition: Edition, class: &str, mates: &[&str]) -> Vec<i64> {
+    let conn = Fixture::new(edition).file("vendor_access").open();
+    if edition == Edition::Tbc {
+        conn.execute_batch(
+            "UPDATE m_npc SET npc_flags = CASE id WHEN 990002 THEN 145 ELSE 129 END
+             WHERE id IN (5749, 12807, 14437, 990001, 990002, 990003)",
+        )
+        .unwrap();
+    }
+    let o = Overrides::load_edition(&repo().join("overrides"), edition).unwrap();
+    let req = PlanRequest {
+        params: Some(o.params.clone()),
+        required_class_quests: Some(vec![]),
+        start: Some(player("Lead-Realm", 5, class, 1)),
+        mates: mates
+            .iter()
+            .enumerate()
+            .map(|(i, class)| player(&format!("Mate{i}-Realm"), 5, class, 1))
+            .collect(),
+        ..request("undead", class, 10, &[])
+    };
+    let p = job::prepare(&conn, &o, &req, &|_| {}).unwrap();
+    let mut vendors: Vec<i64> = p
+        .model
+        .vendors
+        .iter()
+        .map(|v| v.id)
+        .filter(|id| [5749, 12807, 14437, 990001, 990002, 990003].contains(id))
+        .collect();
+    vendors.sort_unstable();
+    vendors
+}
+
 /// `prepare_from` on a database of fixtures.
 fn prepare_in(
     conn: &Connection,
@@ -1771,6 +1832,35 @@ fn mobs_on_the_way_carry_their_xp() {
     assert!(line.contains(&format!(", fx = {}", step.farm_xp.unwrap())), "{line}");
 }
 
+/// A written guide's steps say how their quest is taken and their objective done, and the addon
+/// gets that icon and the quest notes of each step.
+#[test]
+fn addon_gets_the_icons_and_notes_of_each_step() {
+    use fg_route::export::StepKind;
+    use fg_route::export::notes::{Level, StepNote};
+    let p = generic();
+    let planner = planner(p);
+    let route = planner.construct(|_| {});
+    let built = fg_route::export::build(&planner, &p.profile, &route);
+    let mut guide = fg_route::export::render(&built, &fg_route::model::Names::default());
+    let accept = guide.steps.iter().position(|s| s.kind == StepKind::Accept).unwrap();
+    assert_eq!(guide.steps[accept].icon.as_deref(), Some("npc"));
+    let kill = (guide.steps.iter())
+        .find(|s| s.kind == StepKind::Objective && s.say.first().is_some_and(|p| p.key == "objective.kill"))
+        .expect("an objective to kill");
+    assert_eq!(kill.icon.as_deref(), Some(if kill.elite { "elite" } else { "kill" }));
+    guide.steps[accept].notes = vec![StepNote {
+        level: Level::MustRead,
+        text: "Wait for the event".into(),
+    }];
+    let lua = fg_route::export::to_lua(std::slice::from_ref(&guide));
+    let line = lua.lines().find(|l| l.contains("nt = ")).unwrap();
+    assert!(
+        line.contains(r#"ic = "npc", nt = { { l = 3, t = "Wait for the event" } }"#),
+        "{line}"
+    );
+}
+
 /// The addon gets the IDs of the mobs a step is done on, to leave their kills out of the mobs on
 /// the way.
 #[test]
@@ -3000,6 +3090,22 @@ fn a_place_to_reach_takes_its_fixed_time() {
     assert_eq!(o[0].extra, 1500.0);
 }
 
+/// A giver offering its quest only after an event (`start_wait` of the overrides, Jungle
+/// Secrets): the model keeps how long it waits.
+#[test]
+fn a_giver_after_an_event_keeps_its_wait() {
+    let conn = Fixture::new(Edition::Classic)
+        .file("classic_dungeons")
+        .toml(
+            "[[quest]]\nid = 90011\nname = \"Secrets\"\nlevel = 18\nmin_level = 14\nraces_mask = 77\nzone = 40\nxp = 300\n\
+             extra = '{\"start_wait\": 1000}'\n\
+             starts = [{ npc = 234 }]\nends = [{ npc = 234 }]\n",
+        )
+        .open();
+    let p = prepare_in(&conn, "human", "warrior", 25, &[], None);
+    assert_eq!(p.model.quests[quest(&p, 90011).unwrap() as usize].start_wait, 1000.0);
+}
+
 /// A quest started by an item dropped inside a dungeon is taken during the group's run: the
 /// creatures standing outside, around its entrance, guard nothing of it (Elder Knowledge's elite
 /// Dragonmaw, Grime-Encrusted Ring's level 40 creatures, GitHub #125).
@@ -4201,6 +4307,9 @@ fn a_dungeon_guide_does_the_dungeon_quests_and_nothing_else() {
     let recommended = guide.route.recommended.as_ref().expect("a level recommended");
     assert_eq!(recommended.level, 28);
     assert_eq!(recommended.quests.iter().map(|q| q.id).collect::<Vec<_>>(), [340]);
+    // The addon must not leave its steps behind once the character is higher than it was.
+    assert!(guide.route.levels_ignored);
+    assert!(fg_route::export::to_lua(std::slice::from_ref(&guide.route)).contains("levelsIgnored = true"));
     assert_eq!(guide.route.breakdown.grinding, 0.0);
     assert!(
         !(guide.route.steps.iter()).any(|s| s.quest == Some(330)),

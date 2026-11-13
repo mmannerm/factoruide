@@ -744,11 +744,62 @@ do
     assert(warned(), "the level recommended on the current step")
     playerLevel = 25
     assert(not warned(), "nothing once the level is reached")
+    -- Made when the character was lower: its steps are not left behind (a leveling guide's are).
+    for _, flagged in ipairs({ true, false }) do
+        FG.Routes["objective-test"].levelsIgnored = flagged or nil
+        FG.Routes["objective-test"].toLevel = flagged and 30 or 21 -- older guides: no flag, from = to
+        useRoute("skip-test")
+        useRoute("objective-test")
+        assert(char.guide.step == 1, "objective guide's steps kept 4 levels up, step " .. char.guide.step)
+    end
     playerLevel = 21
     FG.Card.Render, FG.Mini.Render = card, mini
     useRoute("skip-test")
 end
 print("recommended level ok")
+
+-- Quest notes and icons (`nt`, `ic`): the step's icon says how it is done, a mark after its name
+-- takes the color of its most important note, and the tooltip lists the notes.
+do
+    FG.Routes["notes-test"] = {
+        race = 7,
+        class = 8,
+        faction = "Alliance",
+        fromLevel = 21,
+        toLevel = 21,
+        time = 1,
+        steps = {
+            {
+                k = "accept",
+                t = "Accept Secret Quest",
+                q = 5102,
+                lvl = 21,
+                ic = "event",
+                nt = { { l = 3, t = "Read me" }, { l = 1, t = "Good to know" } },
+            },
+            { k = "turnin", t = "Turn in Secret Quest", q = 5102, lvl = 21 },
+        },
+    }
+    local shown
+    local card, mini = FG.Card.Render, FG.Mini.Render
+    FG.Card.Render = function(_, view) shown = view end
+    FG.Mini.Render = FG.Card.Render
+    useRoute("notes-test")
+    FG.Guide:Refresh()
+    local task = shown.tasks[1]
+    assert(task.icon == "Interface\\Icons\\INV_Misc_PocketWatch_01", "the event icon: " .. tostring(task.icon))
+    assert(task.mark:find("UI%-Dialog%-Icon%-AlertNew") and task.mark:find(":255:40:40|t", 1, true), "a red mark")
+    assert(not task.name:find("|T", 1, true), "the name alone for the compass")
+    local lines = {}
+    local addLine = GameTooltip.AddLine
+    GameTooltip.AddLine = function(_, text) table.insert(lines, text) end
+    FG.Guide:StepTooltip({}, 1)
+    GameTooltip.AddLine = addLine
+    assert(lines[2]:find("Read me", 1, true) and lines[3]:find("Good to know", 1, true), "the notes in the tooltip")
+    FG.Card.Render, FG.Mini.Render = card, mini
+    useRoute("skip-test")
+end
+print("quest notes ok")
 
 -- Progress belongs to its guide: a quest marked done by hand in one is still to do in another,
 -- and coming back finds the marks again. A new version keeps the quests, not the step marks.
@@ -1998,6 +2049,31 @@ useRoute("visits-test")
 assert(char.guide.step == 5, "visits before the last turn-in are done, step " .. char.guide.step)
 assert(char.guide.marks[1] and char.guide.marks[3] and not char.guide.marks[5], "only the visits behind")
 completed[8201] = nil
+
+-- A quest handed in far ahead of the guide (found on the way, done out of order) does not pass
+-- the visits before it: only those followed by a quest step done, up to the first one not done.
+FG.Routes["visits-ahead-test"] = {
+    race = 7,
+    class = 8,
+    faction = "Alliance",
+    fromLevel = 1,
+    toLevel = 60,
+    time = 1,
+    steps = {
+        { k = "accept", t = "Accept A", q = 8211, lvl = 3 },
+        { k = "sell", t = "Sell", e = "npc", id = 66, m = 1429, x = 41.9, y = 67.1, lvl = 3 },
+        { k = "accept", t = "Accept B", q = 8212, lvl = 3 },
+        { k = "train", t = "Train", e = "npc", id = 67, m = 1429, x = 40, y = 60, lvl = 3 },
+        { k = "accept", t = "Accept C", q = 8213, lvl = 3 },
+        { k = "turnin", t = "Turn in C", q = 8213, lvl = 3 },
+    },
+}
+onQuest[8211] = true
+completed[8213] = true
+useRoute("visits-ahead-test")
+assert(char.guide.step == 2, "the merchant after the quest taken waits, step " .. char.guide.step)
+assert(not char.guide.marks[2] and not char.guide.marks[4], "visits before a quest not taken stay")
+onQuest[8211], completed[8213] = nil, nil
 print("visits passed ok")
 
 -- A dungeon run followed by its quests is done on entering the dungeon, then each quest step as
@@ -3071,6 +3147,26 @@ tracker.IsProtected = nil
 FG.Guide:Layout().trackerPoint = nil
 tracker.placed = nil
 FG.Tracker:Refresh()
+
+-- A line that inherited the quest item buttons' protection (the newer clients): in combat it keeps
+-- its place and visibility, its texts still change; all of it back once the fight ends.
+do
+    local frozenLine = childOf(tracker, function(f) return rawget(f, "track") ~= nil end)
+    local frozenMoves = 0
+    local realClear = frozenLine.ClearAllPoints
+    frozenLine.ClearAllPoints = function() frozenMoves = frozenMoves + 1 end
+    frozenLine.IsProtected = function() return true end
+    frozenLine:Hide()
+    InCombatLockdown = function() return true end
+    FG.Tracker:Refresh()
+    assert(frozenMoves == 0, "a protected line is not moved during combat")
+    assert(not frozenLine._shown, "nor shown in combat")
+    InCombatLockdown = function() return false end
+    FG.Tracker:Refresh()
+    assert(frozenMoves > 0 and frozenLine._shown, "placed and shown again after the fight: " .. frozenMoves)
+    frozenLine.IsProtected = nil
+    frozenLine.ClearAllPoints = realClear
+end
 
 -- The minimal guide: its strip, the next steps under it and the compass over it move the strip.
 Press("mode")
@@ -4174,6 +4270,46 @@ local function ExportImport()
         FG.Import.Run("os.exit(1)") == nil and FG.Import.Run(string.dump(function() end)) == nil,
         "no os, no bytecode"
     )
+    -- WoW's integer formatter can be signed 32-bit even when Lua numbers hold wider masks.
+    -- Exercise the pasted-string preparation path, then reload the text kept for that guide.
+    local wide = Encode([[
+Factoruide.Routes = {}
+Factoruide.Routes["wide-numbers"] = {
+    race = 7, class = 8, format = 2, created = 1000, version = 1,
+    steps = {{ k = "reputation", rp = { sources = {{ eligibility = { race_mask = 8589934770 } }} } }},
+    numbers = {2147483647, 2147483648, -2147483648, -2147483649, 4294967295,
+        8589934770, -8589934770, 9007199254740991, 8589934770.25},
+    [8589934770] = "wide numeric key",
+}
+]])
+    local format = string.format
+    string.format = function(pattern, ...)
+        local value = ...
+        if pattern == "%d" and type(value) == "number" and (value < -2147483648 or value > 2147483647) then
+            error("integer overflow attempting to store " .. format("%.0f", value))
+        end
+        return format(pattern, ...)
+    end
+    local ok, pending, wideErr = pcall(FG.Import.Read, FG.Import, wide)
+    string.format = format
+    assert(ok and pending, "wide-number guide import: " .. tostring(wideErr or pending))
+    local restored = assert(loadstring(pending.guides["wide-numbers"].text))()
+    assert(restored.steps[1].rp.sources[1].eligibility.race_mask == 8589934770, "race mask remains a number")
+    assert(restored[8589934770] == "wide numeric key", "wide numeric table key survives")
+    local expected = {
+        2147483647,
+        2147483648,
+        -2147483648,
+        -2147483649,
+        4294967295,
+        8589934770,
+        -8589934770,
+        9007199254740991,
+        8589934770.25,
+    }
+    for i, value in ipairs(expected) do
+        assert(restored.numbers[i] == value, "wide-number save/reload preserves value " .. i)
+    end
     -- Kept as Lua text: read back the same, a table inside itself refused.
     local value = { 1, nil, 'a\n"b"\0', x = 0.1, [1.5] = true, ["end"] = { -3, 1 / 3, 2 ^ 60 } }
     local back = assert(loadstring(assert(FG.Import.Serialize(value))))()

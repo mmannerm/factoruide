@@ -6,7 +6,20 @@ under Unreleased; `scripts/release.sh` gives them the release's version.
 
 ## Unreleased
 
+## 0.19.0 (2026-11-12)
+
+- Steps show how their quest is taken or their objective done, and a yellow, orange or red mark when a note tells more about the quest; the step's tooltip lists the notes.
+- A quest handed in far ahead of the guide no longer marks the merchants, trainers and flight masters before it as visited.
+
+## 0.18.0 (2026-11-10)
+
+- No more blocked-action errors from the quest panel during a fight; its layout catches up afterwards.
+- Guides pasted on Windows no longer fail to import on large numbers.
+
+## 0.17.0 (2026-11-09)
+
 - An objective guide done below the level its quests ask says so on the current step until you reach it.
+- World map pins and the walk's dots keep their size on a map enlarged by another addon.
 
 ## 0.16.0 (2026-11-07)
 

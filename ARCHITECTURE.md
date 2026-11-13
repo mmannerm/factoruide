@@ -58,6 +58,11 @@ blessing steps and Shipping Label acquisition, which the importer format does no
 Planning applies runtime quest corrections only to quests present in the loaded database;
 `fg audit` also rejects unknown correction targets and references in the complete data.
 
+What a player is told about a quest beyond the step's sentence lives apart, in `notes/` (format in
+`notes/README.md`): quest notes (good to know, watch out, must read) and step icons. They are
+embedded in `fg-route` (`build.rs`) and written into a guide whenever it is shown or installed
+(`export::render`, `export/notes.rs`), in the guide's language; the planner never reads them.
+
 A guide can start from a character met in game (`job/start.rs`): the profile the addon saves
 (`Profile.lua`, read by the app from the SavedVariables) becomes the simulation's initial state:
 quests turned in, position, hearthstone, known flight paths, XP and rested XP, gear worn, last
