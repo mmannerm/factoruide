@@ -266,16 +266,10 @@ pub(crate) fn settle_quests(
         let forced = |d: usize| params.forced_dungeon_quests.contains(&dungeons[d].area);
         q.mandatory |= (0..dungeons.len()).any(|d| forced(d) && q.in_dungeon(d));
     }
-    for objective in &profile.objectives {
-        match *objective {
-            GuideObjective::Dungeon(area) => force_dungeon_quests(quests, dungeons, area),
-            // Zones are marked when built. Individual quests are marked with their chains
-            // in `required::apply`.
-            GuideObjective::Zone(_) | GuideObjective::Quest(_) => {}
-        }
+    if !profile.objective_guide() {
+        chains::require_alternatives(quests, requirements);
+        chains::require_prerequisites(quests);
     }
-    chains::require_alternatives(quests, requirements);
-    chains::require_prerequisites(quests);
     let released = chains::release_impossible_class_quests(quests, known, completed);
     chains::settle_class_quest_versions(quests, &versions);
     for q in quests.iter_mut() {
@@ -285,24 +279,8 @@ pub(crate) fn settle_quests(
     released
 }
 
-/// The quests of an objective guide's dungeon (area `area`): those of it (`Quest::in_dungeon`)
-/// or started there, whatever their level (the guide tells the level they need,
-/// `Planner::objective_guide_level`). Every one of them is done, as the quests of a forced zone
-/// (`zone_forced`, prerequisites included by `chains::require_prerequisites`).
-fn force_dungeon_quests(quests: &mut [Quest], dungeons: &[Dungeon], area: i64) {
-    let Some(d) = dungeons.iter().position(|d| d.area == area) else {
-        return;
-    };
-    for q in quests.iter_mut() {
-        if q.in_dungeon(d) || q.start_dungeon == Some(d) {
-            q.mandatory = true;
-            q.zone_forced = true;
-        }
-    }
-}
-
 /// Whether a quest is one of an objective guide's zones or quests, by its row (a dungeon's are
-/// found once its objectives are placed, `force_dungeon_quests`): a zone's are filed under it or
+/// also found once its objectives are placed): a zone's are filed under it or
 /// a subzone, class and profession quests left out.
 fn objective_row(sources: &Sources, profile: &Profile, r: &sources::QuestRow) -> bool {
     zone_objective_row(sources, profile, r)

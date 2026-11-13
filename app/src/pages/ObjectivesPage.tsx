@@ -9,10 +9,12 @@ import {
   type Options,
   type PlanRequest,
   type QuestChoice,
+  type RequiredQuest,
 } from "../api";
 import { ClassName } from "../components/Character";
 import { Segmented } from "../components/ConfigForm";
 import { CONTINENTS } from "../components/FlightPaths";
+import { RequiredQuests } from "../components/RequiredQuests";
 import { efforts } from "../paramSchema";
 import { ProfilePaste } from "../web/components/ProfilePaste";
 import { gameLocale, useAreaName, useLang, useT } from "../i18n";
@@ -44,6 +46,7 @@ export function ObjectivesPage({ options, initial, busy, onGenerate }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [picked, setPicked] = useState<string | null>(initial?.start?.name ?? null);
   const [objectives, setObjectives] = useState<GuideObjective[]>(() => objectivesOf(initial));
+  const [requiredQuests, setRequiredQuests] = useState<RequiredQuest[]>(() => initial?.required_quests ?? []);
   // The name typed by the player (null: made from the objectives).
   const [name, setName] = useState<string | null>(initial?.name ?? null);
   const [effort, setEffort] = useState<number>(initial?.params?.effort ?? options.params.effort);
@@ -115,7 +118,7 @@ export function ObjectivesPage({ options, initial, busy, onGenerate }: Props) {
             name: title,
             params: { ...(initial?.params ?? options.params), effort },
             required_class_quests: [],
-            required_quests: initial?.required_quests ?? [],
+            required_quests: requiredQuests,
             professions: [],
             locale: gameLocale(lang),
             start: character.profile,
@@ -125,12 +128,12 @@ export function ObjectivesPage({ options, initial, busy, onGenerate }: Props) {
             dungeon: null,
           }
         : null,
-    [character, level, initial, options.params, effort, lang, objectives],
+    [character, level, initial, options.params, effort, lang, objectives, requiredQuests],
   );
 
   // What the objectives plan for the character, once they stop changing (the effort changes
   // nothing to the quests).
-  const previewKey = JSON.stringify([countsKey, objectives, lang]);
+  const previewKey = JSON.stringify([countsKey, objectives, requiredQuests, lang]);
   const current = previewOf?.key === previewKey ? previewOf : null;
   const preview = current?.preview ?? null;
   const previewError = current?.error ?? null;
@@ -283,6 +286,9 @@ export function ObjectivesPage({ options, initial, busy, onGenerate }: Props) {
             />
           )}
         </section>
+      )}
+      {character?.race && requiredQuests.length > 0 && (
+        <RequiredQuests race={character.race} klass={character.class} locale={gameLocale(lang)} quests={requiredQuests} onChange={setRequiredQuests} removeOnly />
       )}
       {character && objectives.length > 0 && (
         <section className="panel">

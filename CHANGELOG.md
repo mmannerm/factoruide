@@ -8,10 +8,18 @@ An addon change also goes, in the same words, under Unreleased in that addon's o
 
 ## Unreleased
 
+### App
+
+- Saved objective guides show their must-have quests and completion bounds, and let you remove them.
+
 ### Guides
 
 - Guides for The Glowing Shard enter Wailing Caverns only when someone still needs the pickup, then finish the party's remaining steps outdoors.
 - Group dungeon guides include each member's unfinished objectives even when the leading character has already completed them.
+- Zone and dungeon guides follow available prerequisite branches, even at maximum level; saved guides keep valid alternative quest chains.
+- Objective guides favor quests already in your log without blocking explicit choices or saved routes.
+- Imported leveling guides keep class quests whose completed prerequisites fall outside the guide's level range.
+- Objective previews explain unavailable prerequisite branches in English, including the quest IDs.
 - Timed quests postpone optional farming on walks until the delivery is finished; explicitly farmed walks still use the quest's timer.
 - WoW Forever: Call of Fire guides complete Olariaan's ritual and light the Brazier of Eternal Flame.
 - Required quests are reinserted after their skill requirement is reached, trying the route's end when an earlier placement fails.
