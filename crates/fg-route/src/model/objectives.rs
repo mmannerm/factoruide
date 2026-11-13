@@ -289,6 +289,7 @@ impl QuestBuilder<'_> {
 
     /// One objective; None when there is nothing to do for it (the item is given on accepting).
     fn objective(&self, quest: &QuestContext<'_>, mut row: ObjectiveRow) -> Result<Option<Objective>, Skip> {
+        let mut conversation = false;
         if matches!(
             row.0,
             ObjectiveKind::Creature | ObjectiveKind::KillCredit | ObjectiveKind::Talk
@@ -302,6 +303,7 @@ impl QuestBuilder<'_> {
         {
             row.0 = ObjectiveKind::Talk;
             row.2 = Some(interaction.text.clone());
+            conversation = interaction.conversation;
         }
         if self.sources.pvp.contains(&quest.row.id) {
             return Ok(Some(self.battleground(quest, row)));
@@ -317,6 +319,9 @@ impl QuestBuilder<'_> {
                 .kill_or_talk(quest, kind, target, text, extra.as_deref(), amount)
                 .map(Some),
             ObjectiveKind::Object => self.use_at(quest, EntityKind::Object, target, text, amount).map(Some),
+            ObjectiveKind::Talk if conversation => self
+                .kill_or_talk(quest, kind, target, text, extra.as_deref(), amount)
+                .map(Some),
             ObjectiveKind::Talk => self.use_at(quest, EntityKind::Npc, target, text, amount).map(Some),
             ObjectiveKind::Item => Ok(self
                 .get_item(quest, target, text, amount)?
@@ -511,7 +516,8 @@ impl QuestBuilder<'_> {
         if text.is_none() && tames(&quest.requirements, &name) {
             return self.use_at(quest, EntityKind::Npc, target, Some(format!("Tame {name}")), Some(1.0));
         }
-        let friendly = entities.friendly.contains(&target) || talks_to(&quest.requirements, &name);
+        let friendly =
+            kind == ObjectiveKind::Talk || entities.friendly.contains(&target) || talks_to(&quest.requirements, &name);
         // An NPC of the character's side is acted on, not killed ("Kill Sentinel Shaya"): the
         // quest's own wording says how ("Heal and fortify Sentinel Shaya", "Peons Awoken x 5").
         if !friendly

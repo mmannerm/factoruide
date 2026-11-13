@@ -734,7 +734,7 @@ pub struct SpellLevel {
     pub level: i64,
 }
 
-/// Edition-specific quest corrections, applied over the bundled database.
+/// Quest corrections, applied over the bundled database.
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct QuestOverride {
     pub id: i64,
@@ -754,6 +754,10 @@ pub struct QuestOverride {
 pub struct QuestInteraction {
     pub npc: i64,
     pub text: String,
+    /// An ordinary conversation, without the quest-level power requirement of an action.
+    /// Nearby enemies still guard the NPC; existing ritual/spell interactions stay actions.
+    #[serde(default)]
+    pub conversation: bool,
 }
 
 /// A quest starter made from bought inputs. Stock and affordability are assumed, as for

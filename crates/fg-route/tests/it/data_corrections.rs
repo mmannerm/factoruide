@@ -83,6 +83,91 @@ fn glowing_shard_only_enters_wailing_caverns_for_the_pickup() {
 }
 
 #[test]
+fn forever_glowing_shard_conversation_needs_no_extra_levels() {
+    shard_conversation_at_twenty(Edition::Forever);
+}
+
+#[test]
+fn classic_glowing_shard_conversation_needs_no_extra_levels() {
+    shard_conversation_at_twenty(Edition::Classic);
+}
+
+#[test]
+fn tbc_glowing_shard_conversation_needs_no_extra_levels() {
+    shard_conversation_at_twenty(Edition::Tbc);
+}
+
+fn shard_conversation_at_twenty(edition: Edition) {
+    use fg_route::export::StepKind;
+    use fg_route::model::Guard;
+    use fg_route::params::Progression;
+    use fg_route::plan::Planner;
+
+    let conn = database_of(edition.key());
+    let mut o = overrides(edition);
+    o.params.progression = Progression::Normal;
+    o.params.dungeons = false;
+    let mut req = request(&json!([6981]));
+    req.race = "orc".into();
+    req.to_level = 21;
+    req.start = Some(StartState {
+        name: "Tester".into(),
+        level: 20,
+        position: Some(job::MapPos {
+            map: 1413,
+            x: 62.98,
+            y: 37.22,
+        }),
+        log: vec![job::LogQuest {
+            id: QuestId(6981),
+            ..Default::default()
+        }],
+        ..StartState::default()
+    });
+    let outcome = job::plan(&conn, &o, &req, &|_| {}).unwrap();
+    assert!(!outcome.route.steps.iter().any(|s| s.kind == StepKind::Dungeon));
+    assert!(
+        !outcome
+            .route
+            .steps
+            .iter()
+            .any(|s| s.quest == Some(6981) && matches!(s.kind, StepKind::Abandon | StepKind::Accept))
+    );
+    let is_talk = |s: &&fg_route::export::Step| {
+        s.quest == Some(6981) && s.kind == StepKind::Objective && s.target.as_ref().is_some_and(|t| t.id == 3442)
+    };
+    let talk = outcome.route.steps.iter().find(is_talk).unwrap();
+    assert_eq!(talk.level, 20, "{}: {}", edition.key(), talk.text);
+    assert!(!talk.inside);
+    assert!(
+        outcome
+            .route
+            .steps
+            .iter()
+            .any(|s| s.quest == Some(6981) && s.kind == StepKind::TurnIn)
+    );
+    let french = fg_route::export::render(&outcome.route, &Names::load(&conn, "frFR").unwrap());
+    let translated = french.steps.iter().find(is_talk).unwrap();
+    assert!(translated.text.starts_with("Parler à "), "{}", translated.text);
+
+    let prepared = job::prepare(&conn, &o, &req, &|_| {}).unwrap();
+    let quest = &prepared.model.quests[prepared.model.index[&6981]];
+    let conversation = quest.objectives.iter().find(|o| o.loc.id == 3442).unwrap();
+    assert_eq!((conversation.kills, conversation.uses), (0.0, 0.0));
+    let mut guarded = conversation.clone();
+    guarded.guard = Guard {
+        level: 40,
+        count: 3,
+        elite: false,
+    };
+    let planner = Planner::new(&prepared.model, &prepared.world, &prepared.params, &prepared.profile);
+    assert!(
+        planner.combat().need(quest, &guarded) >= 40.0,
+        "talking must not bypass nearby enemies"
+    );
+}
+
+#[test]
 fn a_group_needs_the_shard_pickup_until_all_its_members_have_the_quest() {
     let conn = database_of("forever");
     let mut overrides = overrides(Edition::Forever);

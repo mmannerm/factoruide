@@ -4,4 +4,4 @@
 # speak to someone there, then deliver the shard to Falla Sagewind (8418).
 [[quest]]
 id = 6981
-interactions = [{ npc = 3442, text = "Talk to Sputtervalve" }]
+interactions = [{ npc = 3442, text = "Talk to Sputtervalve", conversation = true }]

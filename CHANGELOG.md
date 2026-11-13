@@ -14,7 +14,7 @@ An addon change also goes, in the same words, under Unreleased in that addon's o
 
 ### Guides
 
-- Guides for The Glowing Shard enter Wailing Caverns only when someone still needs the pickup, then finish the party's remaining steps outdoors.
+- Guides for The Glowing Shard keep quests already in the log, talk in Ratchet without extra leveling, and return to Wailing Caverns only for missing pickups.
 - Group dungeon guides include each member's unfinished objectives even when the leading character has already completed them.
 - Zone and dungeon guides follow available prerequisite branches, even at maximum level; saved guides keep valid alternative quest chains.
 - Objective guides favor quests already in your log without blocking explicit choices or saved routes.
