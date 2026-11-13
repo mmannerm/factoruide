@@ -47,6 +47,7 @@ pub(super) struct QuestContext<'r> {
     /// Where the quest is taken: objectives found nowhere are put there when approximating.
     pub(super) anchor: Pos,
     pub(super) zone: i64,
+    start_dungeon: Option<usize>,
     pub(super) approx: Option<(Pos, i64, usize)>,
     pub(super) requirements: Vec<(String, f64)>,
     /// Items an assembled item is made of.
@@ -246,6 +247,7 @@ impl QuestBuilder<'_> {
             level: r.level.unwrap_or(1).max(1),
             anchor,
             zone,
+            start_dungeon: givers.start_dungeon,
             approx: self.params.approx_sources.then_some((anchor, zone, 0usize)),
             requirements: parse_requirements(r.requirements.clone()),
             parts: r
@@ -366,14 +368,16 @@ impl QuestBuilder<'_> {
             .sort
             .and_then(|s| self.sources.dungeon_by_area.get(&s).copied());
         let kind = *kind;
+        // A dungeon drop can start a quest that continues outside. The data may list the
+        // conversation that follows the pickup as a creature objective (Sputtervalve in Ratchet).
+        let talk = kind == ObjectiveKind::Talk
+            || kind == ObjectiveKind::Creature
+                && quest.start_dungeon.is_some()
+                && self.sources.entities.friendly.contains(&target);
+        if talk && self.has_points(EntityKind::Npc, target) && self.dungeon_of(EntityKind::Npc, target).is_none() {
+            return None;
+        }
         let d = match kind {
-            // Someone to talk to who lives outside only (Earthen Echo's Muln Earthfury, in Mulgore):
-            // talked to there, the quest filed under a dungeon or not.
-            ObjectiveKind::Talk
-                if self.has_points(kind.entity(), target) && self.dungeon_of(kind.entity(), target).is_none() =>
-            {
-                None
-            }
             ObjectiveKind::Creature
             | ObjectiveKind::KillCredit
             | ObjectiveKind::Talk

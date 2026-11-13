@@ -325,8 +325,8 @@ fn zone_objective_row(sources: &Sources, profile: &Profile, r: &sources::QuestRo
         })
 }
 
-/// A dungeon holding an objective of a must-have quest is run like a forced one, and past its
-/// levels too: the quest asks for it. A dungeon the player forced stays within its levels, the
+/// A dungeon holding a must-have quest's pickup or objective is run like a forced one, and past
+/// its levels too. A dungeon the player forced stays within its levels, the
 /// route being refused when it cannot be run there. An objective guide's dungeon is run at any level
 /// (up to `max_level`, the game's): the player chose it.
 pub(crate) fn settle_dungeons(dungeons: &mut [Dungeon], quests: &[Quest], profile: &Profile, max_level: i64) {
@@ -335,7 +335,7 @@ pub(crate) fn settle_dungeons(dungeons: &mut [Dungeon], quests: &[Quest], profil
         .filter(|q| q.required || profile.objective_guide() && q.zone_forced)
     {
         for (d, dungeon) in dungeons.iter_mut().enumerate() {
-            dungeon.needed |= q.in_dungeon(d) || profile.objective_guide() && q.start_dungeon == Some(d);
+            dungeon.needed |= q.in_dungeon(d) || q.start_dungeon == Some(d);
         }
     }
     for d in dungeons.iter_mut().filter(|d| d.needed) {

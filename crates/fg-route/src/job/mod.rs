@@ -435,21 +435,30 @@ pub(crate) fn start_from(
     notes: &mut Vec<String>,
 ) {
     model.initial = start.initial(model, world, params, notes);
-    release_done_dungeons(model, start);
     if !mates.is_empty() {
         group::join(model, world, start, &mates.iter().collect::<Vec<_>>(), notes);
     }
+    release_done_dungeons(model, start, mates);
 }
 
-/// A dungeon only needed by must-have quests (or a dungeon guide's) the character has already
-/// turned in, or finished in its log, is not needed any more: its objectives are done.
-fn release_done_dungeons(model: &mut Model, start: &StartState) {
-    let finished =
-        |i: usize, id: i64| model.initial.turned.contains(&i) || start.log.iter().any(|l| l.id.0 == id && l.complete);
+/// Release a quest's dungeon when its remaining work is outside the instance.
+fn release_done_dungeons(model: &mut Model, start: &StartState, mates: &[StartState]) {
+    let initial = &model.initial;
     let mut needed = vec![false; model.dungeons.len()];
     for (i, q) in model.quests.iter().enumerate() {
-        if !(q.required || q.zone_forced) || finished(i, q.id) {
+        if !(q.required || q.zone_forced) || initial.turned.contains(&i) {
             continue;
+        }
+        let finished = std::iter::once(start)
+            .chain(mates)
+            .enumerate()
+            .filter(|(member, _)| initial.need(i) & (1 << member) != 0)
+            .all(|(_, member)| member.log.iter().any(|l| l.id.0 == q.id && l.complete));
+        if finished {
+            continue;
+        }
+        if let Some(d) = q.start_dungeon.filter(|_| !initial.accepted.contains(&i)) {
+            needed[d] = true;
         }
         for (d, need) in needed.iter_mut().enumerate() {
             *need |= q.in_dungeon(d);
