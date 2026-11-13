@@ -736,6 +736,65 @@ fn bulk_objectives_take_one_prerequisite_outside_the_selected_area() {
 }
 
 #[test]
+fn a_saved_bulk_guide_keeps_the_successor_of_an_alternate_branch() {
+    let quest = |id: i64, extra: &str| {
+        format!(
+            "[[quest]]\nid = {id}\nname = \"Quest {id}\"\nlevel = 18\nmin_level = 14\nraces_mask = 77\nzone = 40\n\
+             xp = 300\nobjectives_text = \"Speak with Wilder Thistlenettle.\"\nstarts = [{{ npc = 234 }}]\nends = [{{ npc = 656 }}]\n{extra}\n"
+        )
+    };
+    let conn = Fixture::new(Edition::Classic)
+        .file("classic_dungeons")
+        .toml(&quest(90001, "exclusive = [90002]"))
+        .toml(&quest(90002, "exclusive = [90001]"))
+        .toml(&quest(90003, "pre_all = [90002]"))
+        .toml(&quest(90004, ""))
+        .open();
+    let overrides = overrides();
+    let mut req = request("human", "warrior", 25, &[]);
+    req.objectives = vec![GuideObjective::Zone(40)];
+    req.start = Some(player("Tester", 1, "warrior", 25));
+    let editor = job::Editor::open(&conn, &overrides, &req, None).unwrap();
+    editor
+        .save(
+            &[
+                job::RouteStep::Accept { quest: 90002 },
+                job::RouteStep::TurnIn { quest: 90002 },
+                job::RouteStep::Accept { quest: 90003 },
+                job::RouteStep::TurnIn { quest: 90003 },
+            ],
+            vec![],
+        )
+        .unwrap();
+
+    // Alternate chains remain unavailable when an explicit choice or recorded progress
+    // already commits the character to the other branch.
+    for fixed in ["must-have", "objective", "logged", "completed"] {
+        let mut req = req.clone();
+        match fixed {
+            "must-have" => req.required_quests = vec![RequiredQuest::Id(90001)],
+            "objective" => req.objectives.push(GuideObjective::Quest(90001)),
+            "logged" => req.start.as_mut().unwrap().log.push(LogQuest {
+                id: job::QuestId(90001),
+                complete: true,
+                objectives: vec![],
+            }),
+            "completed" => req.start.as_mut().unwrap().completed.push(job::QuestId(90001)),
+            _ => unreachable!(),
+        }
+        let preview = job::objective_preview(&conn, &overrides, &req).unwrap();
+        assert!(
+            preview
+                .excluded
+                .iter()
+                .any(|q| q.id == 90003 && q.reason.contains("conflicts")),
+            "{fixed}: {:?}",
+            preview.excluded
+        );
+    }
+}
+
+#[test]
 fn a_bulk_objective_can_use_an_item_already_handed_by_a_completed_quest() {
     let (_, guide) = Scenario::new()
         .levels(20, 20)

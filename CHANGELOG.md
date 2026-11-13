@@ -10,6 +10,7 @@ An addon change also goes, in the same words, under Unreleased in that addon's o
 
 ### Guides
 
+- Zone and dungeon guides follow available prerequisite branches, even at maximum level; saved guides keep valid alternative quest chains.
 - Timed quests postpone optional farming on walks until the delivery is finished; explicitly farmed walks still use the quest's timer.
 - WoW Forever: Call of Fire guides complete Olariaan's ritual and light the Brazier of Eternal Flame.
 - Required quests are reinserted after their skill requirement is reached, trying the route's end when an earlier placement fails.

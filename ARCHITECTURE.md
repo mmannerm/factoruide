@@ -42,7 +42,8 @@ still needing the quest, including after travel; imported completion already sat
 Planning and edited-guide saves reject missed player-specified windows.
 
 Objective guides combine dungeon, zone and quest targets. The planner selects feasible
-prerequisite branches, including quests outside the selected area. Routes show the level the quests
+prerequisite branches, including quests outside the selected area. Saved guides retain available
+alternative chains and their follow-ups. Routes show the level the quests
 recommend, and explicit completion windows still apply at turn-in. Saved dungeon requests
 resolve to a dungeon objective.
 

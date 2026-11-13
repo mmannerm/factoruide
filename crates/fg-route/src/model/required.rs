@@ -184,15 +184,9 @@ pub(super) fn apply(
             };
             match branch(&objective_chains) {
                 Ok(next) => objective_chains = next,
-                // Two bulk quests can offer mutually exclusive routes. Keep both in the
-                // model so a saved guide can still use either path.
-                Err(_)
-                    if bulk
-                        && objective_chains
-                            .iter()
-                            .any(|&other| required.conflicts(&quests[i], other))
-                        && let Ok(next) = branch(&fixed) =>
-                {
+                // Bulk quests can depend on mutually exclusive routes. Keep each feasible
+                // chain so a saved guide can use either path, including its successors.
+                Err(_) if bulk && let Ok(next) = branch(&fixed) => {
                     alternate_chains.extend(next);
                 }
                 Err(error) => excluded_objectives.push((id, quests[i].name.clone(), format!("{error:#}"))),
