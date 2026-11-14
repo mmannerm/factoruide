@@ -29,7 +29,6 @@ An addon change also goes, in the same words, under Unreleased in that addon's o
 
 ### Addon
 
-- New guides distinguish objectives with the same target name, such as The Rescue's two cages.
 - Candle of Beckoning and The Rescue's keys are recognized in your bags and stay done after use; right-click a pickup to retry.
 - Marking an objective done skips only that step and keeps your place; undo returns only to the work you marked.
 - Completed journeys stay done after you leave, without marking travel merely by browsing ahead.

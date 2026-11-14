@@ -1102,9 +1102,10 @@ do
     fire("TRAINER_SHOW")
     FG.Guide:Advance()
     assert(char.guide.step == 1, "an unrelated trainer window does not cancel the trip")
+    FG.Guide:Go(1)
     fishingCap = 225
     fire("SKILL_LINES_CHANGED")
-    assert(char.guide.step == 5, "live cap change before departure skips the now-unneeded trip")
+    assert(char.guide.step == 5, "known ranks skip an unnecessary trip even after paging onto it")
 
     fishingCap = 150
     Trip(4)
@@ -2456,6 +2457,11 @@ print("objectives loading ok")
 -- Preparation items are acquired once, then consumed while the real quest remains unfinished.
 do
     local previousObjectives = C_QuestLog.GetQuestObjectives
+    local previousComplete, ready = C_QuestLog.IsComplete, false
+    C_QuestLog.IsComplete = function(q)
+        if q == 409 then return ready end
+        return previousComplete(q)
+    end
     local events, seq = char.events, char.seq
     char.events = {}
     local kill = { text = "Lillith Nefara slain: 0/1", type = "monster", finished = false }
@@ -2541,7 +2547,10 @@ do
         kill.finished = true
         FG.Guide:Advance()
         assert(char.guide.step == 3, "Lillith killed: advance to the parent turn-in")
-        kill.finished = false
+        ready = true
+        FG.Guide:Reset()
+        assert(char.guide.step == 3 and not char.guide.marks[1], "a ready quest needs no consumed pickup after reset")
+        ready, kill.finished = false, false
         FG.Guide:AskReset()
         assert(char.guide.step == 1 and not char.guide.marks[1], "start over clears acquisition without manual skips")
         bags[3080] = 1
@@ -2555,8 +2564,9 @@ do
         assert(char.guide.step == 1, "abandoning also clears acquisition in a saved guide")
 
         local native = { text = "Candle of Beckoning: 1/1", type = "item", finished = true }
-        candle.slot, objectives, bags[3080] = 1, { native, kill }, 1
-        FG.Routes[name].steps[2].slot = 2 -- The native item now occupies the first log slot.
+        -- Quest data and game order can differ (for example, Make Yourself Useful 92682).
+        candle.slot, objectives, bags[3080] = 1, { kill, native }, 1
+        FG.Routes[name].steps[2].slot = 2
         FG.Guide:Resync()
         assert(char.guide.step == 2 and not char.guide.marks[1], "native item progress is not remembered")
         native.finished, bags[3080] = false, nil
@@ -2681,12 +2691,6 @@ do
         bags[3467], bags[3499] = 1, 1
         useRoute(name)
         assert(char.guide.step == 3, "keys already held: advance to rescuing the prisoners")
-        if not legacy then
-            objectives[1].finished = true
-            FG.Guide:Advance()
-            assert(char.guide.step == 4, "native slots distinguish the two identically named cages")
-            objectives[1].finished = false
-        end
         bags[3499] = nil
         FG.Guide:AskReset()
         assert(char.guide.step == 2, "one key held: the other pickup remains pending")
@@ -2695,7 +2699,7 @@ do
         assert(char.guide.step == 2, "consuming the first key does not reopen its pickup")
     end
     onQuest[498], bags[3467], bags[3499] = nil, nil, nil
-    C_QuestLog.GetQuestObjectives = previousObjectives
+    C_QuestLog.GetQuestObjectives, C_QuestLog.IsComplete = previousObjectives, previousComplete
     char.events, char.seq = events, seq
 end
 print("preparation items ok")

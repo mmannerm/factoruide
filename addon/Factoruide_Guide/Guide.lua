@@ -201,14 +201,12 @@ local Distance -- defined below, used by IsDone
 
 local function QuestTitle(step) return step.q and QuestLog.GetTitleForQuestID(step.q) or nil end
 
---- The native objective slot, or a target-name match in older guides. When several hold the name ("Night Web
+--- Game objective matching the step's target name. When several hold the name ("Night Web
 --- Spider slain" and "Young Night Web Spider slain"), the one with the least else around it
 --- (counts, spaces and punctuation aside), then the one at the step's objective index.
 local function FindObjective(step)
     local objectives = QuestLog.GetQuestObjectives(step.q)
-    if not objectives then return nil end
-    if step.slot ~= nil then return objectives[step.slot] end
-    if not step.n then return nil end
+    if not objectives or not step.n then return nil end
     local name = step.n:lower()
     local best, bestRest
     for i, o in ipairs(objectives) do
@@ -378,7 +376,9 @@ function IsDone(step, index)
         if step.by and step.id and (FG.ItemCount(step.id) or 0) >= (step.c or 1) then return true end
         if not QuestLog.IsOnQuest(q) then return false end
         if PreparationItem(step) then
-            return state.marks[index or state.step] == "acquired" or (FG.ItemCount(step.id) or 0) >= (step.c or 1)
+            return state.marks[index or state.step] == "acquired"
+                or (FG.ItemCount(step.id) or 0) >= (step.c or 1)
+                or (not ObjectivesLoading(q) and QuestLog.IsComplete(q))
         end
         if ObjectivesLoading(q) then return false end
         local o = FindObjective(step)
@@ -1297,7 +1297,7 @@ end
 --- Move on once every step of the current group is done (not when we navigated to a group done
 --- already); until then the current step is the group's first one not done.
 function Guide:Advance()
-    if route and not browsing and not arrivedDone and (SkipProfessionTrip() or SkipTravel()) then SkipDone() end
+    if route and (SkipProfessionTrip() or (not browsing and not arrivedDone and SkipTravel())) then SkipDone() end
     if route and route.steps[state.step] then
         -- A take-off is the flight of the first fly step of the group not taken yet.
         local onTaxi = UnitOnTaxi("player") and true or false
