@@ -9,7 +9,7 @@ under Unreleased; `scripts/release.sh` gives them the release's version.
 - Profession rank steps stay pending until the new skill cap is learned or you skip them.
 - New solo guides skip profession-only round-trip flights before departure when every planned rank is already learned.
 - Regenerate older guides that send you to the wrong profession trainer, or skip those invalid steps manually.
-- Unreadable profession caps show an update or manual-check prompt instead of completing the rank at a trainer window.
+- Unreadable profession upgrade caps show an update or manual-check prompt instead of completing the rank at a trainer window.
 
 ## 0.19.0 (2026-11-12)
 

@@ -516,14 +516,17 @@ do
     GetProfessions, GetProfessionInfo = nil, nil
     GetNumSkillLines = function() return 1 end
     GetSkillLineInfo = function() return "Cuisine", false, false, 150, 0, 0, 150 end
+    fire("SKILL_LINES_CHANGED")
     FG.Profile:Snapshot()
     skill = FactoruideDB.profiles["Brouz-Realm"].professions[1]
     assert(skill.line == 185 and skill.rank == 150 and skill.cap == 150, "skills-list cap saved")
     GetSkillLineInfo = function() return "Monte", false, false, 75, 0, 0, 75 end
+    fire("SKILL_LINES_CHANGED")
     FG.Profile:Snapshot()
     assert(FactoruideDB.profiles["Brouz-Realm"].riding == 75, "legacy French Riding name retained")
     GetProfessions, GetProfessionInfo = professions, professionInfo
     GetNumSkillLines, GetSkillLineInfo = skillLines, skillInfo
+    fire("SKILL_LINES_CHANGED")
     FG.Profile:Snapshot()
 end
 
@@ -681,11 +684,22 @@ do
         local rank, cap, name = FG.ProfessionSkill(line)
         assert(rank == 125 and cap == 225 and name == "Client skill " .. line, "read profession by its client skill ID")
     end
+    GetProfessions = function() return 1 end
+    GetProfessionInfo = function() return "Listed Cooking", 0, 130, 150, 0, 0, 185 end
+    local listedRank, listedCap = FG.ProfessionSkill(185)
+    assert(listedRank == 130 and listedCap == 150, "listed professions take precedence over the ID fallback")
+    assert(select(2, FG.ProfessionSkill(356)) == 225, "the ID fallback supplies skills not listed by GetProfessions")
+    C_SkillInfo.GetSkillLineInfoByID = function(line)
+        return { skillID = line, name = "Unlearned skill", rank = 0, maxRank = 75, isHeader = false }
+    end
+    assert(FG.ProfessionSkill(171) == nil, "a zero-rank native struct is not a learned profession")
 
     C_SkillInfo = nil
+    GetProfessions, GetProfessionInfo = nil, nil
     C_TradeSkillUI = { GetTradeSkillDisplayName = function(line) return "Client skill " .. line end }
     GetNumSkillLines = function() return #lines end
     GetSkillLineInfo = function(index) return "Client skill " .. lines[index], false, false, 125, 0, 0, 225 end
+    fire("SKILL_LINES_CHANGED")
     for _, line in ipairs(lines) do
         local rank, cap, name = FG.ProfessionSkill(line)
         assert(
@@ -723,12 +737,12 @@ do
     ExpandSkillHeader = function(index)
         opened[#opened + 1] = index
         Rows()[index].expanded = true
-        assert(FG.ProfessionSkill(185) == nil, "synchronous skill-change readers do not recurse")
+        fire("SKILL_LINES_CHANGED")
     end
     CollapseSkillHeader = function(index)
         closed[#closed + 1] = index
         Rows()[index].expanded = false
-        assert(FG.ProfessionSkill(185) == nil, "restoring headers does not recurse through skill-change readers")
+        fire("SKILL_LINES_CHANGED")
     end
     C_TradeSkillUI = {
         GetTradeSkillDisplayName = function(line)
@@ -740,6 +754,36 @@ do
             })[line]
         end,
     }
+    -- Start on an eligible profession quest with the proven API, then invalidate the legacy
+    -- snapshot without reading it. The next read comes from Refresh, outside Advance.
+    GetProfessions = function() return 1 end
+    GetProfessionInfo = function() return "Client cooking", 0, 125, 225, 0, 0, 185 end
+    FG.Routes["skill-header-events"] = {
+        race = 7,
+        class = 8,
+        faction = "Alliance",
+        fromLevel = 5,
+        toLevel = 60,
+        time = 1,
+        steps = {
+            { k = "accept", t = "Eligible Cooking quest", q = 812346, line = 185, sk = 125, lvl = 5 },
+            { k = "grind", t = "Continue", lvl = 60 },
+        },
+    }
+    useRoute("skill-header-events")
+    fire("SKILL_LINES_CHANGED")
+    GetProfessions, GetProfessionInfo = nil, nil
+    local recordStep, recorded, delivered, watching = FG.Collector.RecordStep, 0, 0, true
+    FG.Collector.RecordStep = function() recorded = recorded + 1 end
+    FG:On("SKILL_LINES_CHANGED", function()
+        if watching then delivered = delivered + 1 end
+    end)
+    FG.Guide:Refresh()
+    assert(
+        char.guide.step == 1 and recorded == 0,
+        "reading hidden skills neither skips an eligible quest nor records it done"
+    )
+    assert(delivered == 0, "header read notifications never reach Guide, Tracker or other addon handlers")
     local rank, cap, name = FG.ProfessionSkill(185)
     assert(
         rank == 125 and cap == 225 and name == "Client cooking",
@@ -750,20 +794,55 @@ do
         "multiple headers restore their original indexes"
     )
     assert(not headers[1].expanded and not headers[2].expanded, "collapsed headers are restored after reading")
-    headers[1][1].name = "Client herbalism"
+    for _ = 1, 10 do
+        for _, line in ipairs(lines) do
+            FG.ProfessionSkill(line)
+        end
+        FG.Guide:Refresh()
+    end
+    assert(
+        #opened == 2 and #closed == 2 and delivered == 0,
+        "repeated readers reuse the snapshot without a header event storm"
+    )
+
+    -- The external event invalidates before readers run, and header events during that read
+    -- do not dispatch recursively. A real cap change is observable in that same event.
+    headers[2][2].cap = 225
+    local observed
+    FG:On("SKILL_LINES_CHANGED", function()
+        if watching then observed = select(2, FG.ProfessionSkill(356)) end
+    end)
+    fire("SKILL_LINES_CHANGED")
+    assert(
+        observed == 225 and delivered == 1,
+        "external skill changes invalidate before handlers and publish the new cap"
+    )
+    assert(#opened == 4 and #closed == 4, "external change permits exactly one refreshed hidden snapshot")
+    assert(char.guide.step == 1 and recorded == 0, "external refresh also preserves the eligible quest")
+    watching = false
+    FG.Collector.RecordStep = recordStep
+
+    -- A visible requested skill is read without touching the other collapsed category.
+    GetProfessions = function() return 1 end
+    GetProfessionInfo = function() return "Client cooking", 0, 125, 225, 0, 0, 185 end
+    headers[1].expanded, headers[1][1].name, opened, closed = true, "Client herbalism", {}, {}
+    fire("SKILL_LINES_CHANGED")
+    GetProfessions, GetProfessionInfo = nil, nil
     rank, cap, name = FG.ProfessionSkill(182)
     assert(
         rank == 90 and cap == 150 and name == "Client herbalism",
-        "Herbalism uses its skill ID for the client display name"
+        "visible Herbalism uses the client skill display name"
     )
-    headers[1].expanded, opened, closed = true, {}, {}
+    assert(#opened == 0 and #closed == 0, "visible skill lookup does not expand a different category")
     rank, cap = FG.ProfessionSkill(356)
-    assert(rank == 130 and cap == 150, "the second secondary profession is read behind its header")
+    assert(rank == 130 and cap == 225, "a hidden skill then reads the remaining category")
     assert(headers[1].expanded and not headers[2].expanded, "an already open header stays open")
     assert(table.concat(opened, ",") == "3" and table.concat(closed, ",") == "3", "only the collapsed header changes")
     C_SkillInfo, GetProfessions, GetProfessionInfo = skillAPI, professions, professionInfo
     GetNumSkillLines, GetSkillLineInfo, ExpandSkillHeader, CollapseSkillHeader = count, info, expand, collapse
     C_TradeSkillUI = tradeSkillUI
+    useRoute(nil)
+    fire("SKILL_LINES_CHANGED")
 end
 local cooking = { rank = 20, cap = 75 }
 GetProfessions = function() return nil, nil, nil, nil, 5, nil end

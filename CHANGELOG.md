@@ -32,7 +32,7 @@ An addon change also goes, in the same words, under Unreleased in that addon's o
 - Profession rank steps stay pending until the new skill cap is learned or you skip them.
 - New solo guides skip profession-only round-trip flights before departure when every planned rank is already learned.
 - Regenerate older guides that send you to the wrong profession trainer, or skip those invalid steps manually.
-- Unreadable profession caps show an update or manual-check prompt instead of completing the rank at a trainer window.
+- Unreadable profession upgrade caps show an update or manual-check prompt instead of completing the rank at a trainer window.
 - Profession caps use the client's skill IDs and localized profession names, including skills hidden under collapsed legacy headers.
 - Saved profiles record learned profession caps so guides avoid ranks you already know.
 - Profession caps are recognized in the game's language even when the addon uses a different display language.

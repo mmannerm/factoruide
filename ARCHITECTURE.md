@@ -137,8 +137,10 @@ level:
   Fresh profiles record learned profession caps; older profiles infer ranks from skill.
   The addon completes rank steps only when the cap is learned or the player explicitly skips
   them. Opening a trainer window, passing a quest or outleveling a step does not learn a rank.
-  Cap reads prefer the client's skill ID API, then its localized skill names and legacy skill rows
-  (collapsed headers are restored after reading). An unreadable upgrade cap stays pending with
+  Cap reads prefer the existing profession-list API, then the client's skill ID API or localized
+  skill names and legacy skill rows. Legacy rows are cached until an external skill-change event;
+  visible rows are read first, and collapsed headers are restored after reading hidden rows.
+  Notifications caused by that read never reach the guide's event handlers. An unreadable upgrade cap stays pending with
   an update/verify/manual-skip prompt; an interaction does not substitute for that evidence.
   New guides retain flight departure nodes. At Lua export, pure flight-and-profession excursions
   that return to the same node get their final end index. A solo player still on the departure
