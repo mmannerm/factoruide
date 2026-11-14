@@ -91,6 +91,25 @@ fn a_far_trainer_waits_until_the_skill_needs_the_rank_then_gets_a_trip() {
 }
 
 #[test]
+fn a_far_trainer_teaches_all_open_ranks_in_one_visit() {
+    let p = tailor_with_trainer(150, 1500.0);
+    let planner = planner(&p);
+    let mut s = planner.sim().initial_state();
+    // Skill 55: apprentice is overdue, journeyman is open but not needed yet.
+    s.level = 16;
+    assert_eq!(s.ranks[0], 0);
+    let training = s.spent.training;
+    let events = visits(&planner, &mut s);
+    assert!(
+        matches!(events[..], [Event::ProfTrain { ranks: 0b11, .. }]),
+        "one visit learns both available ranks: {events:?}"
+    );
+    assert_eq!(s.ranks[0], 0b11);
+    assert_eq!(s.spent.training - training, p.params.train_time);
+    assert!(visits(&planner, &mut s).is_empty());
+}
+
+#[test]
 fn a_trainer_that_does_not_teach_the_rank_is_not_visited() {
     // Teaches up to the first rank only; at skill 130 the character needs the third.
     let p = tailor_with_trainer(75, 50.0);
@@ -180,6 +199,36 @@ fn expert_cooking_book_needs_skill_125_but_not_level_twenty() {
     );
     assert_eq!(s.ranks[0], 0b111);
     assert!(visits(&planner, &mut s).is_empty(), "the book is read only once");
+}
+
+#[test]
+fn a_far_cookbook_seller_is_visited_once_when_the_curve_passes_150() {
+    let mut p = cook_with_book(150);
+    p.model.profession_trainers[0].loc.pos.x = p.model.start.pos.x + 1500.0;
+    p.model.professions[0].curve[16] = 151;
+    let planner = planner(&p);
+    let mut s = planner.sim().initial_state();
+    let before = s.time;
+    let travel = s.spent.travel;
+    let training = s.spent.training;
+    assert_eq!(s.ranks[0], 0b11);
+    assert!(visits(&planner, &mut s).is_empty(), "no distant trip at skill 150");
+    assert_eq!(s.time, before);
+    assert_eq!(s.spent.travel, travel);
+
+    s.level = 16;
+    let events = visits(&planner, &mut s);
+    assert!(
+        matches!(events[..], [Event::ProfTrain { ranks: 0b100, .. }]),
+        "one Expert purchase after the curve passes 150: {events:?}"
+    );
+    assert_eq!(s.ranks[0], 0b111);
+    assert!(s.spent.travel > travel, "the vendor trip is counted");
+    assert_eq!(s.spent.training - training, p.params.train_time);
+    assert!(s.pos.dist(&p.model.profession_trainers[0].loc.pos) < 1.0);
+    let after = s.time;
+    assert!(visits(&planner, &mut s).is_empty(), "the book is not bought again");
+    assert_eq!(s.time, after);
 }
 
 #[test]

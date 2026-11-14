@@ -123,7 +123,14 @@ impl Simulator<'_> {
                                 })
                                 .map_or(0, |(r, _)| 1 << r)
                         } else {
-                            (if needed_only { needed } else { open }) & Self::taught_by(t.cap)
+                            let taught = Self::taught_by(t.cap);
+                            // A needed rank justifies the trip; once there, learn every open
+                            // rank this trainer teaches in the same visit.
+                            if needed_only && needed & taught == 0 {
+                                0
+                            } else {
+                                open & taught
+                            }
                         };
                         (learns != 0).then_some((k, t.loc.pos, learns))
                     })

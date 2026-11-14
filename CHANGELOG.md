@@ -30,6 +30,7 @@ An addon change also goes, in the same words, under Unreleased in that addon's o
 
 - Cooking book steps stay pending until the new skill cap is learned or you skip them.
 - Saved profiles record learned profession caps so guides avoid ranks you already know.
+- Profession caps are recognized in the game's language even when the addon uses a different display language.
 
 ## 0.19.0 (2026-11-12)
 

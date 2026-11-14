@@ -7,6 +7,7 @@ under Unreleased; `scripts/release.sh` gives them the release's version.
 ## Unreleased
 
 - Saved profiles record learned profession caps so guides avoid ranks you already know.
+- Profession caps are recognized in the game's language even when the addon uses a different display language.
 
 ## 0.17.0 (2026-11-09)
 

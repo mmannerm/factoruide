@@ -763,6 +763,32 @@ do
     fire("SKILL_LINES_CHANGED")
     assert(char.guide.step == 3, "learning the cap finishes the book while cooking skill is still 125")
 
+    -- The legacy skills list uses the game's language, even when the addon displays English.
+    do
+        local professions, professionInfo = GetProfessions, GetProfessionInfo
+        local skillLines, skillInfo, gameLocale = GetNumSkillLines, GetSkillLineInfo, GetLocale
+        local displayLocale = FactoruideDB.settings.locale
+        GetProfessions, GetProfessionInfo = nil, nil
+        FactoruideDB.settings.locale = "enUS"
+        GetNumSkillLines = function() return 1 end
+        for _, client in ipairs({ { "deDE", "Kochkunst" }, { "esMX", "Cocina" } }) do
+            GetLocale = function() return client[1] end
+            GetSkillLineInfo = function() return client[2], false, false, 125, 0, 0, cooking.cap end
+            cooking.cap = 150
+            FG.Guide:Resync()
+            assert(char.guide.step == 1, client[1] .. ": unread book still needed")
+            cooking.cap = 225
+            fire("SKILL_LINES_CHANGED")
+            assert(char.guide.step == 3, client[1] .. ": learned book recognized through localized skills list")
+            local rank, cap, name = FG.ProfessionSkill(185)
+            assert(rank == 125 and cap == 225 and name == client[2], "localized skill and cap read")
+            assert(FG.Lang() == "enUS", "client language is independent of addon display language")
+        end
+        GetProfessions, GetProfessionInfo = professions, professionInfo
+        GetNumSkillLines, GetSkillLineInfo, GetLocale = skillLines, skillInfo, gameLocale
+        FactoruideDB.settings.locale = displayLocale
+    end
+
     -- Old guides' ordinary trainer steps still complete when the trainer window opens.
     FG.Routes["prof-trainer-visit-test"] = {
         race = 7,
