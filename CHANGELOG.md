@@ -14,6 +14,8 @@ An addon change also goes, in the same words, under Unreleased in that addon's o
 
 ### Guides
 
+- Expert Cooking, Fishing and First Aid guides visit their book vendors instead of trainers to unlock the 225 skill cap.
+- Profession visits choose trainers for the ranks they actually teach and stop at the ranks needed for your goal.
 - Guides for The Glowing Shard keep quests already in the log, talk in Ratchet without extra leveling, and return to Wailing Caverns only for missing pickups.
 - Group dungeon guides include each member's unfinished objectives even when the leading character has already completed them.
 - Zone and dungeon guides follow available prerequisite branches, even at maximum level; saved guides keep valid alternative quest chains.
@@ -24,6 +26,16 @@ An addon change also goes, in the same words, under Unreleased in that addon's o
 - WoW Forever: Call of Fire guides complete Olariaan's ritual and light the Brazier of Eternal Flame.
 - Required quests are reinserted after their skill requirement is reached, trying the route's end when an earlier placement fails.
 - Objective guides honor explicit quest completion windows and include the prerequisites and dungeons of individually selected quests. Choosing Shipping Label adds the crate purchase and filling steps when needed.
+
+### Addon
+
+- Profession rank steps stay pending until the new skill cap is learned or you skip them.
+- New solo guides skip profession-only round-trip flights before departure when every planned rank is already learned.
+- Regenerate older guides that send you to the wrong profession trainer, or skip those invalid steps manually.
+- Unreadable profession upgrade caps show an update or manual-check prompt instead of completing the rank at a trainer window.
+- Profession caps use the client's skill IDs and localized profession names, including skills hidden under collapsed legacy headers.
+- Saved profiles record learned profession caps so guides avoid ranks you already know.
+- Profession caps are recognized in the game's language even when the addon uses a different display language.
 
 ## 0.19.0 (2026-11-12)
 

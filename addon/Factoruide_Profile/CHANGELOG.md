@@ -6,6 +6,11 @@ under Unreleased; `scripts/release.sh` gives them the release's version.
 
 ## Unreleased
 
+- Profession caps use the client's skill IDs and localized profession names, including skills hidden under collapsed legacy headers.
+
+- Saved profiles record learned profession caps so guides avoid ranks you already know.
+- Profession caps are recognized in the game's language even when the addon uses a different display language.
+
 ## 0.17.0 (2026-11-09)
 
 - The objective guide's level warning in every language of the game.

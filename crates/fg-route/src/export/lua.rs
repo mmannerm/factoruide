@@ -1,7 +1,7 @@
 //! The addon's data file: every route as Lua tables.
 
 use super::phrase::Arg;
-use super::types::{Route, RouteProfession, Step, TargetKind};
+use super::types::{Route, RouteProfession, Step, StepKind, TargetKind};
 use std::fmt::Write as _;
 
 /// A Lua string literal: what Lua 5.1 reads back as `text`. Control characters are decimal
@@ -145,13 +145,16 @@ pub fn to_lua(routes: &[Route]) -> String {
         );
         // Steps carry the time they are planned to take (`d`, seconds): `time` is when each is done.
         let mut previous = 0.0;
-        for s in &r.steps {
+        for (index, s) in r.steps.iter().enumerate() {
             let duration = (s.time - previous).max(0.0).round();
             previous = s.time;
             let mut fields = vec![
                 format!("k = {}", lua_str(s.kind.as_str())),
                 format!("t = {}", lua_str(&s.text)),
             ];
+            if let Some(end) = profession_trip_end(&r.steps, index) {
+                fields.push(format!("pte = {}", end + 1));
+            }
             if let Some(q) = s.quest {
                 fields.push(format!("q = {q}"));
             }
@@ -337,6 +340,34 @@ pub fn to_lua(routes: &[Route]) -> String {
     out
 }
 
+/// A flight excursion used only for profession ranks, returning to its departure node.
+/// Compute indexes on the final guide, after edits and inserted checkpoints. Shared travel,
+/// one-way journeys and old guides without departure nodes cannot be skipped this way.
+fn profession_trip_end(steps: &[Step], start: usize) -> Option<usize> {
+    let first = &steps[start];
+    if first.kind != StepKind::Fly || first.farm.is_some() {
+        return None;
+    }
+    let origin = first.from_taxi?;
+    let mut profession = false;
+    for (index, step) in steps.iter().enumerate().skip(start + 1) {
+        if step.farm.is_some() {
+            return None;
+        }
+        match step.kind {
+            StepKind::Profession if step.line.is_some() && step.skill.is_some() => profession = true,
+            StepKind::Fly if step.from_taxi.is_some() => {
+                let target = step.target.as_ref().filter(|t| t.kind == TargetKind::Taxi)?;
+                if target.id == origin {
+                    return profession.then_some(index);
+                }
+            }
+            _ => return None,
+        }
+    }
+    None
+}
+
 /// Yards a walk may stray from the one the guide keeps once written for the addon.
 const WALK_TOLERANCE: f64 = 6.0;
 
@@ -388,7 +419,111 @@ fn lighten_walk(step: &Step) -> Vec<[f64; 2]> {
 
 #[cfg(test)]
 mod tests {
-    use super::lua_str;
+    use super::{lua_str, profession_trip_end, to_lua};
+    use crate::export::{Route, Step, StepKind, Target, TargetKind};
+
+    fn flight(from: i64, to: i64) -> Step {
+        let mut step = Step::bare(StepKind::Fly, 27, 0.0);
+        step.from_taxi = Some(from);
+        step.target = Some(Target {
+            kind: TargetKind::Taxi,
+            id: to,
+            name: String::new(),
+        });
+        step
+    }
+
+    fn rank(line: i64) -> Step {
+        let mut step = Step::bare(StepKind::Profession, 27, 0.0);
+        step.line = Some(line);
+        step.skill = Some(225);
+        step
+    }
+
+    #[test]
+    fn only_profession_flight_round_trips_can_be_bypassed() {
+        // Sun Rock Retreat -> Thunder Bluff, two ranks, back to Sun Rock Retreat.
+        let steps = vec![flight(29, 22), rank(182), rank(356), flight(22, 29)];
+        assert_eq!(profession_trip_end(&steps, 0), Some(3));
+        assert_eq!(
+            profession_trip_end(&steps, 3),
+            None,
+            "the return leg is still needed after training"
+        );
+        for kind in [
+            StepKind::Accept,
+            StepKind::Train,
+            StepKind::Sell,
+            StepKind::FlightMaster,
+            StepKind::Grind,
+            StepKind::Link,
+        ] {
+            let mut shared = steps.clone();
+            shared.insert(2, Step::bare(kind, 27, 0.0));
+            assert_eq!(profession_trip_end(&shared, 0), None, "preserve shared {kind:?} trips");
+        }
+        let mut one_way = steps.clone();
+        one_way[3] = flight(22, 23);
+        assert_eq!(profession_trip_end(&one_way, 0), None);
+        let mut old = steps.clone();
+        old[0].from_taxi = None;
+        assert_eq!(profession_trip_end(&old, 0), None, "do not infer a departure from text");
+        let mut farming = steps.clone();
+        farming[1].farm = Some(1);
+        assert_eq!(
+            profession_trip_end(&farming, 0),
+            None,
+            "preserve planned kills on the way"
+        );
+        let mut visit = steps;
+        visit[1].skill = None;
+        assert_eq!(
+            profession_trip_end(&visit, 0),
+            None,
+            "a visit without a cap cannot be proven unnecessary"
+        );
+    }
+
+    #[test]
+    fn profession_trip_indexes_are_written_from_the_final_saved_guide() {
+        let mut route = Route {
+            format: crate::export::FORMAT,
+            name: "trips".into(),
+            race_id: 2,
+            class_id: 1,
+            class: "WARRIOR".into(),
+            faction: crate::faction::Faction::Horde,
+            from_level: 27,
+            to_level: 30,
+            total_time: 0.0,
+            total_time_text: String::new(),
+            quests: 0,
+            breakdown: crate::plan::Breakdown::default(),
+            professions: vec![],
+            locale: None,
+            spells: vec![],
+            checkpoints: vec![],
+            reputation: vec![],
+            players: vec![],
+            sync_max: None,
+            class_spells: vec![],
+            buffs: vec![],
+            recommended: None,
+            levels_ignored: false,
+            steps: vec![flight(29, 22), rank(356), flight(22, 29)],
+        };
+        // An edit before the trip changes indexes; the stable departure ID survives saving.
+        route.steps.insert(0, Step::bare(StepKind::Accept, 27, 0.0));
+        let saved = serde_json::to_value(&route).expect("test guide serializes");
+        assert_eq!(saved["steps"][1]["from_taxi"], 29);
+        let loaded: Route = serde_json::from_value(saved).expect("saved guide reloads");
+        let lua = to_lua(&[loaded]);
+        assert!(lua.contains("pte = 4"));
+        assert_eq!(lua.matches("pte = ").count(), 1);
+        // An edit inside the trip adds another purpose, so it is no longer bypassable.
+        route.steps.insert(2, Step::bare(StepKind::TurnIn, 27, 0.0));
+        assert!(!to_lua(&[route]).contains("pte = "));
+    }
 
     /// Lua 5.1 reads `\ddd` (always three digits here: a digit after one stays a digit) and no
     /// `\u{..}`: a no-break space or a zero-width space go as they are.

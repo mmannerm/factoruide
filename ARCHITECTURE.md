@@ -129,10 +129,26 @@ level:
   and each one left out costs `profession_quest_weight`. With `profession_trainers` (off by
   default) the planner also visits the trainers (`plan/profession_trainers.rs`, called after every
   step with the class training): a trainer within `train_radius` teaches each rank the character can
-  learn (level and skill the rank asks) as a detour; a farther one is a trip, once the curve passes
+  learn and needs for the goal (level and skill the rank asks) as a detour; a farther one is a trip, once the curve passes
   the cap of the rank before. The time counts in the route, the visit is a `profession` step, and
-  the state (`State::ranks`) remembers the ranks learned. A rank no trainer teaches gets no
-  visit. A guide edited by hand has none (the editor plans no trainer).
+  the state (`State::ranks`) remembers the ranks learned. Cooking, Fishing and First Aid trainers
+  stop at cap 150; their Expert books raise the cap to 225 at skill 125. Fishing also requires
+  character level 20 in Forever and Classic (not TBC). The book source grants only that rank.
+  Fresh profiles record learned profession caps; older profiles infer ranks from skill.
+  The addon completes rank steps only when the cap is learned or the player explicitly skips
+  them. Opening a trainer window, passing a quest or outleveling a step does not learn a rank.
+  Cap reads prefer the existing profession-list API, then the client's skill ID API or localized
+  skill names and legacy skill rows. Legacy rows are cached until an external skill-change event;
+  visible rows are read first, and collapsed headers are restored after reading hidden rows.
+  Notifications caused by that read never reach the guide's event handlers. An unreadable upgrade cap stays pending with
+  an update/verify/manual-skip prompt; an interaction does not substitute for that evidence.
+  New guides retain flight departure nodes. At Lua export, pure flight-and-profession excursions
+  that return to the same node get their final end index. A solo player still on the departure
+  side skips the entire excursion when every cap is already learned, before walking to the
+  flight master. A trip already underway keeps its return flight. Group trips, shared stops,
+  one-way travel and old guides without departure nodes retain their travel instructions.
+  Other ranks no source teaches get no visit. A guide edited by hand has none (the editor plans
+  no trainer). Skill curves remain estimates; practice, recipes and affordability are not planned.
 - **Every action is a step**: each take, objective and turn-in of a quest is a stop of the route,
   done at that stop and nowhere else (no quest taken in passing at another stop, no objective
   finished on the way), so that each one can be moved or removed in the guide editor. What doing
