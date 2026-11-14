@@ -184,6 +184,8 @@ local childQuests = {} -- child quests handed in on the way to their parent's tu
 -- Whether the shown step was already done when we arrived on it (manual navigation): the
 -- guide only moves on when the shown step becomes done.
 local arrivedDone = false
+-- Browsing pages does not prove their travel was taken, even beside unfinished tasks.
+local browsing = false
 local waypointStep
 -- Step picked by hand (left-click on a row): the compass points at it until it is done.
 local pointed
@@ -199,12 +201,14 @@ local Distance -- defined below, used by IsDone
 
 local function QuestTitle(step) return step.q and QuestLog.GetTitleForQuestID(step.q) or nil end
 
---- Game objective matching the step's target name. When several hold the name ("Night Web
+--- The native objective slot, or a target-name match in older guides. When several hold the name ("Night Web
 --- Spider slain" and "Young Night Web Spider slain"), the one with the least else around it
 --- (counts, spaces and punctuation aside), then the one at the step's objective index.
 local function FindObjective(step)
     local objectives = QuestLog.GetQuestObjectives(step.q)
-    if not objectives or not step.n then return nil end
+    if not objectives then return nil end
+    if step.slot ~= nil then return objectives[step.slot] end
+    if not step.n then return nil end
     local name = step.n:lower()
     local best, bestRest
     for i, o in ipairs(objectives) do
@@ -236,6 +240,7 @@ end
 local function PreparationItem(step)
     if step.e ~= "item" or not step.id then return false end
     if step.slot ~= nil then return step.slot == 0 end
+    if ObjectivesLoading(step.q) or FindObjective(step) then return false end
     for _, o in ipairs(QuestLog.GetQuestObjectives(step.q) or {}) do
         if not o.type or o.type == "item" then return false end
     end
@@ -247,8 +252,6 @@ local function RememberAcquired(step, index)
     if
         step.k == "objective"
         and QuestLog.IsOnQuest(step.q)
-        and not ObjectivesLoading(step.q)
-        and not FindObjective(step)
         and PreparationItem(step)
         and (FG.ItemCount(step.id) or 0) >= (step.c or 1)
     then
@@ -373,13 +376,13 @@ function IsDone(step, index)
         if step.cq then return state.handedIn[step.cq] or QuestLog.IsQuestFlaggedCompleted(step.cq) end
         -- An item to buy: done once in the bags, the quest taken or not yet.
         if step.by and step.id and (FG.ItemCount(step.id) or 0) >= (step.c or 1) then return true end
-        if not QuestLog.IsOnQuest(q) or ObjectivesLoading(q) then return false end
+        if not QuestLog.IsOnQuest(q) then return false end
+        if PreparationItem(step) then
+            return state.marks[index or state.step] == "acquired" or (FG.ItemCount(step.id) or 0) >= (step.c or 1)
+        end
+        if ObjectivesLoading(q) then return false end
         local o = FindObjective(step)
         if o then return o.finished end
-        if PreparationItem(step) then
-            if state.marks[index or state.step] == "acquired" then return true end
-            if (FG.ItemCount(step.id) or 0) >= (step.c or 1) then return true end
-        end
         return QuestLog.IsComplete(q)
     elseif step.k == "turnin" then
         if QuestLog.IsQuestFlaggedCompleted(q) then return true end
@@ -931,7 +934,7 @@ function Guide:SkipAhead()
         state.marks[index] = "skip"
     end
     FG:Print(L.ahead, c.lvl, #skip)
-    self:Resync()
+    self:Resync(true)
 end
 
 --- Leave the dungeon under way aside: its quests not finished (all their steps, those outside
@@ -1272,6 +1275,7 @@ end
 --- Skip the following steps already done (they are done together, e.g. several quests
 --- accepted at once).
 local function SkipDone()
+    browsing = false
     -- Background objectives (done along the way) do not stop the guide: the tracker shows them.
     while route.steps[state.step] do
         SkipProfessionTrip()
@@ -1293,7 +1297,7 @@ end
 --- Move on once every step of the current group is done (not when we navigated to a group done
 --- already); until then the current step is the group's first one not done.
 function Guide:Advance()
-    if route and not arrivedDone and (SkipProfessionTrip() or SkipTravel()) then SkipDone() end
+    if route and not browsing and not arrivedDone and (SkipProfessionTrip() or SkipTravel()) then SkipDone() end
     if route and route.steps[state.step] then
         -- A take-off is the flight of the first fly step of the group not taken yet.
         local onTaxi = UnitOnTaxi("player") and true or false
@@ -1315,7 +1319,7 @@ function Guide:Advance()
                 done, passed = IsDone(step, i)
             end
             if done and not passed then RememberAcquired(step, i) end
-            if done and not passed and TRAVEL[step.k] then state.marks[i] = true end
+            if done and not passed and not browsing and TRAVEL[step.k] then state.marks[i] = true end
             -- Done while playing: recorded with its index (not the background ones, nor passed).
             if done and not passed and wasDone[i] == false and FG.Collector then
                 FG:Try("step", FG.Collector.RecordStep, FG.Collector, i, step)
@@ -1468,6 +1472,7 @@ end
 function Guide:Go(n)
     if not route then return end
     state.step = math.max(1, math.min(n, #route.steps + 1))
+    browsing = true
     -- Arrived on a group done already: it stays shown until the player moves on.
     arrivedDone = false
     if route.steps[state.step] then
@@ -1947,7 +1952,6 @@ function Guide:ToggleSkip(index)
     if not step then return end
     -- An old whole-quest mark can still be undone from any of that quest's rows.
     local wholeQuest = step.q and (step.k ~= "objective" or state.skippedQuests[step.q])
-    if not wholeQuest and state.marks[index] == "acquired" then return end
     local mark = wholeQuest and { route = route, q = step.q } or { route = route, index = index }
     local undo
     if wholeQuest then
@@ -1956,7 +1960,7 @@ function Guide:ToggleSkip(index)
         state.skippedQuests[step.q] = not undo or nil
         FG:Print(undo and L.unskipped or L.skipped, name)
     else
-        undo = state.marks[index] == "skip"
+        undo = state.marks[index] == "skip" or state.marks[index] == "acquired"
         state.marks[index] = not undo and "skip" or nil
         FG:Print(undo and L.stepUnskipped or L.stepSkipped)
     end

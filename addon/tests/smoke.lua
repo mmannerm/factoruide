@@ -1213,6 +1213,67 @@ do
 end
 print("finished travel ok")
 
+-- Browsing a future journey while at its destination does not record having taken it.
+do
+    local position, playerMap = C_Map.GetPlayerMapPosition, C_Map.GetBestMapForUnit
+    for _, kind in ipairs({ "hearth", "teleport", "link", "deathskip" }) do
+        C_Map.GetPlayerMapPosition, C_Map.GetBestMapForUnit = position, playerMap
+        local name = "browse-travel-" .. kind
+        FG.Routes[name] = {
+            race = 7,
+            class = 8,
+            fromLevel = 5,
+            toLevel = 60,
+            time = 1,
+            steps = {
+                { k = "accept", t = "Current work", q = 8420, lvl = 5 },
+                { k = kind, t = "Future journey", m = 1426, x = 29.93, y = 71.2, lvl = 5 },
+                { k = "turnin", t = "Later work", q = 8421, m = 1426, x = 80, y = 80, lvl = 5 },
+            },
+        }
+        useRoute(name)
+        FG.Guide:NextGroup()
+        FG.Guide:Advance()
+        assert(
+            char.guide.step == 2 and not char.guide.marks[2],
+            kind .. ": browsing a done page does not record future travel"
+        )
+        FG.Guide:PrevGroup()
+        C_Map.GetPlayerMapPosition = function()
+            return { GetXY = function() return 0.8, 0.8 end }
+        end
+        if kind == "link" then C_Map.GetBestMapForUnit = function() return 1431 end end
+        FG.Guide:NextGroup()
+        assert(
+            not FG.Guide.view.tasks[1].done,
+            kind .. ": future travel remains unfinished after leaving its destination"
+        )
+    end
+    C_Map.GetPlayerMapPosition, C_Map.GetBestMapForUnit = position, playerMap
+    FG.Routes["browse-mixed-travel"] = {
+        race = 7,
+        class = 8,
+        fromLevel = 5,
+        toLevel = 60,
+        time = 1,
+        steps = {
+            { k = "accept", t = "Current work", q = 8420, lvl = 5 },
+            { k = "hearth", t = "Future hearth", m = 1426, x = 29.93, y = 71.2, lvl = 5 },
+            { k = "turnin", t = "Unfinished turn-in", q = 8421, m = 1426, x = 29.93, y = 71.2, lvl = 5 },
+        },
+    }
+    useRoute("browse-mixed-travel")
+    FG.Guide:NextGroup()
+    FG.Guide:Advance()
+    assert(
+        char.guide.step == 3 and not char.guide.marks[2],
+        "an unfinished task on the browsed page does not justify bypassing or recording its hearth"
+    )
+    FG.Guide:PrevGroup()
+    assert(char.guide.step == 1 and not char.guide.marks[2], "paging back leaves future hearth progress untouched")
+end
+print("browsed travel ok")
+
 -- Skipping: outdated steps, exclusive alternatives, by hand.
 playerLevel = 21
 FG.Routes["skip-test"] = {
@@ -1553,6 +1614,29 @@ FG.Guide:Advance()
 FG.Guide:SkipAhead()
 assert(not char.guide.marks[4], "no skip below the checkpoint level")
 onQuest[6002] = nil
+-- Skipping filler at the current checkpoint does not revisit travel before this position.
+playerLevel = 22
+FG.Routes["checkpoint-travel-test"] = {
+    race = 7,
+    class = 8,
+    fromLevel = 1,
+    toLevel = 60,
+    time = 1,
+    checkpoints = { { lvl = 22, step = 4 } },
+    steps = {
+        { k = "teleport", t = "Earlier journey", m = 1426, x = 80, y = 20, lvl = 22 },
+        { k = "accept", t = "Accept Filler", q = 8422, lvl = 22 },
+        { k = "turnin", t = "Turn in Filler", q = 8422, lvl = 22 },
+        { k = "accept", t = "Next hub", q = 8423, lvl = 22 },
+    },
+}
+useRoute("checkpoint-travel-test")
+FG.Guide:Go(2)
+FG.Guide:SkipAhead()
+assert(
+    char.guide.step == 4 and not char.guide.marks[1],
+    "skipping ahead resumes forward without replaying unrelated earlier travel"
+)
 print("checkpoints ok")
 
 -- A quest whose accept was left behind: its turn-in is not asked.
@@ -2376,7 +2460,7 @@ do
     char.events = {}
     local kill = { text = "Lillith Nefara slain: 0/1", type = "monster", finished = false }
     local objectives = { kill }
-    C_QuestLog.GetQuestObjectives = function(q) return q == 409 and objectives or previousObjectives(q) end
+    C_QuestLog.GetQuestObjectives = function(q) return (q == 409 or q == 498) and objectives or previousObjectives(q) end
     onQuest[409] = true
     for _, legacy in ipairs({ false, true }) do
         local name = legacy and "preparation-legacy" or "preparation-slots"
@@ -2427,17 +2511,30 @@ do
         assert(char.guide.step == 1, "Candle must be acquired first")
         objectives, bags[3080] = {}, 1
         fire("BAG_UPDATE_DELAYED")
-        assert(char.guide.step == 1 and not char.guide.marks[1], "loading is not preparation evidence")
+        if legacy then
+            assert(char.guide.step == 1 and not char.guide.marks[1], "legacy preparation needs loaded objectives")
+        else
+            assert(char.guide.step == 2 and char.guide.marks[1] == "acquired", "slot zero needs no native objectives")
+            bags[3080] = nil
+            FG.Guide:ToggleSkip(1)
+            assert(char.guide.step == 1, "retry an acquired item even without native objectives")
+            kill.text = "Lillith Nefara summoned with Candle of Beckoning: 0/1"
+            bags[3080] = 1
+        end
         objectives = { kill }
         fire("BAG_UPDATE_DELAYED")
         assert(char.guide.step == 2 and not kill.finished, "having the Candle advances only to Lillith")
+        kill.text = "Lillith Nefara slain: 0/1"
         bags[3080] = nil
         fire("BAG_UPDATE_DELAYED")
         FG.Guide:Resync()
         assert(char.guide.step == 2, "consuming the Candle preserves acquisition")
         FG.Guide:ToggleSkip(1)
-        FG.Guide:UndoLastMark()
-        assert(char.guide.step == 2, "redundant manual marking cannot erase a consumed item acquisition")
+        assert(char.guide.step == 1 and not char.guide.marks[1], "retry only the consumed item's pickup")
+        bags[3080] = 1
+        fire("BAG_UPDATE_DELAYED")
+        bags[3080] = nil
+        fire("BAG_UPDATE_DELAYED")
         useRoute("gnome-mage")
         useRoute(name)
         assert(char.guide.step == 2, "returning to the guide preserves acquisition")
@@ -2459,6 +2556,7 @@ do
 
         local native = { text = "Candle of Beckoning: 1/1", type = "item", finished = true }
         candle.slot, objectives, bags[3080] = 1, { native, kill }, 1
+        FG.Routes[name].steps[2].slot = 2 -- The native item now occupies the first log slot.
         FG.Guide:Resync()
         assert(char.guide.step == 2 and not char.guide.marks[1], "native item progress is not remembered")
         native.finished, bags[3080] = false, nil
@@ -2477,6 +2575,7 @@ do
         levelsIgnored = true,
         time = 1,
         steps = {
+            { k = "teleport", t = "Teleport", lvl = 3, m = 1426, x = 29.93, y = 71.2 },
             { k = "grind", t = "Grind", lvl = 60 },
             {
                 k = "objective",
@@ -2495,12 +2594,108 @@ do
     objectives, bags[3080] = { kill }, 1
     useRoute("preparation-preview")
     FG.Guide:Refresh()
-    assert(not char.guide.marks[2], "previewing a future preparation does not acquire it")
+    assert(not char.guide.marks[3], "previewing a future preparation does not acquire it")
     bags[3080] = nil
-    FG.Guide:Go(2)
+    FG.Guide:Go(3)
     FG.Guide:Advance()
-    assert(char.guide.step == 2, "the future preparation still needs its item")
-    onQuest[409], C_QuestLog.GetQuestObjectives = nil, previousObjectives
+    assert(char.guide.step == 3, "the future preparation still needs its item")
+    FG.Guide:Go(2)
+    FG.Guide:ToggleSkip(2)
+    bags[3080] = 1
+    fire("BAG_UPDATE_DELAYED")
+    bags[3080] = nil
+    fire("BAG_UPDATE_DELAYED")
+    FG.Guide:ToggleSkip(3)
+    assert(char.guide.step == 3 and not char.guide.marks[3], "retry returns only to the pickup")
+    assert(char.guide.marks[1] == true and char.guide.marks[2] == "skip", "retry preserves earlier travel and skips")
+    -- The Rescue lists the prisoners in the log, not the two keys used to open their cages.
+    onQuest[409], onQuest[498] = nil, true
+    objectives = {
+        { text = "Rescue Drull: 0/1", type = "object", finished = false },
+        { text = "Rescue Tog'thar: 0/1", type = "object", finished = false },
+    }
+    for _, legacy in ipairs({ false, true }) do
+        local name = legacy and "rescue-keys-legacy" or "rescue-keys-slots"
+        local guide = {
+            race = 7,
+            class = 8,
+            fromLevel = 1,
+            toLevel = 60,
+            levelsIgnored = true,
+            time = 1,
+            steps = {
+                {
+                    k = "objective",
+                    t = "Get Dull Iron Key",
+                    q = 498,
+                    o = 1,
+                    lvl = 3,
+                    slot = 0,
+                    e = "item",
+                    id = 3467,
+                    n = "Dull Iron Key",
+                    c = 1,
+                },
+                {
+                    k = "objective",
+                    t = "Get Burnished Gold Key",
+                    q = 498,
+                    o = 2,
+                    lvl = 3,
+                    slot = 0,
+                    e = "item",
+                    id = 3499,
+                    n = "Burnished Gold Key",
+                    c = 1,
+                },
+                {
+                    k = "objective",
+                    t = "Rescue Drull",
+                    q = 498,
+                    o = 3,
+                    lvl = 3,
+                    slot = 1,
+                    e = "object",
+                    id = 1721,
+                    n = "Locked ball and chain",
+                },
+                {
+                    k = "objective",
+                    t = "Rescue Tog'thar",
+                    q = 498,
+                    o = 4,
+                    lvl = 3,
+                    slot = 2,
+                    e = "object",
+                    id = 1722,
+                    n = "Locked ball and chain",
+                },
+            },
+        }
+        if legacy then
+            for _, step in ipairs(guide.steps) do
+                step.slot = nil
+            end
+        end
+        FG.Routes[name] = guide
+        bags[3467], bags[3499] = 1, 1
+        useRoute(name)
+        assert(char.guide.step == 3, "keys already held: advance to rescuing the prisoners")
+        if not legacy then
+            objectives[1].finished = true
+            FG.Guide:Advance()
+            assert(char.guide.step == 4, "native slots distinguish the two identically named cages")
+            objectives[1].finished = false
+        end
+        bags[3499] = nil
+        FG.Guide:AskReset()
+        assert(char.guide.step == 2, "one key held: the other pickup remains pending")
+        bags[3467] = nil
+        FG.Guide:Resync()
+        assert(char.guide.step == 2, "consuming the first key does not reopen its pickup")
+    end
+    onQuest[498], bags[3467], bags[3499] = nil, nil, nil
+    C_QuestLog.GetQuestObjectives = previousObjectives
     char.events, char.seq = events, seq
 end
 print("preparation items ok")
