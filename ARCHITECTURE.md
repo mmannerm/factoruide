@@ -131,13 +131,18 @@ level:
   step with the class training): a trainer within `train_radius` teaches each rank the character can
   learn (level and skill the rank asks) as a detour; a farther one is a trip, once the curve passes
   the cap of the rank before. The time counts in the route, the visit is a `profession` step, and
-  the state (`State::ranks`) remembers the ranks learned. Expert Cooking is a book visit:
-  Cooking trainers stop at a cap of 150; at skill 125 the character can buy and read the Expert
-  Cookbook from its faction's vendor, raising the cap to 225. The book source grants only that
-  rank. Fresh profiles record learned profession caps; older profiles infer ranks from skill.
-  The addon completes a book step when the cap is learned or the player explicitly skips it,
-  not when a trainer window opens or a later quest is done. Other ranks no trainer teaches get
-  no visit. A guide edited by hand has none (the editor plans no trainer).
+  the state (`State::ranks`) remembers the ranks learned. Cooking, Fishing and First Aid trainers
+  stop at cap 150; their Expert books raise the cap to 225 at skill 125. Fishing also requires
+  character level 20 in Forever and Classic (not TBC). The book source grants only that rank.
+  Fresh profiles record learned profession caps; older profiles infer ranks from skill.
+  The addon completes rank steps only when the cap is learned or the player explicitly skips
+  them. Opening a trainer window, passing a quest or outleveling a step does not learn a rank.
+  New guides retain flight departure nodes. At Lua export, pure flight-and-profession excursions
+  that return to the same node get their final end index. A solo player still at the departure
+  point skips the entire excursion when every cap is already learned. Group trips, shared stops,
+  one-way travel and old guides without departure nodes retain their travel instructions.
+  Other ranks no source teaches get no visit. A guide edited by hand has none (the editor plans
+  no trainer). Skill curves remain estimates; practice, recipes and affordability are not planned.
 - **Every action is a step**: each take, objective and turn-in of a quest is a stop of the route,
   done at that stop and nowhere else (no quest taken in passing at another stop, no objective
   finished on the way), so that each one can be moved or removed in the guide editor. What doing

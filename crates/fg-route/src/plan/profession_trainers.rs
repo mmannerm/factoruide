@@ -116,7 +116,7 @@ impl Simulator<'_> {
                                     let lower = (1 << r) - 1;
                                     known & (1 << r) == 0
                                         && known & lower == lower
-                                        && level >= plan.start
+                                        && level >= book.minimum_level(self.params.edition).max(plan.start)
                                         && skill >= book.skill
                                         && plan.target > rank.due
                                         && (!needed_only || skill > rank.due)

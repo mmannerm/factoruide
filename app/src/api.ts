@@ -368,6 +368,8 @@ export interface Step {
   /** What the quest notes tell about it, in the guide's language, the one that matters most first. */
   notes?: StepNote[];
   target?: { kind: string; id: number; name: string };
+  /** Departure taxi node of a flight, used to recognize profession-only return trips. */
+  from_taxi?: number;
   zone?: string;
   /** The zone's ID (AreaTable). */
   zone_id?: number;

@@ -6,7 +6,8 @@ under Unreleased; `scripts/release.sh` gives them the release's version.
 
 ## Unreleased
 
-- Cooking book steps stay pending until the new skill cap is learned or you skip them.
+- Profession rank steps stay pending until the new skill cap is learned or you skip them.
+- New solo guides skip profession-only round-trip flights before departure when every planned rank is already learned.
 
 ## 0.19.0 (2026-11-12)
 

@@ -180,12 +180,11 @@ impl NpcFinder<'_> {
     /// Places to learn profession ranks: verified book vendors, plus friendly trainers found
     /// from their title ("Journeyman Blacksmith", "Skinning Trainer") and trainer flag.
     fn profession_trainers(&self, edition: crate::xp::Edition) -> Result<Vec<ProfessionTrainer>> {
-        let book = &crate::profession::EXPERT_COOKBOOK;
-        let mut trainers: Vec<_> = book
-            .vendors
+        let mut trainers: Vec<_> = crate::profession::EXPERT_BOOKS
             .iter()
-            .filter(|(_, faction)| *faction == self.faction)
-            .filter_map(|&(id, _)| {
+            .flat_map(|&book| book.vendors.iter().map(move |&(id, faction)| (book, id, faction)))
+            .filter(|(_, _, faction)| faction.contains(self.faction))
+            .filter_map(|(book, id, _)| {
                 Some(ProfessionTrainer {
                     line: book.line,
                     cap: book.cap,
@@ -218,11 +217,7 @@ impl NpcFinder<'_> {
             let def = crate::profession::PROFESSIONS.iter().find(|d| d.skill_id == line)?;
             Some(ProfessionTrainer {
                 line,
-                cap: if line == book.line {
-                    rank_cap_of_title(&title, def.kind).min(150)
-                } else {
-                    rank_cap_of_title(&title, def.kind)
-                },
+                cap: rank_cap_of_title(&title, def.kind, edition)?,
                 loc: self.place(id)?,
                 book: None,
             })
@@ -264,23 +259,66 @@ impl NpcFinder<'_> {
     }
 }
 
-/// The highest skill cap a profession trainer's title says it teaches ("Artisan" 300, "Expert"
-/// 225, "Journeyman" 150, "Apprentice" 75). A plain title ("Skinning Trainer") says nothing of
-/// the rank: crafting trainers of those teach the first rank; gathering and secondary ones the
-/// first three, as far as the game data shows.
-fn rank_cap_of_title(title: &str, kind: crate::profession::Kind) -> i64 {
-    let says = |words: &[&str]| words.iter().any(|w| title.contains(w));
-    // "Master ..." titles are the specializations (Master Goblin Engineer), not the rank.
-    if says(&["Artisan"]) {
-        300
-    } else if says(&["Expert"]) {
-        225
-    } else if says(&["Journeyman"]) {
-        150
-    } else if says(&["Apprentice", "Junior"]) || kind == crate::profession::Kind::Crafting {
-        75
-    } else {
-        225
+/// Rank sources represented by the catalogs' titles. Classic/Forever crafting trainer titles
+/// name the trainer's rank, one above the rank taught: an Expert Blacksmith teaches Journeyman.
+/// TBC consolidated ordinary crafting trainers through Artisan. Specialty recipe trainers do
+/// not teach these ranks, and an unverified plain crafting title is not evidence of a rank.
+/// Sources: https://www.wow-professions.com/forever/blacksmithing-trainers and
+/// https://www.wowhead.com/tbc/npc=3355/saru-steelfury.
+fn rank_cap_of_title(title: &str, kind: crate::profession::Kind, edition: crate::xp::Edition) -> Option<i64> {
+    use crate::profession::Kind;
+    use crate::xp::Edition;
+    match kind {
+        Kind::Secondary => match title {
+            "Cook"
+            | "Superior Cook"
+            | "Cooking Trainer"
+            | "Cooking Trainer & Supplies"
+            | "First Aid Trainer"
+            | "Physician"
+            | "Fishing Trainer"
+            | "Fishing Trainer & Supplies" => Some(150),
+            _ => None,
+        },
+        // Faruza's "Apprentice Herbalist" title still teaches all four ranks. Only the
+        // explicitly Junior gathering trainers stop at Apprentice.
+        Kind::Gathering if edition == Edition::Tbc && title.starts_with("Master ") => None,
+        Kind::Gathering => Some(if title.starts_with("Junior ") { 75 } else { 300 }),
+        Kind::Crafting => {
+            const ORDINARY: &[&str] = &[
+                "Alchemist",
+                "Alchemist Trainer",
+                "Alchemy Trainer",
+                "Blacksmith",
+                "Blacksmithing Trainer",
+                "Enchanter",
+                "Enchanting Trainer",
+                "Engineer",
+                "Engineering Trainer",
+                "Leathercrafter",
+                "Leatherworker",
+                "Leatherworking Trainer",
+                "Tailor",
+                "Tailoring Trainer",
+            ];
+            let plain = title.strip_suffix(" & Supplies").unwrap_or(title);
+            if edition == Edition::Tbc {
+                // Outland's Master trainers are verified for 275 -> 375, outside this
+                // planner's skill range; do not assume they also teach every lower rank.
+                return ORDINARY.contains(&plain).then_some(300);
+            }
+            let (rank, profession) = title.split_once(' ')?;
+            if !ORDINARY.contains(&profession) {
+                return None;
+            }
+            match rank {
+                "Journeyman" => Some(75),
+                "Expert" => Some(150),
+                "Artisan" => Some(225),
+                "Master" => Some(300),
+                _ => None,
+            }
+        }
     }
 }
 
@@ -288,18 +326,57 @@ fn rank_cap_of_title(title: &str, kind: crate::profession::Kind) -> i64 {
 mod tests {
     use super::*;
     use crate::profession::Kind;
+    use crate::xp::Edition;
 
     #[test]
-    fn a_title_says_how_far_a_trainer_teaches() {
-        let cap = |title, kind| rank_cap_of_title(title, kind);
-        assert_eq!(cap("Artisan Tailor", Kind::Crafting), 300);
-        assert_eq!(cap("Expert Leatherworker", Kind::Crafting), 225);
-        assert_eq!(cap("Journeyman Blacksmith", Kind::Crafting), 150);
-        assert_eq!(cap("Junior Skinning Trainer", Kind::Gathering), 75);
-        // A plain title: the first rank of a crafting profession, three of the others.
-        assert_eq!(cap("Alchemy Trainer", Kind::Crafting), 75);
-        assert_eq!(cap("Skinning Trainer", Kind::Gathering), 225);
-        // Specializations teach no rank.
-        assert_eq!(cap("Master Goblin Engineer", Kind::Crafting), 75);
+    fn crafting_titles_name_the_trainers_rank_not_the_rank_taught() {
+        let cap = |title| rank_cap_of_title(title, Kind::Crafting, Edition::Forever);
+        assert_eq!(cap("Journeyman Blacksmith"), Some(75));
+        assert_eq!(cap("Expert Blacksmith"), Some(150));
+        assert_eq!(cap("Artisan Blacksmith"), Some(225));
+        assert_eq!(cap("Master Blacksmith"), Some(300));
+        assert_eq!(cap("Journeyman Alchemist Trainer"), Some(75));
+        assert_eq!(cap("Master Leatherworking Trainer"), Some(300));
+        for title in [
+            "Master Goblin Engineer",
+            "Master Shadoweave Tailor",
+            "Tribal Leatherworking Trainer",
+            "Armorsmith",
+        ] {
+            assert_eq!(cap(title), None, "{title} teaches specialty recipes, not ranks");
+        }
+        assert_eq!(
+            cap("Alchemist"),
+            None,
+            "an unverified plain title cannot establish a rank"
+        );
+        assert_eq!(
+            rank_cap_of_title("Blacksmithing Trainer", Kind::Crafting, Edition::Tbc),
+            Some(300)
+        );
+    }
+
+    #[test]
+    fn gathering_and_secondary_trainers_have_different_rank_sources() {
+        assert_eq!(
+            rank_cap_of_title("Skinning Trainer", Kind::Gathering, Edition::Forever),
+            Some(300)
+        );
+        assert_eq!(
+            rank_cap_of_title("Apprentice Herbalist", Kind::Gathering, Edition::Forever),
+            Some(300)
+        );
+        assert_eq!(
+            rank_cap_of_title("Junior Skinning Trainer", Kind::Gathering, Edition::Forever),
+            Some(75)
+        );
+        assert_eq!(
+            rank_cap_of_title("Fishing Trainer", Kind::Secondary, Edition::Forever),
+            Some(150)
+        );
+        assert_eq!(
+            rank_cap_of_title("First Aid Trainer", Kind::Secondary, Edition::Tbc),
+            Some(150)
+        );
     }
 }

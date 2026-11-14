@@ -14,7 +14,8 @@ An addon change also goes, in the same words, under Unreleased in that addon's o
 
 ### Guides
 
-- Expert Cooking guides visit the cookbook vendor instead of a trainer to unlock the 225 skill cap.
+- Expert Cooking, Fishing and First Aid guides visit their book vendors instead of trainers to unlock the 225 skill cap.
+- Profession visits choose trainers for the ranks they actually teach, including Forever and Classic crafting tiers.
 - Guides for The Glowing Shard keep quests already in the log, talk in Ratchet without extra leveling, and return to Wailing Caverns only for missing pickups.
 - Group dungeon guides include each member's unfinished objectives even when the leading character has already completed them.
 - Zone and dungeon guides follow available prerequisite branches, even at maximum level; saved guides keep valid alternative quest chains.
@@ -28,7 +29,8 @@ An addon change also goes, in the same words, under Unreleased in that addon's o
 
 ### Addon
 
-- Cooking book steps stay pending until the new skill cap is learned or you skip them.
+- Profession rank steps stay pending until the new skill cap is learned or you skip them.
+- New solo guides skip profession-only round-trip flights before departure when every planned rank is already learned.
 - Saved profiles record learned profession caps so guides avoid ranks you already know.
 - Profession caps are recognized in the game's language even when the addon uses a different display language.
 

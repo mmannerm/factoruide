@@ -400,7 +400,7 @@ export function ConfigForm({ options, initial, startCharacter, defaultLocale, on
               professionExtras={
                 <Toggle
                   label={t("Étapes chez les maîtres de métier")}
-                  help={t("Planifier les visites pour apprendre vos métiers et leurs rangs, avec le trajet compris. Cuisine expert demande l’achat et la lecture du livre auprès du marchand de votre faction.")}
+                  help={t("Planifier les visites pour apprendre vos métiers et leurs rangs, avec le trajet compris. Le rang expert en cuisine, pêche et secourisme demande d’acheter et de lire leurs livres.")}
                   checked={params.profession_trainers}
                   onChange={(v) => set("profession_trainers", v)}
                 />

@@ -792,7 +792,8 @@ do
         FactoruideDB.settings.locale = displayLocale
     end
 
-    -- Old guides' ordinary trainer steps still complete when the trainer window opens.
+    -- Ordinary rank steps require the learned cap too, even in an older generated guide.
+    cooking.cap = 150
     FG.Routes["prof-trainer-visit-test"] = {
         race = 7,
         class = 8,
@@ -801,20 +802,136 @@ do
         toLevel = 60,
         time = 1,
         steps = {
-            { k = "profession", t = "Visit trainer", line = 185, sk = 300, lvl = 20 },
+            { k = "profession", t = "Visit trainer", line = 185, sk = 225, lvl = 20 },
+            { k = "turnin", t = "Later quest", q = 8220, lvl = 20 },
             { k = "grind", t = "Grind", lvl = 60 },
         },
     }
     useRoute("prof-trainer-visit-test")
-    assert(char.guide.step == 1, "trainer rank not learned yet")
+    assert(char.guide.step == 1 and not char.guide.marks[1], "later quest does not pass an unlearned trainer rank")
     fire("TRAINER_SHOW")
     FG.Guide:Advance()
-    assert(char.guide.step == 2 and char.guide.marks[1], "ordinary trainer visit still completes")
+    assert(char.guide.step == 1 and not char.guide.marks[1], "opening a trainer does not learn a rank")
+    char.guide.marks[1] = true
+    playerLevel = 40
+    FG.Guide:Resync()
+    assert(char.guide.step == 1, "old automatic visit marks and character levels do not prove a rank")
+    FG.Guide:ToggleSkip(1)
+    assert(char.guide.step == 3, "rank can still be skipped explicitly")
+    FG.Guide:UndoLastMark()
+    assert(char.guide.step == 1, "undo restores an unlearned rank")
+    cooking.cap = 225
+    fire("SKILL_LINES_CHANGED")
+    assert(char.guide.step == 3, "learned cap completes trainer rank before skill reaches that cap")
+
+    -- Legacy visit-only steps have no rank to observe and retain their interaction completion.
+    FG.Routes["prof-legacy-visit-test"] = {
+        race = 7,
+        class = 8,
+        faction = "Alliance",
+        fromLevel = 20,
+        toLevel = 60,
+        time = 1,
+        steps = {
+            { k = "profession", t = "Visit trainer", lvl = 40 },
+            { k = "grind", t = "Grind", lvl = 60 },
+        },
+    }
+    useRoute("prof-legacy-visit-test")
+    assert(char.guide.step == 1, "legacy visit starts pending")
+    fire("TRAINER_SHOW")
+    FG.Guide:Advance()
+    assert(char.guide.step == 2 and char.guide.marks[1], "legacy visit still completes on interaction")
     IsTradeskillTrainer, FG.ItemCount = wasTrainer, itemCount
     cooking.rank, cooking.cap, playerLevel = 25, 75, 5
     completed[8220] = nil
 end
 print("profession books ok")
+
+-- Pure profession flight excursions are checked before departure. Other journeys and the
+-- return leg of a trip already started must remain, even after its ranks have been learned.
+do
+    local savedProfessions, savedInfo, savedTaxi = GetProfessions, GetProfessionInfo, UnitOnTaxi
+    local fishingCap, known, flying, sequence = 225, true, false, 0
+    cooking.rank, cooking.cap, playerLevel = 125, 225, 20
+    GetProfessions = function() return 1, nil, nil, 2 end
+    GetProfessionInfo = function(index)
+        if not known then return nil end
+        if index == 1 then return "Cooking", 0, 125, cooking.cap, 0, 0, 185 end
+        return "Fishing", 0, 125, fishingCap, 0, 0, 356
+    end
+    UnitOnTaxi = function() return flying end
+    local function Trip(pte, players, x)
+        sequence = sequence + 1
+        local name = "prof-trip-" .. sequence
+        FG.Routes[name] = {
+            race = 7,
+            class = 8,
+            faction = "Alliance",
+            fromLevel = 20,
+            toLevel = 60,
+            time = sequence,
+            players = players,
+            steps = {
+                { k = "fly", t = "Fly to trainers", pte = pte, m = 1426, x = x or 29.93, y = 71.2, lvl = 20 },
+                { k = "profession", t = "Train Cooking", line = 185, sk = 225, m = 1456, x = 50, y = 50, lvl = 20 },
+                { k = "profession", t = "Train Fishing", line = 356, sk = 225, m = 1456, x = 50, y = 50, lvl = 20 },
+                { k = "fly", t = "Return", m = 1456, x = 50, y = 50, lvl = 20 },
+                { k = "grind", t = "Continue route", lvl = 60 },
+            },
+        }
+        useRoute(name)
+        return FG.Routes[name]
+    end
+    Trip(4)
+    assert(char.guide.step == 5, "all ranks known: skip the entire round trip before leaving")
+    assert(char.guide.marks[1] and char.guide.marks[4], "skipped flights stay passed on resync")
+    assert(not char.guide.marks[2] and not char.guide.marks[3], "rank proof remains the live caps")
+    FG.Guide:Resync()
+    assert(char.guide.step == 5, "resync does not resurrect skipped flights")
+
+    fishingCap = 150
+    Trip(4)
+    assert(char.guide.step == 1, "a second profession still needing its rank preserves the trip")
+    fire("TRAINER_SHOW")
+    FG.Guide:Advance()
+    assert(char.guide.step == 1, "an unrelated trainer window does not cancel the trip")
+    fishingCap = 225
+    fire("SKILL_LINES_CHANGED")
+    assert(char.guide.step == 5, "live cap change before departure skips the now-unneeded trip")
+
+    fishingCap = 150
+    Trip(4)
+    flying = true
+    FG.Guide:Advance()
+    flying = false
+    FG.Guide:Advance()
+    fishingCap = 225
+    fire("SKILL_LINES_CHANGED")
+    assert(char.guide.step == 4, "learning the last rank after departure keeps the return flight")
+    FG.Guide:Advance()
+    assert(char.guide.step == 4, "return flight waits for its own takeoff")
+
+    known = false
+    Trip(4)
+    assert(char.guide.step == 1, "unavailable skill information cannot cancel a trip")
+    known = true
+    Trip(4, nil, 80)
+    assert(char.guide.step == 1, "a character away from the departure point keeps the trip")
+    flying = true
+    Trip(4)
+    assert(char.guide.step == 1, "a character already in flight does not cancel an excursion")
+    flying = false
+    Trip(4, { { n = "Brouz-Realm", race = 7, class = 8 }, { n = "Pata-Realm", race = 1, class = 1 } })
+    assert(char.guide.step == 1, "our caps cannot cancel another group member's training trip")
+    local mixed = Trip(nil)
+    mixed.steps[3] = { k = "turnin", t = "Other business", q = 812345, lvl = 20 }
+    FG.Guide:Resync()
+    assert(char.guide.step == 1, "shared and older unannotated journeys keep their travel")
+    GetProfessions, GetProfessionInfo, UnitOnTaxi = savedProfessions, savedInfo, savedTaxi
+    cooking.rank, cooking.cap, playerLevel = 25, 75, 5
+end
+print("profession trips ok")
 
 -- Skipping: outdated steps, exclusive alternatives, by hand.
 playerLevel = 21

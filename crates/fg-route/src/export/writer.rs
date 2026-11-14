@@ -305,6 +305,7 @@ impl StepWriter<'_> {
             icon: None,
             notes: Vec::new(),
             target: None,
+            from_taxi: None,
             zone: None,
             zone_id: None,
             map: None,
@@ -518,6 +519,7 @@ impl StepWriter<'_> {
         let nodes = &self.planner.world.taxi_nodes;
         let (a, b) = (&nodes[from], &nodes[to]);
         step.kind = StepKind::Fly;
+        step.from_taxi = Some(a.id);
         step.say.push(
             Phrase::new("fly")
                 .arg("from", Arg::Text(a.name.clone()))
