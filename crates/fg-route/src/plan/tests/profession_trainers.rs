@@ -26,7 +26,12 @@ fn tailor_with_trainer(cap: i64, away: f64) -> Prepared {
     let mut loc = p.model.start.clone();
     loc.pos.x += away;
     p.model.professions = vec![tailoring()];
-    p.model.profession_trainers = vec![ProfessionTrainer { line: LINE, cap, loc }];
+    p.model.profession_trainers = vec![ProfessionTrainer {
+        line: LINE,
+        cap,
+        loc,
+        book: None,
+    }];
     p.params.profession_trainers = true;
     p.profile.to_level = 60;
     p
@@ -128,4 +133,75 @@ fn a_character_met_in_game_knows_the_ranks_its_skill_needs() {
         0,
         "a new character knows none"
     );
+}
+
+/// The nearby seller offers Expert Cooking at skill 125, including characters below level 20.
+fn cook_with_book(skill: i64) -> Prepared {
+    let mut p = quests_at_start(1);
+    let book = &crate::profession::EXPERT_COOKBOOK;
+    let mut loc = p.model.start.clone();
+    loc.pos.x += 50.0;
+    p.model.professions = vec![ProfessionPlan {
+        key: "cooking".into(),
+        name: "Cooking".into(),
+        target: 225,
+        start: 5,
+        curve: vec![skill; 61],
+        members: 1,
+    }];
+    p.model.profession_trainers = vec![ProfessionTrainer {
+        line: book.line,
+        cap: book.cap,
+        loc,
+        book: Some(book),
+    }];
+    p.params.profession_trainers = true;
+    p.profile.from_level = 15;
+    p.profile.to_level = 60;
+    p
+}
+
+#[test]
+fn expert_cooking_book_needs_skill_125_but_not_level_twenty() {
+    let below = cook_with_book(124);
+    let below_planner = planner(&below);
+    let mut below_state = below_planner.sim().initial_state();
+    assert!(visits(&below_planner, &mut below_state).is_empty());
+
+    let p = cook_with_book(125);
+    let planner = planner(&p);
+    let mut s = planner.sim().initial_state();
+    assert_eq!(s.level, 15);
+    assert_eq!(s.ranks[0], 0b11);
+    let events = visits(&planner, &mut s);
+    assert!(
+        matches!(events[..], [Event::ProfTrain { ranks: 0b100, .. }]),
+        "{events:?}"
+    );
+    assert_eq!(s.ranks[0], 0b111);
+    assert!(visits(&planner, &mut s).is_empty(), "the book is read only once");
+}
+
+#[test]
+fn the_expert_cooking_book_cannot_replace_learning_the_lower_ranks() {
+    let p = cook_with_book(125);
+    let planner = planner(&p);
+    for known in [0, 0b1] {
+        let mut s = planner.sim().initial_state();
+        s.ranks[0] = known;
+        assert!(visits(&planner, &mut s).is_empty());
+        assert_eq!(s.ranks[0], known, "the book teaches neither apprentice nor journeyman");
+    }
+}
+
+#[test]
+fn a_reported_expert_cap_avoids_buying_the_book_at_skill_125() {
+    for (cap, learns) in [(Some(225), false), (Some(150), true), (None, true)] {
+        let mut p = cook_with_book(125);
+        p.model.initial.profession_caps = cap.into_iter().map(|cap| (185, cap)).collect();
+        let planner = planner(&p);
+        let mut s = planner.sim().initial_state();
+        assert_eq!(s.ranks[0], if learns { 0b11 } else { 0b111 });
+        assert_eq!(!visits(&planner, &mut s).is_empty(), learns);
+    }
 }

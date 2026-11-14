@@ -6,6 +6,31 @@
 
 use serde::{Deserialize, Serialize};
 
+/// A rank learned from a book instead of a trainer.
+#[derive(Debug, Clone, Copy)]
+pub struct ProfessionBook {
+    pub item: i64,
+    pub name: &'static str,
+    pub line: i64,
+    pub cap: i64,
+    pub skill: i64,
+    /// Verified sellers and the faction they serve; their positions come from the database.
+    pub vendors: &'static [(i64, &'static str)],
+}
+
+/// Expert Cooking is learned by reading this book at Cooking 125, without a character-level
+/// requirement. The bundled catalogs omit the item and its vendor stock.
+/// Sources: https://www.wowhead.com/forever/item=16072/expert-cookbook and
+/// https://www.icy-veins.com/wow-forever/cooking-leveling-guide.
+pub const EXPERT_COOKBOOK: ProfessionBook = ProfessionBook {
+    item: 16072,
+    name: "Expert Cookbook",
+    line: 185,
+    cap: 225,
+    skill: 125,
+    vendors: &[(12033, "H"), (3955, "A")],
+};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Kind {

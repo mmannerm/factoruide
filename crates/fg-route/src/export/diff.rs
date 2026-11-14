@@ -837,6 +837,7 @@ mod tests {
             path: Vec::new(),
             skill: None,
             line: None,
+            book: None,
             mobs: Vec::new(),
             mob_ids: Vec::new(),
             elite: false,

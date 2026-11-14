@@ -227,7 +227,7 @@ local function ObjectivesLoading(q)
     return false
 end
 
---- Skill line of a "profession" step (its target is the trainer), from the route professions.
+--- Skill line of a "profession" step (targeting a trainer or book vendor), from the route professions.
 local function ProfessionLine(step)
     if step.line then return step.line end
     for _, p in ipairs(route.professions or {}) do
@@ -306,6 +306,7 @@ function IsDone(step, index)
     if
         step.lvl
         and not ObjectiveGuide()
+        and not step.book
         and UnitLevel("player") - step.lvl >= OUTDATED_LEVELS
         and not (q and QuestLog.IsOnQuest(q))
     then
@@ -367,6 +368,9 @@ function IsDone(step, index)
         and (select(2, FG.ProfessionSkill(ProfessionLine(step))) or 0) >= step.sk
     then
         return true -- rank already learned
+    elseif step.k == "profession" and step.book then
+        -- A visit or a book in the bags is not learning its rank. Manual marks were handled above.
+        return false
     elseif
         step.k == "flight_master"
         or step.k == "train"
@@ -1268,7 +1272,7 @@ local QUEST_STEPS = { accept = true, turnin = true, objective = true }
 local function PassVisits()
     local pending = {}
     for i, step in ipairs(route.steps) do
-        if VISITS[step.k] then
+        if VISITS[step.k] and not step.book then
             if not state.marks[i] then table.insert(pending, i) end
         elseif QUEST_STEPS[step.k] and not step.bg then
             local done, passed = IsDone(step, i)
@@ -1554,7 +1558,7 @@ end)
 local function Mark(kind)
     if not route then return end
     for _, index in ipairs(CurrentGroup()) do
-        if route.steps[index].k == kind then state.marks[index] = true end
+        if route.steps[index].k == kind and not route.steps[index].book then state.marks[index] = true end
     end
 end
 FG:On("TAXIMAP_OPENED", function() Mark("flight_master") end)

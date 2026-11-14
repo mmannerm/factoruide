@@ -316,6 +316,7 @@ impl StepWriter<'_> {
             path: Vec::new(),
             skill: None,
             line: None,
+            book: None,
             mobs: Vec::new(),
             mob_ids: Vec::new(),
             elite: false,
@@ -669,7 +670,7 @@ impl StepWriter<'_> {
         self.place(&npc.pos, Some(npc.zone))
     }
 
-    /// Profession training: learn the profession, or its next rank (`ranks`: a bit each).
+    /// Learn a profession rank at a trainer or by buying and reading its book.
     fn profession_train(&self, step: &mut Step, profession: usize, trainer: usize, ranks: u8) -> Place {
         let model = self.planner.model;
         let (plan, npc) = (&model.professions[profession], &model.profession_trainers[trainer].loc);
@@ -677,14 +678,22 @@ impl StepWriter<'_> {
         step.line = Some(crate::profession::skill_line(&plan.key));
         let top = (RANKS.iter().enumerate()).rev().find(|(r, _)| ranks & 1 << r != 0);
         step.skill = top.map(|(_, rank)| rank.cap);
-        step.say.push(
+        let phrase = if let Some(book) = model.profession_trainers[trainer].book {
+            step.book = Some(book.item);
+            Phrase::new("profession.book")
+                .arg("item", Arg::Item(book.item, book.name.to_owned()))
+                .arg("cap", Arg::Num(book.cap))
+        } else {
             Phrase::new(if ranks & 1 != 0 {
                 "profession.learn"
             } else {
                 "profession.rank"
             })
-            .arg("profession", Arg::Profession(plan.key.clone(), plan.name.clone()))
-            .arg("who", Arg::Npc(npc.id, npc.name.clone())),
+        };
+        step.say.push(
+            phrase
+                .arg("profession", Arg::Profession(plan.key.clone(), plan.name.clone()))
+                .arg("who", Arg::Npc(npc.id, npc.name.clone())),
         );
         step.target = Some(Target {
             kind: TargetKind::Npc,

@@ -6,6 +6,8 @@ under Unreleased; `scripts/release.sh` gives them the release's version.
 
 ## Unreleased
 
+- Cooking book steps stay pending until the new skill cap is learned or you skip them.
+
 ## 0.19.0 (2026-11-12)
 
 - Steps show how their quest is taken or their objective done, and a yellow, orange or red mark when a note tells more about the quest; the step's tooltip lists the notes.

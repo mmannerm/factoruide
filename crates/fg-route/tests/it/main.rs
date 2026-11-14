@@ -8,6 +8,7 @@ mod addon;
 mod class_unlocks;
 mod common;
 mod completion;
+mod cooking;
 mod data_corrections;
 mod draft;
 mod edit;

@@ -177,16 +177,30 @@ impl NpcFinder<'_> {
         Ok(ids.into_iter().filter_map(|id| self.place(id)).collect())
     }
 
-    /// The profession trainers friendly to the character, from their title ("Journeyman Blacksmith",
-    /// "Skinning Trainer") and the trainer flag; none without the flags column.
+    /// Places to learn profession ranks: verified book vendors, plus friendly trainers found
+    /// from their title ("Journeyman Blacksmith", "Skinning Trainer") and trainer flag.
     fn profession_trainers(&self, edition: crate::xp::Edition) -> Result<Vec<ProfessionTrainer>> {
+        let book = &crate::profession::EXPERT_COOKBOOK;
+        let mut trainers: Vec<_> = book
+            .vendors
+            .iter()
+            .filter(|(_, faction)| *faction == self.faction)
+            .filter_map(|&(id, _)| {
+                Some(ProfessionTrainer {
+                    line: book.line,
+                    cap: book.cap,
+                    loc: self.place(id)?,
+                    book: Some(book),
+                })
+            })
+            .collect();
         let known: bool = self.conn.query_row(
             "SELECT count(*) > 0 FROM pragma_table_info('m_npc') WHERE name = 'npc_flags'",
             [],
             |r| r.get(0),
         )?;
         if !known {
-            return Ok(Vec::new());
+            return Ok(trainers);
         }
         let mut stmt = self.conn.prepare(
             "SELECT id, subname, npc_flags FROM m_npc
@@ -199,18 +213,21 @@ impl NpcFinder<'_> {
                 Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?))
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
-        Ok(rows
-            .into_iter()
-            .filter_map(|(id, title, flags)| {
-                let line = crate::job::profession_of(&title, flags, edition)?;
-                let def = crate::profession::PROFESSIONS.iter().find(|d| d.skill_id == line)?;
-                Some(ProfessionTrainer {
-                    line,
-                    cap: rank_cap_of_title(&title, def.kind),
-                    loc: self.place(id)?,
-                })
+        trainers.extend(rows.into_iter().filter_map(|(id, title, flags)| {
+            let line = crate::job::profession_of(&title, flags, edition)?;
+            let def = crate::profession::PROFESSIONS.iter().find(|d| d.skill_id == line)?;
+            Some(ProfessionTrainer {
+                line,
+                cap: if line == book.line {
+                    rank_cap_of_title(&title, def.kind).min(150)
+                } else {
+                    rank_cap_of_title(&title, def.kind)
+                },
+                loc: self.place(id)?,
+                book: None,
             })
-            .collect())
+        }));
+        Ok(trainers)
     }
 
     /// Friendly vendors, excluding known class-gated shops the whole group cannot open.

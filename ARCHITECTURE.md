@@ -131,8 +131,13 @@ level:
   step with the class training): a trainer within `train_radius` teaches each rank the character can
   learn (level and skill the rank asks) as a detour; a farther one is a trip, once the curve passes
   the cap of the rank before. The time counts in the route, the visit is a `profession` step, and
-  the state (`State::ranks`) remembers the ranks learned. A rank no trainer teaches gets no
-  visit. A guide edited by hand has none (the editor plans no trainer).
+  the state (`State::ranks`) remembers the ranks learned. Expert Cooking is a book visit:
+  Cooking trainers stop at a cap of 150; at skill 125 the character can buy and read the Expert
+  Cookbook from its faction's vendor, raising the cap to 225. The book source grants only that
+  rank. Fresh profiles record learned profession caps; older profiles infer ranks from skill.
+  The addon completes a book step when the cap is learned or the player explicitly skips it,
+  not when a trainer window opens or a later quest is done. Other ranks no trainer teaches get
+  no visit. A guide edited by hand has none (the editor plans no trainer).
 - **Every action is a step**: each take, objective and turn-in of a quest is a stop of the route,
   done at that stop and nowhere else (no quest taken in passing at another stop, no objective
   finished on the way), so that each one can be moved or removed in the guide editor. What doing

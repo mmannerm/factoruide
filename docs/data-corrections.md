@@ -11,6 +11,7 @@ corrections add behavior or facts the bundled data does not yet supply:
 
 | Correction | Source and behavior |
 | --- | --- |
+| Expert Cooking (all editions) | The [Expert Cookbook](https://www.wowhead.com/forever/item=16072/expert-cookbook) (#16072) requires Cooking 125 and raises the cap to 225. The bundled archives have Wulan (#12033, Horde, Desolace) and Shandrina (#3955, Alliance, Ashenvale), but omit the book and its vendor relations. `profession::EXPERT_COOKBOOK` supplies the item and faction-vendor facts; locations use the existing NPC data. Ordinary Cooking trainers teach only through cap 150. |
 | The Glowing Shard (all editions) | The bundled quest text sends the player to Ratchet, but its objective row classifies Sputtervalve (#3442) as a creature credit under Wailing Caverns. The common `overrides/quests.toml` entry treats that credit as an outdoor conversation, using ordinary talk timing and translation without requiring the quest's level; nearby enemies still guard the NPC. Item #10441 still comes from Mutanus (#3654); the dungeon is needed until each eligible party member has accepted the quest. Save a fresh addon profile and regenerate existing guides. |
 | Call of Fire | The Skyborne Horde [ritual and torch delivery](https://www.wowhead.com/forever/quest=97257/call-of-fire) uses two NPC credits as interactions. The guide follows the quest's instructions and retains its six-minute limit. |
 | Cat relic trials | The [Skyborne](https://www.wowhead.com/forever/quest=98404/the-great-windborne-cat-spirit), [Tauren](https://www.wowhead.com/forever/quest=98342/the-great-cat-spirit) and [Night elf](https://www.wowhead.com/forever/quest=98396/the-great-cat-spirit) trials use the entrance statue's temporary stealth to collect relics. Guards keep their actual levels. The guide asks the player to renew the blessing; expiry and detection failures are not simulated. |
@@ -43,8 +44,14 @@ After a database refresh, review every `import_run` record and the source credit
 [NOTICE](../NOTICE.md). Check changed facts and remove runtime corrections the baseline now
 supplies. Run the affected guide tests and `fg audit`; audit acceptance files record exceptions
 rather than correcting data.
-The corrections above apply to Forever, except The Glowing Shard also applies to Classic and TBC.
+The corrections above apply to Forever, except The Glowing Shard and Expert Cooking also apply to Classic and TBC.
 Every edition retains upstream's bundled archive.
+
+Expert Cooking book visits use the existing optional profession-trainer setting and travel-time
+estimate. They assume the player can buy the book; bags, auction purchases, gold affordability
+and Cooking practice are not simulated. A fresh addon profile records the learned cap, avoiding
+a new book trip for a character who already read it at skill 125–150. Older profiles still infer
+known ranks from current skill. Regenerate saved guides to replace their old trainer directions.
 
 The v0.19.0 Forever snapshot also incorporates the [in-game prerequisite correction](https://github.com/brouznouf/factoruide/commit/673513fa65c7641f75625eaaf8b4816c5ca5ee2d)
 for Lightforge Ingots (#526): it follows The Lost Ingots (#324), rather than replacing it.

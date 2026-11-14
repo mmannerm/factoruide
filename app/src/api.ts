@@ -286,7 +286,7 @@ export interface StartState {
   flights: number[];
   /** `flights` is final (deduced and edited in the app): the planner does not deduce them again. */
   flights_final?: boolean;
-  professions: { line: number; rank: number }[];
+  professions: { line: number; rank: number; cap?: number }[];
   riding: number;
   gear: number[];
   spells: number[];

@@ -503,6 +503,27 @@ if not profileOnly then fire("ADDON_LOADED", "Factoruide_Guide") end
 fire("PLAYER_LOGIN")
 local char = FactoruideDB.characters["Brouz-Realm"]
 
+-- The profile keeps the learned cap even when current skill has not reached the old cap.
+do
+    local professions, professionInfo = GetProfessions, GetProfessionInfo
+    local skillLines, skillInfo = GetNumSkillLines, GetSkillLineInfo
+    GetProfessions = function() return 5 end
+    GetProfessionInfo = function() return "Cuisine", 0, 125, 225, 0, 0, 185 end
+    FG.Profile:Snapshot()
+    local skill = FactoruideDB.profiles["Brouz-Realm"].professions[1]
+    assert(skill.line == 185 and skill.rank == 125 and skill.cap == 225, "known Expert cap saved")
+
+    GetProfessions, GetProfessionInfo = nil, nil
+    GetNumSkillLines = function() return 1 end
+    GetSkillLineInfo = function() return "Cuisine", false, false, 150, 0, 0, 150 end
+    FG.Profile:Snapshot()
+    skill = FactoruideDB.profiles["Brouz-Realm"].professions[1]
+    assert(skill.line == 185 and skill.rank == 150 and skill.cap == 150, "skills-list cap saved")
+    GetProfessions, GetProfessionInfo = professions, professionInfo
+    GetNumSkillLines, GetSkillLineInfo = skillLines, skillInfo
+    FG.Profile:Snapshot()
+end
+
 -- Another addon shows the guide: this one only records, and does nothing else.
 if profileOnly then
     assert(FG.Guide == nil and FG.Routes == nil and FG.Get == nil, "no guide without Factoruide_Guide")
@@ -636,9 +657,9 @@ assert(next[233], "quest 233 found in the route")
 print("tracker ok")
 
 -- Professions: practice steps are done once the skill reaches their target.
-local cooking = 20
+local cooking = { rank = 20, cap = 75 }
 GetProfessions = function() return nil, nil, nil, nil, 5, nil end
-GetProfessionInfo = function(i) return "Cuisine", 0, cooking, 75, 0, 0, 185 end
+GetProfessionInfo = function(i) return "Cuisine", 0, cooking.rank, cooking.cap, 0, 0, 185 end
 FG.Routes["prof-test"] = {
     race = 7,
     class = 8,
@@ -678,12 +699,93 @@ Press("skip")
 assert(char.guide.route == nil and char.guide.step, "nothing happens")
 useRoute("prof-test")
 assert(char.guide.step == 2, "rank already learned, step " .. char.guide.step)
-cooking = 25
+cooking.rank = 25
 fire("SKILL_LINES_CHANGED")
 assert(char.guide.step == 3, "practice done, step " .. char.guide.step)
 playerLevel = 5
 FG.Tracker:Refresh()
 print("professions ok")
+
+-- A profession rank learned from a book is done only after using it raises the skill cap.
+-- Visiting its vendor/trainer or completing a later quest cannot replace learning the rank.
+do
+    local wasTrainer, itemCount = IsTradeskillTrainer, FG.ItemCount
+    cooking.rank, cooking.cap, playerLevel = 125, 150, 20
+    FG.Routes["prof-book-test"] = {
+        race = 7,
+        class = 8,
+        faction = "Alliance",
+        fromLevel = 20,
+        toLevel = 60,
+        time = 1,
+        steps = {
+            {
+                k = "profession",
+                t = "Buy and read Expert Cookbook",
+                e = "npc",
+                id = 3955,
+                n = "Book vendor",
+                line = 185,
+                sk = 225,
+                book = 16072,
+                lvl = 20,
+            },
+            { k = "turnin", t = "Later quest", q = 8220, lvl = 20 },
+            { k = "grind", t = "Grind", lvl = 60 },
+        },
+    }
+    completed[8220] = true
+    useRoute("prof-book-test")
+    assert(char.guide.step == 1 and not char.guide.marks[1], "later quest does not pass the book")
+    char.guide.marks[1] = true -- A saved automatic visit mark is not proof the book was read.
+    FG.Guide:Resync()
+    assert(char.guide.step == 1, "book ignores automatic visit marks without the learned cap")
+    char.guide.marks[1] = nil
+    fire("MERCHANT_SHOW")
+    FG.Guide:Advance()
+    assert(char.guide.step == 1 and not char.guide.marks[1], "opening the merchant does not learn the book")
+    IsTradeskillTrainer = function() return true end
+    fire("TRAINER_SHOW")
+    FG.Guide:Advance()
+    assert(char.guide.step == 1 and not char.guide.marks[1], "opening a trainer does not learn the book")
+    FG.ItemCount = function(id) return id == 16072 and 1 or itemCount(id) end
+    FG.Guide:Advance()
+    assert(char.guide.step == 1, "owning the unread book does not learn its rank")
+    playerLevel = 40
+    FG.Guide:Resync()
+    assert(char.guide.step == 1, "character levels do not replace the profession book")
+    FG.Guide:ToggleSkip(1)
+    assert(char.guide.marks[1] == "skip" and char.guide.step == 3, "manual completion still skips the book")
+    FG.Guide:UndoLastMark()
+    assert(char.guide.step == 1 and not char.guide.marks[1], "undo restores the unread book")
+    playerLevel = 20
+    cooking.cap = 225
+    fire("SKILL_LINES_CHANGED")
+    assert(char.guide.step == 3, "learning the cap finishes the book while cooking skill is still 125")
+
+    -- Old guides' ordinary trainer steps still complete when the trainer window opens.
+    FG.Routes["prof-trainer-visit-test"] = {
+        race = 7,
+        class = 8,
+        faction = "Alliance",
+        fromLevel = 20,
+        toLevel = 60,
+        time = 1,
+        steps = {
+            { k = "profession", t = "Visit trainer", line = 185, sk = 300, lvl = 20 },
+            { k = "grind", t = "Grind", lvl = 60 },
+        },
+    }
+    useRoute("prof-trainer-visit-test")
+    assert(char.guide.step == 1, "trainer rank not learned yet")
+    fire("TRAINER_SHOW")
+    FG.Guide:Advance()
+    assert(char.guide.step == 2 and char.guide.marks[1], "ordinary trainer visit still completes")
+    IsTradeskillTrainer, FG.ItemCount = wasTrainer, itemCount
+    cooking.rank, cooking.cap, playerLevel = 25, 75, 5
+    completed[8220] = nil
+end
+print("profession books ok")
 
 -- Skipping: outdated steps, exclusive alternatives, by hand.
 playerLevel = 21
