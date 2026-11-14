@@ -204,6 +204,9 @@ then a page per group of settings and an Advanced page (the recordings). What yo
 playing is on the guide's buttons and in the game's key bindings (Factoruide section): next and
 previous step, mark a step done, undo the last mark, next spot, full or minimal guide, show or
 hide the guide or all the addon's windows, time per level, quest item, the options.
+Right-clicking an objective marks only that step; an accept or turn-in marks its whole quest.
+Preparation items such as Candle of Beckoning stay acquired after use. If an item expires or a
+summon fails, **Start over** clears that history so the pickup can be followed again.
 On WoW Forever with [Polestar](https://github.com/fitzforge/polestar) installed, the app also
 writes your guides as a Polestar guide pack (Factoruide_Polestar; the web app downloads it). In Polestar, choose Factoruide
 under "Suggest guides from" on the "Community guides" page: it offers each character the guide of

@@ -1139,6 +1139,80 @@ do
 end
 print("profession trips ok")
 
+-- Finished work does not justify a detour when the next task is already beside us.
+-- A connection to work elsewhere, a return still needed, and unknown positions stay intact.
+do
+    local savedTaxi = UnitOnTaxi
+    local flying, sequence = false, 0
+    UnitOnTaxi = function() return flying end
+    completed[8410] = true
+    local function Trip(x, players)
+        sequence = sequence + 1
+        local name = "finished-trip-" .. sequence
+        FG.Routes[name] = {
+            race = 7,
+            class = 8,
+            faction = "Alliance",
+            fromLevel = 5,
+            toLevel = 60,
+            time = sequence,
+            players = players,
+            steps = {
+                { k = "hearth", lvl = 5, t = "Hearth to city", m = 1458, x = 50, y = 50 },
+                { k = "fly", lvl = 5, t = "Fly to first stop", m = 1458, x = 60, y = 60 },
+                { k = "turnin", lvl = 5, t = "Already finished", q = 8410, m = 1426, x = 80, y = 80 },
+                { k = "fly", lvl = 5, t = "Fly to next stop", m = 1426, x = 80, y = 80 },
+                { k = "accept", lvl = 5, t = "Next work", q = 8411, m = x and 1426, x = x, y = x and 71.2 },
+            },
+        }
+        useRoute(name)
+    end
+    Trip(29.93)
+    assert(char.guide.step == 5, "already at next unfinished task: bypass the obsolete travel chain")
+    FG.Guide:Resync()
+    assert(char.guide.step == 5, "bypassed travel does not reopen on resync")
+    Trip(80)
+    assert(char.guide.step == 1, "keep connecting travel to unfinished work elsewhere")
+    FG.Guide:Go(4)
+    FG.Guide:Advance()
+    assert(char.guide.step == 4, "keep the return flight when the remaining work is elsewhere")
+    Trip(nil)
+    assert(char.guide.step == 1, "unknown destination does not justify skipping travel")
+    flying = true
+    Trip(29.93)
+    assert(char.guide.step == 1, "do not bypass a trip while on a taxi")
+    flying = false
+    Trip(29.93, { { n = "Brouz-Realm", race = 7, class = 8 }, { n = "Pata-Realm", race = 1, class = 1 } })
+    assert(char.guide.step == 1, "one player's position cannot bypass a group trip")
+    completed[8410] = nil
+    Trip(29.93)
+    assert(char.guide.step == 1, "unfinished work at an intermediate stop still needs its travel")
+    UnitOnTaxi = savedTaxi
+
+    FG.Routes["travel-arrival"] = {
+        race = 7,
+        class = 8,
+        faction = "Alliance",
+        fromLevel = 5,
+        toLevel = 60,
+        time = 1,
+        steps = {
+            { k = "hearth", t = "Arrive", m = 1426, x = 29.93, y = 71.2, lvl = 5 },
+            { k = "accept", t = "Later work", q = 8411, m = 1426, x = 80, y = 80, lvl = 5 },
+        },
+    }
+    useRoute("travel-arrival")
+    assert(char.guide.step == 2, "arrival completes the current hearth step")
+    local savedPosition = C_Map.GetPlayerMapPosition
+    C_Map.GetPlayerMapPosition = function()
+        return { GetXY = function() return 0.8, 0.8 end }
+    end
+    FG.Guide:Resync()
+    assert(char.guide.step == 2, "leaving the inn does not reopen an observed hearth journey")
+    C_Map.GetPlayerMapPosition = savedPosition
+end
+print("finished travel ok")
+
 -- Skipping: outdated steps, exclusive alternatives, by hand.
 playerLevel = 21
 FG.Routes["skip-test"] = {
@@ -1166,6 +1240,100 @@ assert(char.guide.step == 3, "undo brings the quest back, step " .. char.guide.s
 Press("undo")
 assert(char.guide.step == 3, "nothing left to undo, step " .. char.guide.step)
 print("skip ok")
+
+-- Marking one objective does not omit its quest or replay earlier travel. Undo revisits only
+-- the restored work, whether the marked row was current, ahead, behind, or the route's last.
+do
+    FG.Routes["manual-objective-test"] = {
+        race = 7,
+        class = 8,
+        faction = "Alliance",
+        fromLevel = 21,
+        toLevel = 60,
+        time = 1,
+        steps = {
+            { k = "teleport", t = "Earlier teleport", m = 1426, x = 80, y = 20, lvl = 21 },
+            { k = "fly", t = "Earlier flight", m = 1426, x = 80, y = 20, lvl = 21 },
+            { k = "accept", t = "Accept Proving Allegiance", q = 409, lvl = 21 },
+            {
+                k = "objective",
+                t = "Candle of Beckoning",
+                n = "Candle of Beckoning",
+                q = 409,
+                e = "item",
+                id = 3080,
+                c = 1,
+                lvl = 21,
+            },
+            {
+                k = "objective",
+                t = "Kill Lillith Nefara",
+                n = "Lillith Nefara",
+                q = 409,
+                e = "npc",
+                id = 1946,
+                lvl = 21,
+            },
+            { k = "turnin", t = "Turn in Proving Allegiance", q = 409, lvl = 21 },
+            { k = "objective", t = "Follow-up work", q = 411, lvl = 21 },
+            { k = "grind", t = "Continue route", lvl = 60 },
+        },
+    }
+    onQuest[409] = true
+    useRoute("manual-objective-test")
+    FG.Guide:Go(4)
+    FG.Guide:ToggleSkip(4)
+    assert(char.guide.step == 5 and char.guide.marks[4] == "skip", "candle mark advances without replaying travel")
+    assert(not char.guide.skippedQuests[409], "candle mark leaves the parent quest active")
+    assert(not FG.Guide.view.tasks[1].done, "the Lillith fight stays pending")
+    FG.Guide:Go(6)
+    assert(not FG.Guide.view.tasks[1].done, "the parent turn-in stays pending")
+    FG.Guide:Go(7)
+    assert(not FG.Guide.view.tasks[1].done, "follow-up work stays pending")
+
+    FG.Guide:Go(5)
+    FG.Guide:ToggleSkip(7)
+    assert(char.guide.step == 5, "marking future work keeps the current task")
+    FG.Guide:UndoLastMark()
+    assert(char.guide.step == 5 and not char.guide.marks[7], "undoing future work keeps the current task")
+    FG.Guide:ToggleSkip(4)
+    assert(char.guide.step == 4 and not char.guide.marks[4], "right-click undo restores only the candle")
+    FG.Guide:Go(5)
+    FG.Guide:ToggleSkip(4)
+    assert(char.guide.step == 5, "marking past work does not move backward")
+    FG.Guide:UndoLastMark()
+    assert(char.guide.step == 4 and not char.guide.marks[4], "undo revisits the candle without replaying travel")
+
+    char.guide.skippedQuests[409] = true -- A candle marked with an older addon skipped the whole quest.
+    FG.Guide:Go(7)
+    FG.Guide:ToggleSkip(4)
+    assert(
+        char.guide.step == 4 and not char.guide.skippedQuests[409],
+        "an old whole-quest mark can be undone from its objective"
+    )
+    FG.Guide:Go(6)
+    FG.Guide:ToggleSkip(6)
+    assert(char.guide.step == 7 and char.guide.skippedQuests[409], "turn-in marks still omit the whole quest")
+    FG.Guide:UndoLastMark()
+    assert(
+        char.guide.step == 4 and not char.guide.skippedQuests[409],
+        "whole-quest undo finds its unfinished work only"
+    )
+
+    FG.Guide:Go(8)
+    FG.Guide:ToggleSkip(8)
+    assert(char.guide.step == 9, "marking the last step finishes the route")
+    FG.Guide:Resync(true)
+    assert(char.guide.step == 9, "resuming a completed route does not replay travel")
+    FG.Guide:ToggleSkip(8)
+    assert(char.guide.step == 8 and not char.guide.marks[8], "right-click undo restores the last step")
+    FG.Guide:ToggleSkip(8)
+    FG.Guide:UndoLastMark()
+    assert(char.guide.step == 8 and not char.guide.marks[8], "undo from route completion restores only the last step")
+    onQuest[409] = nil
+    useRoute("skip-test")
+end
+print("manual objective marks ok")
 
 -- An objective guide below the level its quests ask: the current step says so until it is reached.
 do
@@ -2200,6 +2368,142 @@ C_QuestLog.GetQuestObjectives, C_QuestLog.GetNumQuestLogEntries, C_QuestLog.GetI
 C_QuestLog.IsComplete = isComplete
 onQuest[9301] = nil
 print("objectives loading ok")
+
+-- Preparation items are acquired once, then consumed while the real quest remains unfinished.
+do
+    local previousObjectives = C_QuestLog.GetQuestObjectives
+    local events, seq = char.events, char.seq
+    char.events = {}
+    local kill = { text = "Lillith Nefara slain: 0/1", type = "monster", finished = false }
+    local objectives = { kill }
+    C_QuestLog.GetQuestObjectives = function(q) return q == 409 and objectives or previousObjectives(q) end
+    onQuest[409] = true
+    for _, legacy in ipairs({ false, true }) do
+        local name = legacy and "preparation-legacy" or "preparation-slots"
+        local candle = {
+            k = "objective",
+            t = "Get Candle of Beckoning",
+            q = 409,
+            o = 1,
+            lvl = 3,
+            e = "item",
+            id = 3080,
+            n = "Candle of Beckoning",
+            c = 1,
+            slot = 0,
+            m = 1420,
+            x = 68.16,
+            y = 42.02,
+        }
+        if legacy then candle.slot = nil end
+        FG.Routes[name] = {
+            race = 7,
+            class = 8,
+            fromLevel = 1,
+            toLevel = 60,
+            levelsIgnored = true,
+            time = 1,
+            steps = {
+                candle,
+                {
+                    k = "objective",
+                    t = "Kill Lillith",
+                    q = 409,
+                    o = 2,
+                    slot = 1,
+                    lvl = 3,
+                    e = "npc",
+                    id = 1946,
+                    n = "Lillith Nefara",
+                    m = 1420,
+                    x = 66.67,
+                    y = 44.97,
+                },
+                { k = "turnin", t = "Turn in Proving Allegiance", q = 409, lvl = 3 },
+            },
+        }
+        bags[3080], objectives = nil, { kill }
+        useRoute(name)
+        assert(char.guide.step == 1, "Candle must be acquired first")
+        objectives, bags[3080] = {}, 1
+        fire("BAG_UPDATE_DELAYED")
+        assert(char.guide.step == 1 and not char.guide.marks[1], "loading is not preparation evidence")
+        objectives = { kill }
+        fire("BAG_UPDATE_DELAYED")
+        assert(char.guide.step == 2 and not kill.finished, "having the Candle advances only to Lillith")
+        bags[3080] = nil
+        fire("BAG_UPDATE_DELAYED")
+        FG.Guide:Resync()
+        assert(char.guide.step == 2, "consuming the Candle preserves acquisition")
+        FG.Guide:ToggleSkip(1)
+        FG.Guide:UndoLastMark()
+        assert(char.guide.step == 2, "redundant manual marking cannot erase a consumed item acquisition")
+        useRoute("gnome-mage")
+        useRoute(name)
+        assert(char.guide.step == 2, "returning to the guide preserves acquisition")
+        kill.finished = true
+        FG.Guide:Advance()
+        assert(char.guide.step == 3, "Lillith killed: advance to the parent turn-in")
+        kill.finished = false
+        FG.Guide:AskReset()
+        assert(char.guide.step == 1 and not char.guide.marks[1], "start over clears acquisition without manual skips")
+        bags[3080] = 1
+        fire("BAG_UPDATE_DELAYED")
+        bags[3080], onQuest[409] = nil, nil
+        useRoute("gnome-mage")
+        fire("QUEST_REMOVED", 409)
+        runTimers()
+        onQuest[409] = true
+        useRoute(name)
+        assert(char.guide.step == 1, "abandoning also clears acquisition in a saved guide")
+
+        local native = { text = "Candle of Beckoning: 1/1", type = "item", finished = true }
+        candle.slot, objectives, bags[3080] = 1, { native, kill }, 1
+        FG.Guide:Resync()
+        assert(char.guide.step == 2 and not char.guide.marks[1], "native item progress is not remembered")
+        native.finished, bags[3080] = false, nil
+        FG.Guide:Resync()
+        assert(char.guide.step == 1, "losing an ordinary required item restores its unfinished step")
+        candle.slot, bags[3080], native.text = nil, 1, "Translated item: 0/1"
+        FG.Guide:Resync()
+        assert(char.guide.step == 1 and not char.guide.marks[1], "unmatched native items are not preparation")
+    end
+    -- Merely displaying a future item's row must not remember its current bag contents.
+    FG.Routes["preparation-preview"] = {
+        race = 7,
+        class = 8,
+        fromLevel = 1,
+        toLevel = 60,
+        levelsIgnored = true,
+        time = 1,
+        steps = {
+            { k = "grind", t = "Grind", lvl = 60 },
+            {
+                k = "objective",
+                t = "Get Candle",
+                q = 409,
+                o = 1,
+                slot = 0,
+                lvl = 3,
+                e = "item",
+                id = 3080,
+                n = "Candle of Beckoning",
+                c = 1,
+            },
+        },
+    }
+    objectives, bags[3080] = { kill }, 1
+    useRoute("preparation-preview")
+    FG.Guide:Refresh()
+    assert(not char.guide.marks[2], "previewing a future preparation does not acquire it")
+    bags[3080] = nil
+    FG.Guide:Go(2)
+    FG.Guide:Advance()
+    assert(char.guide.step == 2, "the future preparation still needs its item")
+    onQuest[409], C_QuestLog.GetQuestObjectives = nil, previousObjectives
+    char.events, char.seq = events, seq
+end
+print("preparation items ok")
 
 -- XP plan: where the guide expects the character before the step shown and after its tasks.
 FG.Routes["xp-test"] = {
