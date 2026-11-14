@@ -184,6 +184,8 @@ local childQuests = {} -- child quests handed in on the way to their parent's tu
 -- Whether the shown step was already done when we arrived on it (manual navigation): the
 -- guide only moves on when the shown step becomes done.
 local arrivedDone = false
+-- Browsing pages does not prove their travel was taken, even beside unfinished tasks.
+local browsing = false
 local waypointStep
 -- Step picked by hand (left-click on a row): the compass points at it until it is done.
 local pointed
@@ -192,6 +194,7 @@ local detour
 local DETOUR_ARRIVED = 10
 -- The last step or quest marked as done by hand, for the session: { route, q } or { route, index }.
 local lastMark
+local TRAVEL = { fly = true, hearth = true, teleport = true, link = true, deathskip = true }
 local Distance -- defined below, used by IsDone
 
 -- Progress -------------------------------------------------------------------
@@ -228,6 +231,30 @@ local function ObjectivesLoading(q)
         if not o.text or o.text == "" then return true end
     end
     return false
+end
+
+--- An item used along the way, not collected for the turn-in. Older guides omit `slot`:
+--- only infer preparation when the loaded log has no native item objective.
+local function PreparationItem(step)
+    if step.e ~= "item" or not step.id then return false end
+    if step.slot ~= nil then return step.slot == 0 end
+    if ObjectivesLoading(step.q) or FindObjective(step) then return false end
+    for _, o in ipairs(QuestLog.GetQuestObjectives(step.q) or {}) do
+        if not o.type or o.type == "item" then return false end
+    end
+    return true
+end
+
+--- Remember only preparation items observed while completing their own step.
+local function RememberAcquired(step, index)
+    if
+        step.k == "objective"
+        and QuestLog.IsOnQuest(step.q)
+        and PreparationItem(step)
+        and (FG.ItemCount(step.id) or 0) >= (step.c or 1)
+    then
+        state.marks[index] = "acquired"
+    end
 end
 
 --- Skill line of a "profession" step (targeting a trainer or book vendor), from the route professions.
@@ -329,6 +356,7 @@ function IsDone(step, index)
             if QuestLog.IsQuestFlaggedCompleted(other) or QuestLog.IsOnQuest(other) then return true, true end
         end
     end
+    if TRAVEL[step.k] and state.marks[index or state.step] == true then return true end
     if step.k == "accept" then
         if QuestLog.IsOnQuest(q) or QuestLog.IsQuestFlaggedCompleted(q) then return true end
         if step.hd and Held(step) then return true end
@@ -346,7 +374,13 @@ function IsDone(step, index)
         if step.cq then return state.handedIn[step.cq] or QuestLog.IsQuestFlaggedCompleted(step.cq) end
         -- An item to buy: done once in the bags, the quest taken or not yet.
         if step.by and step.id and (FG.ItemCount(step.id) or 0) >= (step.c or 1) then return true end
-        if not QuestLog.IsOnQuest(q) or ObjectivesLoading(q) then return false end
+        if not QuestLog.IsOnQuest(q) then return false end
+        if PreparationItem(step) then
+            return state.marks[index or state.step] == "acquired"
+                or (FG.ItemCount(step.id) or 0) >= (step.c or 1)
+                or (not ObjectivesLoading(q) and QuestLog.IsComplete(q))
+        end
+        if ObjectivesLoading(q) then return false end
         local o = FindObjective(step)
         if o then return o.finished end
         return QuestLog.IsComplete(q)
@@ -900,7 +934,7 @@ function Guide:SkipAhead()
         state.marks[index] = "skip"
     end
     FG:Print(L.ahead, c.lvl, #skip)
-    self:Resync()
+    self:Resync(true)
 end
 
 --- Leave the dungeon under way aside: its quests not finished (all their steps, those outside
@@ -925,7 +959,7 @@ function Guide:SkipDungeon()
     lastMark = { route = route, many = many }
     FG:Print(L.dungeonSkipped, entrance.n or entrance.t, #left)
     FG.Group:MarksChanged()
-    self:Resync()
+    self:Resync(true)
 end
 
 --- The guide's look of the moment (FG.Card or FG.Mini), the other hidden; nil before login.
@@ -1215,13 +1249,37 @@ local function SkipProfessionTrip()
     return true
 end
 
+--- Travel through finished work is unnecessary when the next unfinished task is already here.
+--- Otherwise keep the whole connection, including a return flight from a completed stop.
+local function SkipTravel()
+    local first = state.step
+    local step = route.steps[first]
+    if not step or not TRAVEL[step.k] or route.players or UnitOnTaxi("player") then return false end
+    for i = first, #route.steps do
+        local target = route.steps[i]
+        if target.fx or target.fk then return false end
+        if not TRAVEL[target.k] and not IsDone(target, i) then
+            local distance = Distance(target)
+            if not distance or distance >= 100 then return false end
+            for j = first, i - 1 do
+                if TRAVEL[route.steps[j].k] then state.marks[j] = true end
+            end
+            state.step = i
+            return true
+        end
+    end
+    return false
+end
+
 --- Skip forward over finished steps. `fromEvent` resumes after manual navigation.
 --- Skip the following steps already done (they are done together, e.g. several quests
 --- accepted at once).
 local function SkipDone()
+    browsing = false
     -- Background objectives (done along the way) do not stop the guide: the tracker shows them.
     while route.steps[state.step] do
         SkipProfessionTrip()
+        SkipTravel()
         local step = route.steps[state.step]
         if not step then break end
         local done, passed = step.bg, step.bg
@@ -1229,6 +1287,8 @@ local function SkipDone()
             done, passed = IsDone(step, state.step)
         end
         if not done or WaitsForGroup(step, state.step, passed) then break end
+        if not passed then RememberAcquired(step, state.step) end
+        if TRAVEL[step.k] and not passed then state.marks[state.step] = true end
         state.step = state.step + 1
     end
     arrivedDone = false
@@ -1237,7 +1297,7 @@ end
 --- Move on once every step of the current group is done (not when we navigated to a group done
 --- already); until then the current step is the group's first one not done.
 function Guide:Advance()
-    if route and SkipProfessionTrip() then SkipDone() end
+    if route and (SkipProfessionTrip() or (not browsing and not arrivedDone and SkipTravel())) then SkipDone() end
     if route and route.steps[state.step] then
         -- A take-off is the flight of the first fly step of the group not taken yet.
         local onTaxi = UnitOnTaxi("player") and true or false
@@ -1258,6 +1318,8 @@ function Guide:Advance()
             if not done then
                 done, passed = IsDone(step, i)
             end
+            if done and not passed then RememberAcquired(step, i) end
+            if done and not passed and not browsing and TRAVEL[step.k] then state.marks[i] = true end
             -- Done while playing: recorded with its index (not the background ones, nor passed).
             if done and not passed and wasDone[i] == false and FG.Collector then
                 FG:Try("step", FG.Collector.RecordStep, FG.Collector, i, step)
@@ -1329,7 +1391,7 @@ end
 function Guide:Resync(resume)
     if route then
         PassVisits()
-        if not (resume and route.steps[state.step]) then state.step = 1 end
+        if not (resume and state.step >= 1 and state.step <= #route.steps + 1) then state.step = 1 end
         SkipDone()
     end
     waypointStep, pointed, detour = nil, nil, nil
@@ -1348,13 +1410,12 @@ local function HandMarks()
     return n
 end
 
---- Start the guide over from what the game knows: the steps and quests marked done by hand are
---- no longer, then the first step not done. The visits seen (flight paths, trainers, dungeons)
---- stay done.
+--- Start over from what the game knows, clearing manual skips and acquired preparation
+--- items. Visits already seen (flight paths, trainers, dungeons) stay done.
 function Guide:Reset()
     if not route then return end
     for index, mark in pairs(state.marks) do
-        if mark == "skip" then state.marks[index] = nil end
+        if mark == "skip" or mark == "acquired" then state.marks[index] = nil end
     end
     wipe(state.skippedQuests)
     state.farm = nil
@@ -1378,7 +1439,7 @@ function Guide:AskReset()
     if n > 0 then
         StaticPopup_Show("FACTORUIDE_RESET", n)
     else
-        self:Resync()
+        self:Reset()
     end
 end
 
@@ -1411,6 +1472,7 @@ end
 function Guide:Go(n)
     if not route then return end
     state.step = math.max(1, math.min(n, #route.steps + 1))
+    browsing = true
     -- Arrived on a group done already: it stays shown until the player moves on.
     arrivedDone = false
     if route.steps[state.step] then
@@ -1602,6 +1664,20 @@ FG:On("HEARTHSTONE_BOUND", function() Mark("bind") end)
 FG:On("MERCHANT_SHOW", function() Mark("sell") end)
 FG:On("QUEST_TURNED_IN", function(questID)
     if state and childQuests[questID] then state.handedIn[questID] = true end
+end)
+FG:On("QUEST_REMOVED", function(questID)
+    if not state then return end
+    -- Retaking a quest starts its preparation again, also in guides currently set aside.
+    local function clear(progress, guide)
+        for index, mark in pairs(progress.marks or {}) do
+            local step = guide and guide.steps[index]
+            if mark == "acquired" and step and step.q == questID then progress.marks[index] = nil end
+        end
+    end
+    clear(state, route)
+    for name, progress in pairs(state.saved or {}) do
+        clear(progress, FG.Routes and FG.Routes[name])
+    end
 end)
 
 -- Dungeon steps: done once we entered the instance and came back out.
@@ -1859,28 +1935,42 @@ function Guide:PointToQuest(questID)
     if next then self:PointToStep(next.index) end
 end
 
---- Mark a step as already done by hand (its whole quest for quest steps), or undo it.
+--- An undone mark can restore work behind us; unrelated earlier travel stays behind us.
+local function RestoreMarkPosition(mark)
+    for i, step in ipairs(route.steps) do
+        if i >= state.step then break end
+        if (mark.index == i or mark.q and step.q == mark.q) and not IsDone(step, i) then
+            state.step = i
+            break
+        end
+    end
+end
+
+--- Mark an objective alone, or a whole quest from its accept/turn-in; undo an existing mark.
 function Guide:ToggleSkip(index)
     local step = route and route.steps[index]
     if not step then return end
-    if step.q then
+    -- An old whole-quest mark can still be undone from any of that quest's rows.
+    local wholeQuest = step.q and (step.k ~= "objective" or state.skippedQuests[step.q])
+    local mark = wholeQuest and { route = route, q = step.q } or { route = route, index = index }
+    local undo
+    if wholeQuest then
         local name = QuestTitle(step) or step.n or tostring(step.q)
-        if state.skippedQuests[step.q] then
-            state.skippedQuests[step.q] = nil
-            FG:Print(L.unskipped, name)
-        else
-            state.skippedQuests[step.q] = true
-            lastMark = { route = route, q = step.q }
-            FG:Print(L.skipped, name)
-        end
+        undo = state.skippedQuests[step.q]
+        state.skippedQuests[step.q] = not undo or nil
+        FG:Print(undo and L.unskipped or L.skipped, name)
     else
-        state.marks[index] = state.marks[index] ~= "skip" and "skip" or nil
-        if state.marks[index] then lastMark = { route = route, index = index } end
-        FG:Print(L.stepSkipped)
+        undo = state.marks[index] == "skip" or state.marks[index] == "acquired"
+        state.marks[index] = not undo and "skip" or nil
+        FG:Print(undo and L.stepUnskipped or L.stepSkipped)
+    end
+    if undo then
+        RestoreMarkPosition(mark)
+    else
+        lastMark = mark
     end
     FG.Group:MarksChanged()
-    -- Back to the first step not done (an undone quest may be behind us).
-    self:Resync()
+    self:Resync(true)
 end
 
 --- Items the guide still has to buy (`by` steps of quests not turned in nor skipped, up to a few
@@ -1948,8 +2038,15 @@ function Guide:UndoLastMark()
         state.marks[mark.index] = nil
         FG:Print(L.stepUnskipped)
     end
+    if mark.many then
+        for _, m in ipairs(mark.many) do
+            RestoreMarkPosition(m)
+        end
+    else
+        RestoreMarkPosition(mark)
+    end
     FG.Group:MarksChanged()
-    self:Resync()
+    self:Resync(true)
 end
 
 --- Mark the current step as done by hand, or undo it (a key binding).

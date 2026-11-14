@@ -6,6 +6,10 @@ under Unreleased; `scripts/release.sh` gives them the release's version.
 
 ## Unreleased
 
+- Candle of Beckoning and The Rescue's keys are recognized in your bags and stay done after use; right-click a pickup to retry.
+- Marking an objective done skips only that step and keeps your place; undo returns only to the work you marked.
+- Completed journeys stay done after you leave, without marking travel merely by browsing ahead.
+- Solo guides skip travel through finished work when the next unfinished task is already nearby.
 - Profession rank steps stay pending until the new skill cap is learned or you skip them.
 - New solo guides skip profession-only round-trip flights before departure when every planned rank is already learned.
 - Regenerate older guides that send you to the wrong profession trainer, or skip those invalid steps manually.
