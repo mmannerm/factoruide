@@ -28,6 +28,9 @@ local L = {
     noRoute = T("No guide chosen for this character.\nType /fg and click Follow beside a guide."),
     noGuides = T("No guide yet.\nMake one in the Factoruide web app, then type /fg and click Import a guide…"),
     done = T("Route finished!"),
+    unknownCap = T(
+        "Profession cap unavailable. Update Factoruide Profile, or verify the rank and skip this step manually."
+    ),
     yards = T("yd"),
     prevStep = T("Previous step"),
     nextStep = T("Next step"),
@@ -236,7 +239,7 @@ local function ProfessionLine(step)
     return 0
 end
 
-local function ProfessionRank(step) return step.k == "profession" and (step.sk ~= nil or step.book ~= nil) end
+local function ProfessionRank(step) return step.k == "profession" and step.sk ~= nil end
 
 --- A rank is learned only when the game reports its cap, including older guides' named skills.
 local function RankLearned(step)
@@ -826,6 +829,11 @@ local function TaskView(step, index, withProgress)
         if rank then
             v.have, v.need = rank, step.sk
         end
+    elseif ProfessionRank(step) then
+        v.name = step.t
+        if withProgress and step.sk and step.sk > 75 and not select(2, FG.ProfessionSkill(ProfessionLine(step))) then
+            v.sub = L.unknownCap
+        end
     else
         v.name = step.t
     end
@@ -1192,8 +1200,10 @@ local function SkipProfessionTrip()
     local step = route.steps[state.step]
     local last = step and step.pte
     if not last or route.players or UnitOnTaxi("player") or state.marks[state.step] then return false end
-    local distance = Distance(step)
-    if not distance or distance >= 100 then return false end
+    local origin, destination = Distance(step), Distance(route.steps[last])
+    -- The player can still be walking toward the airport. Compare both ends instead of making
+    -- them arrive there first; a guide loaded at the destination must retain its return trip.
+    if not origin or not destination or origin >= destination then return false end
     for i = state.step + 1, last do
         local target = route.steps[i]
         if target.k == "profession" and not RankLearned(target) then return false end

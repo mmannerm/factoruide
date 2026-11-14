@@ -110,6 +110,66 @@ fn a_far_trainer_teaches_all_open_ranks_in_one_visit() {
 }
 
 #[test]
+fn ordinary_rank_visits_stop_at_the_requested_skill_cap() {
+    for (level, cap) in [(30, 150), (45, 225), (15, 75)] {
+        for away in [50.0, 1500.0] {
+            let mut p = tailor_with_trainer(300, away);
+            p.profile.from_level = level;
+            p.model.professions[0].target = cap;
+            for skill in &mut p.model.professions[0].curve {
+                *skill = (*skill).min(cap);
+            }
+            p.model.initial.profession_caps = vec![(LINE, cap)];
+            let planner = planner(&p);
+            let mut s = planner.sim().initial_state();
+            let (time, pos, ranks) = (s.time, s.pos, s.ranks);
+            // At skills 125, 200 and 50 respectively, the next rank can be learned, but
+            // the requested goal already fits within the character's learned cap.
+            assert!(
+                visits(&planner, &mut s).is_empty(),
+                "goal {cap}, trainer {away} yards away"
+            );
+            assert_eq!(s.time, time, "no unnecessary training or travel time");
+            assert_eq!(s.pos.dist(&pos), 0.0);
+            assert_eq!(s.ranks, ranks);
+        }
+    }
+}
+
+#[test]
+fn even_a_one_point_goal_can_learn_apprentice_nearby() {
+    let mut p = tailor_with_trainer(300, 50.0);
+    p.model.professions[0].target = 1;
+    for skill in &mut p.model.professions[0].curve {
+        *skill = (*skill).min(1);
+    }
+    let planner = planner(&p);
+    let mut s = planner.sim().initial_state();
+    s.level = 10;
+    assert!(matches!(
+        visits(&planner, &mut s)[..],
+        [Event::ProfTrain { ranks: 0b1, .. }]
+    ));
+}
+
+#[test]
+fn a_goal_above_the_learned_cap_can_upgrade_early_at_a_nearby_trainer() {
+    let mut p = tailor_with_trainer(300, 50.0);
+    p.profile.from_level = 30;
+    p.model.professions[0].target = 151;
+    for skill in &mut p.model.professions[0].curve {
+        *skill = (*skill).min(151);
+    }
+    p.model.initial.profession_caps = vec![(LINE, 150)];
+    let planner = planner(&p);
+    let mut s = planner.sim().initial_state();
+    assert!(matches!(
+        visits(&planner, &mut s)[..],
+        [Event::ProfTrain { ranks: 0b100, .. }]
+    ));
+}
+
+#[test]
 fn a_trainer_that_does_not_teach_the_rank_is_not_visited() {
     // Teaches up to the first rank only; at skill 130 the character needs the third.
     let p = tailor_with_trainer(75, 50.0);

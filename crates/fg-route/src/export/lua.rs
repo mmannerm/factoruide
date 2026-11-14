@@ -265,9 +265,6 @@ pub fn to_lua(routes: &[Route]) -> String {
             if let Some(line) = s.line {
                 fields.push(format!("line = {line}"));
             }
-            if let Some(book) = s.book {
-                fields.push(format!("book = {book}"));
-            }
             if s.elite {
                 fields.push("el = true".into());
             }

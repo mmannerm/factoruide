@@ -96,7 +96,10 @@ impl Simulator<'_> {
             let mut open = 0u8;
             let mut needed = 0u8;
             for (r, rank) in RANKS.iter().enumerate() {
-                if s.ranks[p] & 1 << r == 0 && s.level >= rank.level.max(plan.start) && skill >= rank.skill {
+                // Apprentice is useful for any positive goal; later ranks only when the
+                // goal exceeds the previous cap, even if a trainer is already nearby.
+                let useful = plan.target > if r == 0 { 0 } else { rank.due };
+                if useful && s.ranks[p] & 1 << r == 0 && s.level >= rank.level.max(plan.start) && skill >= rank.skill {
                     open |= 1 << r;
                     if skill > rank.due {
                         needed |= 1 << r;

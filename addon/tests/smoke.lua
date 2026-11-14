@@ -660,6 +660,111 @@ assert(next[233], "quest 233 found in the route")
 print("tracker ok")
 
 -- Professions: practice steps are done once the skill reaches their target.
+do
+    local skillAPI, professions, professionInfo = C_SkillInfo, GetProfessions, GetProfessionInfo
+    local count, info, expand, collapse = GetNumSkillLines, GetSkillLineInfo, ExpandSkillHeader, CollapseSkillHeader
+    local tradeSkillUI = C_TradeSkillUI
+    local lines = { 171, 164, 333, 202, 182, 165, 186, 393, 197, 185, 356, 129 }
+    -- Forever's ID lookup is independent of skill-list headers and translated addon text.
+    C_SkillInfo = {
+        GetSkillLineInfoByID = function(line)
+            assert(line and line > 0, "native skill lookup requires an identified skill line")
+            return { skillID = line, name = "Client skill " .. line, rank = 125, maxRank = 225, isHeader = false }
+        end,
+    }
+    GetProfessions, GetProfessionInfo, GetNumSkillLines, GetSkillLineInfo = nil, nil, nil, nil
+    assert(
+        FG.ProfessionSkill(0) == nil and FG.ProfessionSkill(nil) == nil,
+        "unresolved older steps never query a native skill ID"
+    )
+    for _, line in ipairs(lines) do
+        local rank, cap, name = FG.ProfessionSkill(line)
+        assert(rank == 125 and cap == 225 and name == "Client skill " .. line, "read profession by its client skill ID")
+    end
+
+    C_SkillInfo = nil
+    C_TradeSkillUI = { GetTradeSkillDisplayName = function(line) return "Client skill " .. line end }
+    GetNumSkillLines = function() return #lines end
+    GetSkillLineInfo = function(index) return "Client skill " .. lines[index], false, false, 125, 0, 0, 225 end
+    for _, line in ipairs(lines) do
+        local rank, cap, name = FG.ProfessionSkill(line)
+        assert(
+            rank == 125 and cap == 225 and name == "Client skill " .. line,
+            "legacy client names match all profession IDs without UI translations"
+        )
+    end
+    local headers = {
+        { name = "Primary", expanded = false, { name = "Client alchemy", rank = 90, cap = 150 } },
+        {
+            name = "Secondary",
+            expanded = false,
+            { name = "Client cooking", rank = 125, cap = 225 },
+            { name = "Client fishing", rank = 130, cap = 150 },
+        },
+    }
+    local opened, closed = {}, {}
+    local function Rows()
+        local rows = {}
+        for _, header in ipairs(headers) do
+            rows[#rows + 1] = header
+            if header.expanded then
+                for _, row in ipairs(header) do
+                    rows[#rows + 1] = row
+                end
+            end
+        end
+        return rows
+    end
+    GetNumSkillLines = function() return #Rows() end
+    GetSkillLineInfo = function(index)
+        local row = Rows()[index]
+        return row.name, row.expanded ~= nil, row.expanded, row.rank, 0, 0, row.cap
+    end
+    ExpandSkillHeader = function(index)
+        opened[#opened + 1] = index
+        Rows()[index].expanded = true
+        assert(FG.ProfessionSkill(185) == nil, "synchronous skill-change readers do not recurse")
+    end
+    CollapseSkillHeader = function(index)
+        closed[#closed + 1] = index
+        Rows()[index].expanded = false
+        assert(FG.ProfessionSkill(185) == nil, "restoring headers does not recurse through skill-change readers")
+    end
+    C_TradeSkillUI = {
+        GetTradeSkillDisplayName = function(line)
+            return ({
+                [171] = "Client alchemy",
+                [185] = "Client cooking",
+                [356] = "Client fishing",
+                [182] = "Client herbalism",
+            })[line]
+        end,
+    }
+    local rank, cap, name = FG.ProfessionSkill(185)
+    assert(
+        rank == 125 and cap == 225 and name == "Client cooking",
+        "legacy lookup uses the client's localized skill display name"
+    )
+    assert(
+        table.concat(opened, ",") == "2,1" and table.concat(closed, ",") == "1,2",
+        "multiple headers restore their original indexes"
+    )
+    assert(not headers[1].expanded and not headers[2].expanded, "collapsed headers are restored after reading")
+    headers[1][1].name = "Client herbalism"
+    rank, cap, name = FG.ProfessionSkill(182)
+    assert(
+        rank == 90 and cap == 150 and name == "Client herbalism",
+        "Herbalism uses its skill ID for the client display name"
+    )
+    headers[1].expanded, opened, closed = true, {}, {}
+    rank, cap = FG.ProfessionSkill(356)
+    assert(rank == 130 and cap == 150, "the second secondary profession is read behind its header")
+    assert(headers[1].expanded and not headers[2].expanded, "an already open header stays open")
+    assert(table.concat(opened, ",") == "3" and table.concat(closed, ",") == "3", "only the collapsed header changes")
+    C_SkillInfo, GetProfessions, GetProfessionInfo = skillAPI, professions, professionInfo
+    GetNumSkillLines, GetSkillLineInfo, ExpandSkillHeader, CollapseSkillHeader = count, info, expand, collapse
+    C_TradeSkillUI = tradeSkillUI
+end
 local cooking = { rank = 20, cap = 75 }
 GetProfessions = function() return nil, nil, nil, nil, 5, nil end
 GetProfessionInfo = function(i) return "Cuisine", 0, cooking.rank, cooking.cap, 0, 0, 185 end
@@ -730,7 +835,6 @@ do
                 n = "Book vendor",
                 line = 185,
                 sk = 225,
-                book = 16072,
                 lvl = 20,
             },
             { k = "turnin", t = "Later quest", q = 8220, lvl = 20 },
@@ -824,6 +928,24 @@ do
     fire("SKILL_LINES_CHANGED")
     assert(char.guide.step == 3, "learned cap completes trainer rank before skill reaches that cap")
 
+    local readSkill = FG.ProfessionSkill
+    FG.ProfessionSkill = function() return nil end -- An older Profile addon cannot read this client's skill API.
+    FG.Guide:Resync()
+    assert(char.guide.step == 1, "an unreadable rank remains pending")
+    assert(
+        FG.Guide.view.tasks[1].sub
+            == FG.T(
+                "Profession cap unavailable. Update Factoruide Profile, or verify the rank and skip this step manually."
+            ),
+        "old Profile users get an actionable prompt"
+    )
+    fire("TRAINER_SHOW")
+    FG.Guide:Advance()
+    assert(char.guide.step == 1, "unreadable caps do not revive trainer-window false completion")
+    FG.Guide:ToggleSkip(1)
+    assert(char.guide.step == 3, "an unreadable rank can be skipped explicitly after checking it")
+    FG.ProfessionSkill = readSkill
+
     -- Legacy visit-only steps have no rank to observe and retain their interaction completion.
     FG.Routes["prof-legacy-visit-test"] = {
         race = 7,
@@ -889,6 +1011,11 @@ do
     assert(not char.guide.marks[2] and not char.guide.marks[3], "rank proof remains the live caps")
     FG.Guide:Resync()
     assert(char.guide.step == 5, "resync does not resurrect skipped flights")
+    Trip(4, nil, 5)
+    assert(
+        char.guide.step == 5,
+        "known ranks skip the excursion before walking over 100 yards to the departure airport"
+    )
 
     fishingCap = 150
     Trip(4)
@@ -917,7 +1044,7 @@ do
     assert(char.guide.step == 1, "unavailable skill information cannot cancel a trip")
     known = true
     Trip(4, nil, 80)
-    assert(char.guide.step == 1, "a character away from the departure point keeps the trip")
+    assert(char.guide.step == 1, "a character closer to the destination retains the trip and its return flight")
     flying = true
     Trip(4)
     assert(char.guide.step == 1, "a character already in flight does not cancel an excursion")

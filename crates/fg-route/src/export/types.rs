@@ -236,10 +236,6 @@ pub struct Step {
     /// Profession skill line of that skill.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub line: Option<i64>,
-    /// Book to buy and read for a profession rank. Completion requires the learned cap,
-    /// not merely opening a trainer or merchant window.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub book: Option<i64>,
     /// Mobs to target (kill, or that drop the item), for the target macro: their names (English,
     /// written in a language by `render`) and IDs.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -343,7 +339,6 @@ impl Step {
             path: Vec::new(),
             skill: None,
             line: None,
-            book: None,
             mobs: Vec::new(),
             mob_ids: Vec::new(),
             elite: false,

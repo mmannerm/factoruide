@@ -215,9 +215,17 @@ impl NpcFinder<'_> {
         trainers.extend(rows.into_iter().filter_map(|(id, title, flags)| {
             let line = crate::job::profession_of(&title, flags, edition)?;
             let def = crate::profession::PROFESSIONS.iter().find(|d| d.skill_id == line)?;
+            // These Forever trainers have plain titles but verified Apprentice through Expert
+            // offerings: Alard Schmied and Linzy Blackbolt. Other unranked crafting titles
+            // remain unverified. Sources: https://www.wow-professions.com/forever/blacksmithing-trainers
+            // and https://www.wow-professions.com/forever/alchemy-trainers.
+            let cap = match (edition, id, line) {
+                (crate::xp::Edition::Forever, 28694, 164) | (crate::xp::Edition::Forever, 246795, 171) => Some(225),
+                _ => rank_cap_of_title(&title, def.kind, edition),
+            }?;
             Some(ProfessionTrainer {
                 line,
-                cap: rank_cap_of_title(&title, def.kind, edition)?,
+                cap,
                 loc: self.place(id)?,
                 book: None,
             })

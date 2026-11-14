@@ -12,6 +12,7 @@ mod cooking;
 mod data_corrections;
 mod draft;
 mod edit;
+mod profession_trips;
 mod required;
 mod routes;
 mod timeline;

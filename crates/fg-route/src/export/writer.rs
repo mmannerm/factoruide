@@ -317,7 +317,6 @@ impl StepWriter<'_> {
             path: Vec::new(),
             skill: None,
             line: None,
-            book: None,
             mobs: Vec::new(),
             mob_ids: Vec::new(),
             elite: false,
@@ -681,7 +680,6 @@ impl StepWriter<'_> {
         let top = (RANKS.iter().enumerate()).rev().find(|(r, _)| ranks & 1 << r != 0);
         step.skill = top.map(|(_, rank)| rank.cap);
         let phrase = if let Some(book) = model.profession_trainers[trainer].book {
-            step.book = Some(book.item);
             Phrase::new("profession.book")
                 .arg("item", Arg::Item(book.item, book.name.to_owned()))
                 .arg("cap", Arg::Num(book.cap))

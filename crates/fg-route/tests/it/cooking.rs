@@ -94,7 +94,7 @@ fn secondary_expert_book_sources_and_exports_match_each_faction() {
                 }];
                 let route = export::build_traced(&planner, &prepared.profile, &[], &trace, 30.0, Breakdown::default());
                 let step = route.steps.iter().find(|s| s.kind == StepKind::Profession).unwrap();
-                assert_eq!((step.line, step.skill, step.book), (Some(line), Some(225), Some(item)));
+                assert_eq!((step.line, step.skill), (Some(line), Some(225)));
                 assert_eq!(step.target.as_ref().unwrap().id, vendor);
                 assert_eq!(step.zone_id, Some(zone));
                 assert_eq!(
@@ -102,7 +102,7 @@ fn secondary_expert_book_sources_and_exports_match_each_faction() {
                     format!("Buy {book_name} from {name} and read it to raise your {profession_name} skill cap to 225")
                 );
                 let lua = export::to_lua(std::slice::from_ref(&route));
-                assert!(lua.contains(&format!("book = {item}")));
+                assert!(lua.contains(book_name));
                 assert!(lua.contains(&format!("line = {line}")) && lua.contains("sk = 225"));
                 let encoded = serde_json::to_value(&route).unwrap();
                 let restored: fg_route::Route = serde_json::from_value(encoded).unwrap();
@@ -112,8 +112,9 @@ fn secondary_expert_book_sources_and_exports_match_each_faction() {
                         .iter()
                         .find(|s| s.kind == StepKind::Profession)
                         .unwrap()
-                        .book,
-                    Some(item)
+                        .say[0]
+                        .args["item"],
+                    export::Arg::Item(item, book_name.to_owned())
                 );
                 let french = export::render(&route, &fg_route::model::Names::new("frFR"));
                 assert!(
@@ -180,6 +181,22 @@ fn actual_trainer_ranks_match_the_supported_editions() {
                 None,
                 "specialty NPC {id} must not be used to learn a profession rank"
             );
+        }
+        let mut alliance_request = request.clone();
+        alliance_request.race = "human".into();
+        let alliance = job::prepare(&conn, &overrides, &alliance_request, &|_| {}).unwrap();
+        for (id, line) in [(28694, 164), (246795, 171)] {
+            let trainer = alliance
+                .model
+                .profession_trainers
+                .iter()
+                .find(|trainer| trainer.loc.id == id && trainer.book.is_none());
+            assert_eq!(
+                trainer.map(|trainer| (trainer.line, trainer.cap)),
+                (edition == Edition::Forever).then_some((line, 225)),
+                "Alard and Linzy teach through Expert in Forever"
+            );
+            assert_eq!(cap(id), None, "these Alliance trainers are not offered to Horde");
         }
     }
 }
