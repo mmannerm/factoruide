@@ -118,6 +118,7 @@ impl Simulator<'_> {
                                         && known & lower == lower
                                         && level >= plan.start
                                         && skill >= book.skill
+                                        && plan.target > rank.due
                                         && (!needed_only || skill > rank.due)
                                 })
                                 .map_or(0, |(r, _)| 1 << r)

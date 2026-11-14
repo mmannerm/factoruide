@@ -205,3 +205,15 @@ fn a_reported_expert_cap_avoids_buying_the_book_at_skill_125() {
         assert_eq!(!visits(&planner, &mut s).is_empty(), learns);
     }
 }
+
+#[test]
+fn cooking_goals_that_stop_at_150_do_not_buy_the_book() {
+    for target in [125, 150] {
+        let mut p = cook_with_book(125);
+        p.model.professions[0].target = target;
+        let planner = planner(&p);
+        let mut state = planner.sim().initial_state();
+        assert!(visits(&planner, &mut state).is_empty());
+        assert_eq!(state.ranks[0], 0b11);
+    }
+}
