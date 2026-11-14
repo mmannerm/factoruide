@@ -254,21 +254,21 @@ end
 
 function FG:CharacterKey() return UnitName("player") .. "-" .. (GetNormalizedRealmName() or GetRealmName() or "") end
 
--- English translation keys for the skills list on clients without GetProfessions.
+-- English translation keys and legacy names for clients without GetProfessions.
 local SKILL_NAMES = {
-    [171] = "Alchemy",
-    [164] = "Blacksmithing",
-    [333] = "Enchanting",
-    [202] = "Engineering",
-    [182] = "Herbalism",
-    [165] = "Leatherworking",
-    [186] = "Mining",
-    [393] = "Skinning",
-    [197] = "Tailoring",
-    [185] = "Cooking",
-    [356] = "Fishing",
-    [129] = "First Aid",
-    [762] = "Riding",
+    [171] = { "Alchemy", "Alchimie" },
+    [164] = { "Blacksmithing", "Forge" },
+    [333] = { "Enchanting", "Enchantement" },
+    [202] = { "Engineering", "Ingénierie" },
+    [182] = { "Herbalism", "Herboristerie" },
+    [165] = { "Leatherworking", "Travail du cuir" },
+    [186] = { "Mining", "Minage" },
+    [393] = { "Skinning", "Dépeçage" },
+    [197] = { "Tailoring", "Couture" },
+    [185] = { "Cooking", "Cuisine" },
+    [356] = { "Fishing", "Pêche" },
+    [129] = { "First Aid", "Secourisme" },
+    [762] = { "Riding", "Monte" },
 }
 
 --- Skill of a profession by skill line ID: rank, max rank, localized name (nil if unknown).
@@ -280,13 +280,16 @@ function FG.ProfessionSkill(line)
         end
     end
     if GetNumSkillLines and GetSkillLineInfo then
-        local english = SKILL_NAMES[line]
+        local names = SKILL_NAMES[line] or {}
+        local english = names[1]
         -- API names follow the game, which can differ from the addon's chosen display language.
         local strings = FG.Locales[TranslationLocale((GetLocale and GetLocale()) or "enUS")]
         local localized = strings and english and strings[english]
         for i = 1, GetNumSkillLines() do
             local name, header, _, rank, _, _, maxRank = GetSkillLineInfo(i)
-            if english and not header and (name == english or name == localized) then return rank, maxRank, name end
+            if english and not header and (name == english or name == names[2] or name == localized) then
+                return rank, maxRank, name
+            end
         end
     end
     return nil

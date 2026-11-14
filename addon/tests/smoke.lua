@@ -519,6 +519,9 @@ do
     FG.Profile:Snapshot()
     skill = FactoruideDB.profiles["Brouz-Realm"].professions[1]
     assert(skill.line == 185 and skill.rank == 150 and skill.cap == 150, "skills-list cap saved")
+    GetSkillLineInfo = function() return "Monte", false, false, 75, 0, 0, 75 end
+    FG.Profile:Snapshot()
+    assert(FactoruideDB.profiles["Brouz-Realm"].riding == 75, "legacy French Riding name retained")
     GetProfessions, GetProfessionInfo = professions, professionInfo
     GetNumSkillLines, GetSkillLineInfo = skillLines, skillInfo
     FG.Profile:Snapshot()
