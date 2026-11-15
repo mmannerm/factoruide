@@ -29,8 +29,8 @@ zones to do, the level to reach before moving on from each, and where the XP is.
 - **Your character**: race, class and level range: start a guide at level 1, or from your
   character as it is in game. The addon records it at each logout (or at once from its page of
   the game's options: **Save the profile now**): pick it in the list of the new guide and the guide goes on from where it
-  stands: its quests done are left out, those in its log are taken again when they help (as if
-  never taken) and abandoned as the first step otherwise, from its position, with its
+  stands: its quests done are left out, those in its log continue from their recorded progress
+  without another pickup (even at zero progress), and unused quests are abandoned first, from its position, with its
   hearthstone, flight paths, rested XP, gear, spells and professions.
 - **Your professions**: two primary professions and the secondary ones, with the skill to have
   at each level from the level you take them (curves from classic guides, editable). They add no

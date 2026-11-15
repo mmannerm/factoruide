@@ -70,7 +70,7 @@ A guide can start from a character met in game (`job/start.rs`): the profile the
 (`Profile.lua`, read by the app from the SavedVariables) becomes the simulation's initial state:
 quests turned in, position, hearthstone, known flight paths, XP and rested XP, gear worn, last
 training (from the spells learned). Profession curves go through the character's skill. The route
-keeps recorded progress for logged quests it uses; unbegun quests can be taken again. Other logged
+keeps every logged quest accepted, with its recorded progress, even when no objective is started. Other logged
 quests are abandoned as the guide's first steps. Accepting a quest is not an irreversible choice.
 
 `xp.rs` holds the rules of each game version (WoW Forever, Classic Era, TBC): XP per level,

@@ -106,7 +106,7 @@ pub fn build_traced(
         .left_at_start(&planner.planned(route))
         .map(|i| model.quests[i].id)
         .collect();
-    // Those it holds are kept; one with nothing done (not held) too when the guide takes it itself.
+    // Keep held quests used by the guide, or quests the party still needs to pick up.
     let planned = planner.planned(route);
     let kept = |id: &i64| {
         model.index.get(id).is_some_and(|i| {

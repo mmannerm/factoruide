@@ -476,6 +476,14 @@ impl Editor {
             let before = &steps[..k];
             let mut quests: Vec<i64> = (model.initial.accepted.iter())
                 .map(|&i| model.quests[i].id)
+                // An unused logged quest was abandoned at the guide's start. Do not revive
+                // it merely because this old guide visits a dungeon with its objective.
+                .filter(|id| {
+                    steps.iter().any(|s| {
+                        matches!(s, RouteStep::Accept { quest } | RouteStep::TurnIn { quest }
+                            | RouteStep::Objective { quest, .. } if quest == id)
+                    })
+                })
                 .chain(before.iter().filter_map(|s| match s {
                     RouteStep::Accept { quest } => Some(*quest),
                     _ => None,
