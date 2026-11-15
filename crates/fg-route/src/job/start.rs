@@ -196,16 +196,8 @@ impl StartState {
         // those it wants (only the turn-in left for one complete), the others are abandoned at
         // its start.
         for q in &self.log {
-            // A quest with nothing done can be left aside or taken again. A quest started by
-            // dungeon loot has already cost a pickup, so keep it even without objective progress.
             if let Some(&i) = model.index.get(&q.id.0) {
                 let quest = &model.quests[i];
-                let begun = q.complete
-                    || q.objectives.iter().any(|o| o.finished || o.done > 0)
-                    || quest.start_dungeon.is_some();
-                if !begun {
-                    continue;
-                }
                 init.accepted.push(i);
                 for (k, share) in objective_progress(quest, q) {
                     init.progress.push((i, k, share));

@@ -2467,6 +2467,46 @@ fn a_character_met_in_game_goes_on_from_where_it_stands() {
     assert!(at.level >= 4);
 }
 
+/// Already accepted does not depend on objective progress: a fresh pickup still in the log
+/// must not send the player back to its giver, including a delivery with no objective rows.
+#[test]
+fn zero_progress_logged_quests_do_not_repeat_the_pickup() {
+    for objectives in [
+        vec![],
+        vec![LogObjective {
+            text: "Scorpid Worker: 0/10".into(),
+            need: 10,
+            ..LogObjective::default()
+        }],
+    ] {
+        let mut start = orc_met_in_game(objectives, false, 0);
+        start.position.as_mut().unwrap().x = 65.0;
+        start.position.as_mut().unwrap().y = 65.0;
+        let p = orc_valley().levels(4, 8).required(789).start(start).build();
+        let planner = planner(&p);
+        let scorpids = quest(&p, 789).unwrap();
+        let route = planner.construct(|_| {});
+        planner.validate_required(&route).unwrap();
+        assert!(!route.contains(&Stop::quest(scorpids, Kind::Accept)));
+        assert!(route.contains(&Stop::quest(scorpids, Kind::Objective(0))));
+        assert!(route.contains(&Stop::quest(scorpids, Kind::TurnIn)));
+        let guide = fg_route::export::build(&planner, &p.profile, &route);
+        assert!(!guide.steps.iter().any(|s| {
+            s.quest == Some(789)
+                && matches!(
+                    s.kind,
+                    fg_route::export::StepKind::Accept | fg_route::export::StepKind::Abandon
+                )
+        }));
+        assert!(
+            guide
+                .steps
+                .iter()
+                .any(|s| { s.quest == Some(789) && s.kind == fg_route::export::StepKind::Objective })
+        );
+    }
+}
+
 /// The log's objectives done count, matched to the quest's whatever the game's language: the
 /// route only does what is left.
 #[test]
@@ -2485,13 +2525,10 @@ fn objectives_done_in_the_log_are_not_done_again() {
             .start(orc_met_in_game(log(done), false, 0))
             .build();
         let scorpids = quest(&p, 789).unwrap();
-        // Nothing done: not held, the guide takes the quest itself.
-        let mut route = vec![];
-        if done == 0 {
-            route.push(Stop::quest(scorpids, Kind::Accept));
-        }
-        route.push(Stop::quest(scorpids, Kind::Objective(0)));
-        route.push(Stop::quest(scorpids, Kind::TurnIn));
+        let route = [
+            Stop::quest(scorpids, Kind::Objective(0)),
+            Stop::quest(scorpids, Kind::TurnIn),
+        ];
         planner(&p).simulate_full(&route, None).unwrap().1.mob_xp
     };
     let (none, half, all) = (mob_xp(0), mob_xp(5), mob_xp(10));
@@ -2515,10 +2552,7 @@ fn rested_xp_doubles_kill_xp() {
             .start(orc_met_in_game(objectives(), false, rested))
             .build();
         let scorpids = quest(&p, 789).unwrap();
-        let route = [
-            Stop::quest(scorpids, Kind::Accept),
-            Stop::quest(scorpids, Kind::Objective(0)),
-        ];
+        let route = [Stop::quest(scorpids, Kind::Objective(0))];
         planner(&p).simulate_full(&route, None).unwrap().1.mob_xp
     };
     let (plain, rested) = (mob_xp(0), mob_xp(100_000));
