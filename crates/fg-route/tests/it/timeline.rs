@@ -241,10 +241,9 @@ fn no_start_is_compared_before_level_10() {
     assert_eq!((preview.tried, preview.options.len()), (0, 0));
 }
 
-/// A quest of the log with nothing done is left aside (planned as any other); one done or begun
-/// is held, to be turned in or finished.
+/// Every recorded active quest is held, including one with no objective progress.
 #[test]
-fn log_quests_with_nothing_done_are_not_held() {
+fn log_quests_with_nothing_done_are_held() {
     use fg_route::job::{LogObjective, LogQuest, StartState};
     let ids: Vec<i64> = (100..103).collect();
     let prepared = leveling(25)
@@ -288,7 +287,7 @@ fn log_quests_with_nothing_done_are_not_held() {
         .iter()
         .map(|&i| prepared.model.quests[i].id)
         .collect();
-    assert!(!held.contains(&ids[0]), "nothing done: {held:?}");
+    assert!(held.contains(&ids[0]), "nothing done but already accepted: {held:?}");
     assert!(held.contains(&ids[1]) && held.contains(&ids[2]), "{held:?}");
     // All three stay in the log, to be abandoned or not by the guide.
     assert_eq!(prepared.model.initial.log.len(), 3);

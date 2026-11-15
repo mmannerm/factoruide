@@ -14,6 +14,8 @@ An addon change also goes, in the same words, under Unreleased in that addon's o
 
 ### Guides
 
+- Guides from saved profiles no longer revisit quest givers to pick up quests already in the log, even before any objective progress.
+
 - Expert Cooking, Fishing and First Aid guides visit their book vendors instead of trainers to unlock the 225 skill cap.
 - Profession visits choose trainers for the ranks they actually teach and stop at the ranks needed for your goal.
 - Guides for The Glowing Shard keep quests already in the log, talk in Ratchet without extra leveling, and return to Wailing Caverns only for missing pickups.

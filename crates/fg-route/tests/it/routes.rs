@@ -2468,7 +2468,7 @@ fn a_character_met_in_game_goes_on_from_where_it_stands() {
 }
 
 /// Already accepted does not depend on objective progress: a fresh pickup still in the log
-/// must not send the player back to its giver, including a delivery with no objective rows.
+/// must not send the player back to its giver, even when the log has no objective rows.
 #[test]
 fn zero_progress_logged_quests_do_not_repeat_the_pickup() {
     for objectives in [
@@ -2505,6 +2505,51 @@ fn zero_progress_logged_quests_do_not_repeat_the_pickup() {
                 .any(|s| { s.quest == Some(789) && s.kind == fg_route::export::StepKind::Objective })
         );
     }
+}
+
+/// A zero-progress quest still consumes a log slot until the guide turns it in.
+#[test]
+fn zero_progress_logged_quests_use_log_capacity() {
+    let p = orc_valley()
+        .params(|p| p.quest_log_size = 1)
+        .start(orc_met_in_game(vec![], false, 0))
+        .build();
+    let planner = planner(&p);
+    let held = quest(&p, 789).unwrap();
+    let other = quest(&p, 100).unwrap();
+    let objective = Stop::quest(held, Kind::Objective(0));
+    let turnin = Stop::quest(held, Kind::TurnIn);
+    let pickup = Stop::quest(other, Kind::Accept);
+    assert!(planner.simulate(&[pickup, objective, turnin], None).is_none());
+    assert!(planner.simulate(&[objective, turnin, pickup], None).is_some());
+}
+
+/// Optional logged quests do not need another pickup, and old explicit pickups are skipped.
+#[test]
+fn optional_zero_progress_quests_and_saved_pickups_keep_the_log_state() {
+    let (editor, guide) = orc_valley()
+        .levels(4, 8)
+        .start(orc_met_in_game(vec![], false, 0))
+        .guide();
+    assert!(guide.plan.contains(&job::RouteStep::TurnIn { quest: 789 }));
+    assert!(!guide.plan.contains(&job::RouteStep::Accept { quest: 789 }));
+    let report = editor.simulate(
+        &[
+            job::RouteStep::Accept { quest: 789 },
+            job::RouteStep::Objective {
+                quest: 789,
+                objective: 0,
+                farm: false,
+                spot: None,
+            },
+            job::RouteStep::TurnIn { quest: 789 },
+        ],
+        &fg_route::model::Names::default(),
+    );
+    assert_eq!(report.errors, 0);
+    assert_eq!(report.steps[0].status, "skipped");
+    assert_eq!(report.steps[1].status, "done");
+    assert_eq!(report.steps[2].status, "done");
 }
 
 /// The log's objectives done count, matched to the quest's whatever the game's language: the

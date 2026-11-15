@@ -295,3 +295,59 @@ fn a_guide_of_dungeon_runs_gets_the_stops_inside_them() {
     assert_eq!(after, [300, 301], "{steps:?}");
     assert_eq!(editor.simulate(&steps, &names).errors, 0);
 }
+
+/// Migrating an old dungeon run only fills objectives for quests the saved guide uses.
+#[test]
+fn old_dungeon_guides_do_not_revive_unused_logged_quests() {
+    use fg_route::job::{LogQuest, StartState};
+    let mut scenario = leveling(25)
+        .levels(20, 25)
+        .dungeon("The Deadmines", 1, 70.0, 70.0)
+        .params(|p| p.forced_dungeons = vec![900])
+        .start(StartState {
+            level: 20,
+            log: [300, 301]
+                .into_iter()
+                .map(|id| LogQuest {
+                    id: id.into(),
+                    ..LogQuest::default()
+                })
+                .collect(),
+            ..StartState::default()
+        });
+    for id in [300, 301] {
+        scenario = scenario.quest(
+            Q::new(id, "Logged dungeon quest")
+                .level(18)
+                .giver(1, 40.0, 40.0)
+                .objective(
+                    Obj::kill(
+                        "Defias",
+                        18,
+                        6,
+                        At {
+                            zone: 1,
+                            x: 70.0,
+                            y: 70.0,
+                        },
+                    )
+                    .inside(0),
+                ),
+        );
+    }
+    let (editor, mut old) = scenario.guide();
+    old.plan = vec![RouteStep::Dungeon { dungeon: 900 }, RouteStep::TurnIn { quest: 300 }];
+    old.explicit = true;
+    let (steps, _) = editor.steps(&old);
+    assert!(
+        steps
+            .iter()
+            .any(|s| matches!(s, RouteStep::Objective { quest: 300, .. }))
+    );
+    assert!(
+        !steps
+            .iter()
+            .any(|s| matches!(s, RouteStep::Objective { quest: 301, .. }))
+    );
+    assert_eq!(editor.simulate(&steps, &Names::default()).errors, 0);
+}
