@@ -266,7 +266,7 @@ impl Planner<'_> {
         let early = self.transport_first(self.power_first(route.clone()));
         if early != route {
             route = early;
-            run = done(self.run(&route).expect("power_first keeps the route valid"));
+            run = done(self.run(&route).expect("unlock reordering keeps the route valid"));
         }
         let rebound = self.place_hearths(self.rebind(route.clone()));
         if rebound != route {

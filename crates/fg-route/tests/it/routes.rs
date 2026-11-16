@@ -2070,6 +2070,24 @@ fn transport_reward_requires_turnin() {
     assert!(!takes(&p, &[objective]), "not accepted");
     p.model.initial.accepted.push(1);
     assert!(!takes(&p, &[objective, turnin]), "acceptance is not the reward");
+    assert!(
+        !takes(&p, &[objective]),
+        "a log quest abandoned by the route grants no reward"
+    );
+    let forward = p
+        .world
+        .links
+        .iter()
+        .position(|l| l.name == "Reward transport" && l.from_zone == 12)
+        .unwrap();
+    let abandoned = planner(&p).explicit().edit(&[
+        Edit::Abandon { quest: 1 },
+        Edit::Link {
+            first: forward,
+            last: forward,
+        },
+    ]);
+    assert_eq!(abandoned.steps[1].outcome, Outcome::Invalid("no such crossing"));
     assert!(takes(&p, &[turnin, objective]), "turn-in opens the same trip");
     p.model.initial.accepted = vec![0];
     p.model.initial.turned = vec![1];

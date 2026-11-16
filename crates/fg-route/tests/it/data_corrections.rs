@@ -778,6 +778,14 @@ fn gnomeregan_calibration_is_finished_in_booty_bay() {
         .unwrap();
     assert_eq!(turnin.target.as_ref().unwrap().id, 7853);
     assert_eq!(turnin.zone_id, Some(33));
+    let prepared = job::prepare(&conn, &ov, &req, &|_| {}).unwrap();
+    assert!(
+        prepared
+            .world
+            .link_quests
+            .contains(&(2843, fg_route::world::LinkQuestState::TurnedIn)),
+        "the real Horde world's gate must fit in the trip-cache key"
+    );
     let links: Vec<_> = ov.links.iter().filter(|l| l.after_turnin == Some(2843)).collect();
     assert_eq!(links.len(), 1);
     assert_eq!(links[0].faction, Some(fg_route::faction::Faction::Horde));
@@ -831,6 +839,103 @@ fn gnomeregan_visit_uses_transponder_after_calibration_and_replays() {
         !steps
             .iter()
             .any(|s| s.kind == StepKind::Accept && s.quest == Some(2841))
+    );
+    let editor = Editor::open(&conn, &ov, &req, None).unwrap();
+    assert_eq!(editor.simulate(&result.plan, &Names::new("enUS")).errors, 0);
+}
+
+#[test]
+fn held_gnomeregan_calibration_does_not_grant_the_teleporter() {
+    use fg_route::export::StepKind;
+    use fg_route::model::GuideObjective;
+    let conn = database_of("forever");
+    let ov = overrides(Edition::Forever);
+    let mut req = request(&json!([]));
+    req.race = "orc".into();
+    req.from_level = 30;
+    req.objectives = vec![GuideObjective::Quest(2841)];
+    req.start = Some(StartState {
+        level: 30,
+        completed: vec![QuestId(2842)],
+        log: vec![
+            job::LogQuest {
+                id: QuestId(2841),
+                complete: false,
+                objectives: vec![],
+            },
+            job::LogQuest {
+                id: QuestId(2843),
+                complete: false,
+                objectives: vec![],
+            },
+        ],
+        position: Some(job::MapPos {
+            map: 1434,
+            x: 27.63,
+            y: 77.55,
+        }),
+        ..StartState::default()
+    });
+    let result = job::plan(&conn, &ov, &req, &|_| {}).unwrap();
+    let mut unlocked = false;
+    for step in &result.route.steps {
+        if step.quest == Some(2843) && step.kind == StepKind::TurnIn {
+            unlocked = true;
+        }
+        if step.kind == StepKind::Link && step.text.contains("Goblin Transponder") {
+            assert!(unlocked, "a held or abandoned calibration grants no transponder");
+        }
+    }
+}
+
+#[test]
+fn gnomeregan_group_unlock_waits_for_the_member_without_the_reward() {
+    use fg_route::export::StepKind;
+    use fg_route::model::GuideObjective;
+    let conn = database_of("forever");
+    let ov = overrides(Edition::Forever);
+    let mut req = request(&json!([]));
+    req.race = "orc".into();
+    req.from_level = 30;
+    req.objectives = vec![GuideObjective::Quest(2843), GuideObjective::Quest(2841)];
+    let leader = StartState {
+        name: "Leader".into(),
+        race: 2,
+        class: "WARRIOR".into(),
+        faction: Some(fg_route::faction::Faction::Horde),
+        level: 30,
+        completed: vec![QuestId(2842), QuestId(2843)],
+        log: vec![job::LogQuest {
+            id: QuestId(2841),
+            complete: false,
+            objectives: vec![],
+        }],
+        position: Some(job::MapPos {
+            map: 1434,
+            x: 27.63,
+            y: 77.55,
+        }),
+        ..StartState::default()
+    };
+    req.start = Some(leader.clone());
+    req.mates = vec![StartState {
+        name: "Partner".into(),
+        completed: vec![QuestId(2842)],
+        ..leader
+    }];
+    let result = job::plan(&conn, &ov, &req, &|_| {}).unwrap();
+    let steps = &result.route.steps;
+    let turnin = steps
+        .iter()
+        .position(|s| s.kind == StepKind::TurnIn && s.quest == Some(2843))
+        .unwrap();
+    let teleport = steps
+        .iter()
+        .position(|s| s.kind == StepKind::Link && s.text.contains("Goblin Transponder"))
+        .unwrap();
+    assert!(
+        turnin < teleport,
+        "the leader's reward alone cannot transport the party"
     );
     let editor = Editor::open(&conn, &ov, &req, None).unwrap();
     assert_eq!(editor.simulate(&result.plan, &Names::new("enUS")).errors, 0);

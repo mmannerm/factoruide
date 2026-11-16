@@ -1300,7 +1300,7 @@ impl World {
     }
 
     /// Time to chain links i..j (boarding i, leaving j) with the links of `link_quests` in
-    /// `open` (bit k: quest k taken).
+    /// `open` (bit k: quest gate k satisfied).
     pub(crate) fn link_chain(&self, open: u8) -> &[Vec<f64>] {
         &self.link_chains[usize::from(open) & (self.link_chains.len() - 1)]
     }

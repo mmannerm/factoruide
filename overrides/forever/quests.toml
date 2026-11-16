@@ -78,3 +78,10 @@ interactions = [
     { npc = 268762, text = "Complete the ritual with Olariaan at the Brazier of Offering" },
     { npc = 268679, text = "Use Torch of Eternal Flame to light the Brazier of Eternal Flame" },
 ]
+
+# Gnomer-gooooone! is filed under Gnomeregan, but its creature credit is Scooty's
+# calibration outside the dungeon in Booty Bay. Finish it there to get the transponder.
+# https://www.wowhead.com/forever/quest=2843/gnomer-gooooone
+[[quest]]
+id = 2843
+interactions = [{ npc = 7853, text = "Wait for Scooty to calibrate the Goblin Transponder, then turn in the quest and keep the transponder for the teleporter", conversation = true }]

@@ -200,7 +200,11 @@ impl Trips<'_> {
             Some(&q) => match required {
                 LinkQuestState::Held => s.accepted[q] && !s.turned[q],
                 LinkQuestState::Taken => s.accepted[q] || s.turned[q],
-                LinkQuestState::TurnedIn => s.turned[q],
+                LinkQuestState::TurnedIn => {
+                    s.rewarded(q)
+                        && (0..=self.model.initial.mates.len())
+                            .all(|m| self.model.initial.need(q) & (1 << m) != 0 || self.model.initial.done_by(m, id))
+                }
             },
             None => match required {
                 LinkQuestState::Taken => true,
