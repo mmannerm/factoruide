@@ -199,13 +199,50 @@ local Distance -- defined below, used by IsDone
 
 -- Progress -------------------------------------------------------------------
 
-local function QuestTitle(step) return step.q and QuestLog.GetTitleForQuestID(step.q) or nil end
+-- These delivery quests have the same destination and reward, but each giver uses a different
+-- quest ID. Keep the guide's IDs for saved progress and group sharing; query the ID actually taken.
+local PICKUP_VARIANTS = {}
+for _, ids in ipairs({
+    { 1531, 1532 }, -- Call of Air
+    { 1522, 1523, 2983, 2984 }, -- Call of Fire
+    { 1528, 1529, 2985, 2986 }, -- Call of Water
+}) do
+    for _, id in ipairs(ids) do
+        PICKUP_VARIANTS[id] = ids
+    end
+end
+
+local function QuestId(step)
+    local q = step.q
+    local variants = q and PICKUP_VARIANTS[q]
+    if not variants or QuestLog.IsOnQuest(q) then return q end
+    for _, id in ipairs(variants) do
+        if QuestLog.IsOnQuest(id) then return id end
+    end
+    if QuestLog.IsQuestFlaggedCompleted(q) then return q end
+    for _, id in ipairs(variants) do
+        if QuestLog.IsQuestFlaggedCompleted(id) then return id end
+    end
+    return q
+end
+
+local function QuestIndex(index, q)
+    if index[q] then return index[q] end
+    for _, id in ipairs(PICKUP_VARIANTS[q] or {}) do
+        if index[id] then return index[id] end
+    end
+end
+
+local function QuestTitle(step)
+    local q = QuestId(step)
+    return q and QuestLog.GetTitleForQuestID(q) or nil
+end
 
 --- Game objective matching the step's target name. When several hold the name ("Night Web
 --- Spider slain" and "Young Night Web Spider slain"), the one with the least else around it
 --- (counts, spaces and punctuation aside), then the one at the step's objective index.
 local function FindObjective(step)
-    local objectives = QuestLog.GetQuestObjectives(step.q)
+    local objectives = QuestLog.GetQuestObjectives(QuestId(step))
     if not objectives or not step.n then return nil end
     local name = step.n:lower()
     local best, bestRest
@@ -238,8 +275,8 @@ end
 local function PreparationItem(step)
     if step.e ~= "item" or not step.id then return false end
     if step.slot ~= nil then return step.slot == 0 end
-    if ObjectivesLoading(step.q) or FindObjective(step) then return false end
-    for _, o in ipairs(QuestLog.GetQuestObjectives(step.q) or {}) do
+    if ObjectivesLoading(QuestId(step)) or FindObjective(step) then return false end
+    for _, o in ipairs(QuestLog.GetQuestObjectives(QuestId(step)) or {}) do
         if not o.type or o.type == "item" then return false end
     end
     return true
@@ -249,7 +286,7 @@ end
 local function RememberAcquired(step, index)
     if
         step.k == "objective"
-        and QuestLog.IsOnQuest(step.q)
+        and QuestLog.IsOnQuest(QuestId(step))
         and PreparationItem(step)
         and (FG.ItemCount(step.id) or 0) >= (step.c or 1)
     then
@@ -282,13 +319,14 @@ local function Held(step) return step.id ~= nil and (FG.ItemCount(step.id) or 0)
 --- The quest's accept step was passed without accepting it (skipped by hand, left behind,
 --- alternative done): its objectives and turn-in cannot be done.
 local function AcceptSkipped(step, index)
+    local q = QuestId(step)
     local at = acceptIndex[step.q]
     -- A book for the library in the bags: the quest is taken with its turn-in.
     if at and route.steps[at].hd and Held(route.steps[at]) then return false end
     return at ~= nil
         and at < index
-        and not QuestLog.IsOnQuest(step.q)
-        and not QuestLog.IsQuestFlaggedCompleted(step.q)
+        and not QuestLog.IsOnQuest(q)
+        and not QuestLog.IsQuestFlaggedCompleted(q)
         and IsDone(route.steps[at], at)
 end
 
@@ -305,7 +343,7 @@ local function PendingXP(step, index)
     for i = 1, QuestLog.GetNumQuestLogEntries() do
         local info = QuestLog.GetInfo(i)
         local q = info and not info.isHeader and info.questID
-        local at = q and turninIndex[q]
+        local at = q and QuestIndex(turninIndex, q)
         if
             at
             and at > index
@@ -324,9 +362,9 @@ end
 --- Whether a step is done; the second value is true when it was passed rather than played
 --- (marked by hand, left behind, alternative taken, accept skipped).
 function IsDone(step, index)
-    local q = step.q
+    local q = QuestId(step)
     local group = FG.Group
-    if state.marks[index or state.step] == "skip" or (q and state.skippedQuests[q]) then
+    if state.marks[index or state.step] == "skip" or (step.q and state.skippedQuests[step.q]) then
         -- Marked as done by hand; in a group guide, once every player in the party did too.
         if group:SkipShared(step, index or state.step) then return true, true end
         return false
@@ -352,8 +390,15 @@ function IsDone(step, index)
     -- An exclusive alternative (or the quest a breadcrumb leads to) is done or in progress:
     -- this quest cannot be taken any more.
     if step.alt and not QuestLog.IsOnQuest(q) then
+        local variants = PICKUP_VARIANTS[q]
         for _, other in ipairs(step.alt) do
-            if QuestLog.IsQuestFlaggedCompleted(other) or QuestLog.IsOnQuest(other) then return true, true end
+            if
+                other ~= q
+                and (not variants or variants ~= PICKUP_VARIANTS[other])
+                and (QuestLog.IsQuestFlaggedCompleted(other) or QuestLog.IsOnQuest(other))
+            then
+                return true, true
+            end
         end
     end
     if TRAVEL[step.k] and state.marks[index or state.step] == true then return true end
@@ -805,6 +850,7 @@ end
 --- What the guide shows for a step: its name, the line under it (quest, NPC, why), warnings and
 --- the progress when known (`withProgress`).
 local function TaskView(step, index, withProgress)
+    local q = QuestId(step)
     local kind = KINDS[step.k] or OTHER
     local title = QuestTitle(step)
     local v = { index = index, step = step, kind = step.k, icon = StepIcon(step, kind), color = kind.color, chips = {} }
@@ -812,9 +858,9 @@ local function TaskView(step, index, withProgress)
         v.name = title or step.t
         if title then v.sub = kind.label .. (step.n and (" • " .. step.n) or "") end
         -- A turn-in whose quest is not complete yet (objectives passed by hand): how far it is.
-        if step.k == "turnin" and withProgress and QuestLog.IsOnQuest(step.q) and not QuestLog.IsComplete(step.q) then
+        if step.k == "turnin" and withProgress and QuestLog.IsOnQuest(q) and not QuestLog.IsComplete(q) then
             local have, need = 0, 0
-            for _, o in ipairs(QuestLog.GetQuestObjectives(step.q) or {}) do
+            for _, o in ipairs(QuestLog.GetQuestObjectives(q) or {}) do
                 if (o.numRequired or 0) > 0 then
                     have = have + math.min(o.numFulfilled or 0, o.numRequired)
                     need = need + o.numRequired
@@ -841,7 +887,7 @@ local function TaskView(step, index, withProgress)
     elseif step.k == "objective" then
         v.name = step.n or step.t
         if withProgress then
-            local o = QuestLog.IsOnQuest(step.q) and FindObjective(step)
+            local o = QuestLog.IsOnQuest(q) and FindObjective(step)
             if o and o.numRequired and o.numRequired > 0 then
                 v.have, v.need = o.numFulfilled, o.numRequired
             end
@@ -914,7 +960,8 @@ local function Ahead()
             local skip = {}
             for index = state.step, c.step - 1 do
                 local step = route.steps[index]
-                local finished = step.k == "turnin" and QuestLog.IsOnQuest(step.q) and QuestLog.IsComplete(step.q)
+                local q = QuestId(step)
+                local finished = step.k == "turnin" and QuestLog.IsOnQuest(q) and QuestLog.IsComplete(q)
                 if not step.kp and not step.bg and not finished and not IsDone(step, index) then
                     table.insert(skip, index)
                 end
@@ -1084,7 +1131,7 @@ function Guide:Refresh()
                 and not step.tr
                 and not listed[index]
                 and (turnedIn[step.q] or false) == first
-                and QuestLog.IsOnQuest(step.q)
+                and QuestLog.IsOnQuest(QuestId(step))
                 and not IsDone(step, index)
             then
                 Add(index, false)
@@ -1449,7 +1496,7 @@ end
 local function QuestMob(npc)
     for _, index in ipairs(npc and questMobs[npc] or {}) do
         local s = route.steps[index]
-        if QuestLog.IsOnQuest(s.q) and not IsDone(s, index) then return true end
+        if QuestLog.IsOnQuest(QuestId(s)) and not IsDone(s, index) then return true end
     end
     return false
 end
@@ -1491,7 +1538,7 @@ end
 --- marked by hand, not left behind, no exclusive alternative taken). The quests it abandons,
 --- and the others, are not.
 function Guide:WantsQuest(questID)
-    local at = route and questID and acceptIndex[questID]
+    local at = route and questID and QuestIndex(acceptIndex, questID)
     if not at then return false end
     -- Offered for a book in the bags: taken at its turn-in.
     local step = route.steps[at]
@@ -1503,7 +1550,7 @@ end
 
 --- Whether accepting this quest starts an escort or an event (the guide's step says so).
 function Guide:IsEscort(questID)
-    local at = route and questID and acceptIndex[questID]
+    local at = route and questID and QuestIndex(acceptIndex, questID)
     return at ~= nil and route.steps[at].es == true
 end
 
@@ -1903,18 +1950,21 @@ function Guide:NextStepByQuest()
     -- Background objectives left behind and not done yet: in progress along the way.
     for i = 1, math.min(state.step - 1, #route.steps) do
         local s = route.steps[i]
-        if s.bg and not s.tr and not out[s.q] and QuestLog.IsOnQuest(s.q) and not IsDone(s, i) then
-            out[s.q] = { index = i, k = s.k, n = s.n, bg = true }
+        local q = QuestId(s)
+        if s.bg and not s.tr and not out[q] and QuestLog.IsOnQuest(q) and not IsDone(s, i) then
+            out[q] = { index = i, k = s.k, n = s.n, bg = true }
         end
     end
     for i = state.step, #route.steps do
         local s = route.steps[i]
-        if s.q and not out[s.q] and not IsDone(s, i) then out[s.q] = { index = i, k = s.k, n = s.n } end
+        local q = QuestId(s)
+        if q and not out[q] and not IsDone(s, i) then out[q] = { index = i, k = s.k, n = s.n } end
     end
     -- Quests already behind us in the route still belong to it.
     for i = 1, math.min(state.step - 1, #route.steps) do
         local s = route.steps[i]
-        if s.q and not out[s.q] then out[s.q] = { index = i, k = s.k, n = s.n } end
+        local q = QuestId(s)
+        if q and not out[q] then out[q] = { index = i, k = s.k, n = s.n } end
     end
     return out
 end
@@ -1994,7 +2044,7 @@ function Guide:Purchases()
             and s.q
             and (s.lvl or 0) <= level + 3
             and not state.skippedQuests[s.q]
-            and not QuestLog.IsQuestFlaggedCompleted(s.q)
+            and not QuestLog.IsQuestFlaggedCompleted(QuestId(s))
             and not IsDone(s, i)
         then
             out[s.id] = math.max(out[s.id] or 0, s.c or 1)

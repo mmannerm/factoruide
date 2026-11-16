@@ -1306,6 +1306,86 @@ Press("undo")
 assert(char.guide.step == 3, "nothing left to undo, step " .. char.guide.step)
 print("skip ok")
 
+-- Different trainer IDs for the same shaman delivery: follow the one actually accepted,
+-- while saved skips and the group's route keep the originally planned ID.
+do
+    for _, pair in ipairs({
+        { 1531, 1532 },
+        { 1532, 1531 },
+        { 1522, 1523 },
+        { 1522, 2983 },
+        { 1522, 2984 },
+        { 1528, 1529 },
+        { 1528, 2985 },
+        { 1528, 2986 },
+    }) do
+        local planned, actual = pair[1], pair[2]
+        local name = "pickup-variant-" .. actual
+        local steps = {
+            { k = "accept", t = "Accept Call", q = planned, alt = { actual }, lvl = 21 },
+            { k = "turnin", t = "Turn in Call", q = planned, alt = { actual }, lvl = 21 },
+            { k = "accept", t = "Exact prerequisite", q = 9801, pre = { planned }, lvl = 21 },
+            { k = "accept", t = "Either prerequisite", q = 9802, pa = { planned, actual }, lvl = 21 },
+        }
+        FG.Routes[name] = {
+            race = 7,
+            class = 8,
+            faction = "Alliance",
+            fromLevel = 21,
+            toLevel = 60,
+            time = 1,
+            steps = steps,
+        }
+        useRoute(name)
+        assert(FG.Guide:WantsQuest(actual), "another trainer's delivery can be accepted")
+        onQuest[actual] = true
+        FG.Guide:Advance()
+        assert(char.guide.step == 2, "alternate pickup keeps its turn-in")
+        assert(not FG.Guide:WantsQuest(planned), "no second pickup while the delivery is in the log")
+        local nextStep = FG.Guide:NextStepByQuest()
+        assert(nextStep[actual].index == 2 and not nextStep[planned], "tracker uses the actual quest ID")
+        FG.Tracker:Refresh()
+        assert(FG.Tracker.shown[1] == actual, "accepted variant appears in the tracker")
+        Press("skip")
+        assert(char.guide.skippedQuests[planned] and not char.guide.skippedQuests[actual], "skip keeps the route ID")
+        Press("undo")
+        assert(char.guide.step == 2 and not char.guide.skippedQuests[planned], "undo restores the actual delivery")
+        onQuest[actual] = nil
+        FG.Guide:Resync()
+        assert(char.guide.step == 1 and FG.Guide:WantsQuest(actual), "abandoning makes the pickup needed again")
+        onQuest[actual] = true
+        FG.Guide:Advance()
+        completed[actual], onQuest[actual] = true, nil
+        FG.Guide:Advance()
+        assert(char.guide.step == 3, "turning in the alternate completes the delivery")
+        assert(table.concat(FG.Guide:Pickups(10), ",") == "4", "prerequisites still use their exact game IDs")
+        assert(steps[1].q == planned and steps[2].q == planned, "the saved route's IDs are unchanged")
+        completed[actual] = nil
+    end
+    -- Call of Earth has the same title and exclusive IDs, but different errands and follow-ups.
+    FG.Routes["distinct-earth"] = {
+        race = 7,
+        class = 8,
+        faction = "Alliance",
+        fromLevel = 21,
+        toLevel = 60,
+        time = 1,
+        steps = {
+            { k = "accept", t = "Call of Earth", q = 1517, alt = { 1520 }, lvl = 21 },
+            { k = "turnin", t = "Call of Earth", q = 1517, alt = { 1520 }, lvl = 21 },
+            { k = "grind", t = "Grind", lvl = 60 },
+        },
+    }
+    useRoute("distinct-earth")
+    assert(not FG.Guide:WantsQuest(1520), "matching names and exclusions do not make quests interchangeable")
+    onQuest[1520] = true
+    FG.Guide:Advance()
+    assert(char.guide.step == 3 and not FG.Guide:NextStepByQuest()[1520], "a true exclusive is skipped, not followed")
+    onQuest[1520] = nil
+    useRoute("skip-test")
+end
+print("alternative quest pickups ok")
+
 -- Marking one objective does not omit its quest or replay earlier travel. Undo revisits only
 -- the restored work, whether the marked row was current, ahead, behind, or the route's last.
 do
