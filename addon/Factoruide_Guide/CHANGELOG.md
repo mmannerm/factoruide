@@ -6,7 +6,7 @@ under Unreleased; `scripts/release.sh` gives them the release's version.
 
 ## Unreleased
 
-- Shaman Call of Air, Fire and Water delivery quests recognize pickup from another trainer and keep the turn-in in your guide.
+- The original Horde Call of Air, Fire and Water deliveries now recognize equivalent trainer pickups and keep their turn-in.
 - WoW Forever: a click on a quest in the quest panel makes the game track it, as from the game's own tracker, and a click on the step already shown sets the game's waypoint again.
 - Candle of Beckoning and The Rescue's keys are recognized in your bags and stay done after use; right-click a pickup to retry.
 - Marking an objective done skips only that step and keeps your place; undo returns only to the work you marked.

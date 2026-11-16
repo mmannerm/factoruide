@@ -1322,8 +1322,8 @@ do
         local planned, actual = pair[1], pair[2]
         local name = "pickup-variant-" .. actual
         local steps = {
-            { k = "accept", t = "Accept Call", q = planned, alt = { actual }, lvl = 21 },
-            { k = "turnin", t = "Turn in Call", q = planned, alt = { actual }, lvl = 21 },
+            { k = "accept", t = "Accept Call", q = planned, alt = { actual, 9803 }, lvl = 21 },
+            { k = "turnin", t = "Turn in Call", q = planned, alt = { actual, 9803 }, lvl = 21 },
             { k = "accept", t = "Exact prerequisite", q = 9801, pre = { planned }, lvl = 21 },
             { k = "accept", t = "Either prerequisite", q = 9802, pa = { planned, actual }, lvl = 21 },
         }
@@ -1361,6 +1361,13 @@ do
         assert(table.concat(FG.Guide:Pickups(10), ",") == "4", "prerequisites still use their exact game IDs")
         assert(steps[1].q == planned and steps[2].q == planned, "the saved route's IDs are unchanged")
         completed[actual] = nil
+        onQuest[9803] = true
+        FG.Guide:Resync()
+        assert(
+            char.guide.step == 3 and not FG.Guide:WantsQuest(actual),
+            "an unrelated alternative still skips the delivery"
+        )
+        onQuest[9803] = nil
     end
     -- Call of Earth has the same title and exclusive IDs, but different errands and follow-ups.
     FG.Routes["distinct-earth"] = {
@@ -1385,6 +1392,52 @@ do
     useRoute("skip-test")
 end
 print("alternative quest pickups ok")
+
+-- Old guides can abandon a carried delivery before picking up its equivalent elsewhere.
+do
+    for _, case in ipairs({
+        { name = "keep-equivalent", planned = 1532, expected = 3 },
+        { name = "retake-exact", planned = 1531, expected = 1 },
+        { name = "drop-unneeded", expected = 1 },
+        { name = "other-player-delivery", planned = 1532, otherPlayer = true, expected = 1 },
+    }) do
+        local steps = { { k = "abandon", t = "Abandon Call of Air (not in this guide)", q = 1531, lvl = 21 } }
+        if case.planned then
+            steps[2] = { k = "accept", t = "Call of Air", q = case.planned, lvl = 21 }
+            steps[3] = { k = "turnin", t = "Call of Air", q = case.planned, lvl = 21 }
+        end
+        steps[#steps + 1] = { k = "grind", t = "Grind", lvl = 60 }
+        local guide =
+            { race = 7, class = 8, faction = "Alliance", fromLevel = 21, toLevel = 60, time = 1, steps = steps }
+        if case.otherPlayer then
+            guide.players = { { n = "Brouz-Realm", race = 7, class = 8 }, { n = "Other-Realm", race = 1, class = 1 } }
+            steps[3].mb = 2
+        end
+        FG.Routes[case.name] = guide
+        onQuest[1531] = true
+        useRoute(case.name)
+        assert(char.guide.step == case.expected, case.name .. " preserves the intended abandonment")
+        if case.name == "keep-equivalent" then
+            FG.Guide:ToggleSkip(3)
+            FG.Guide:Resync()
+            assert(char.guide.step == 1, "a skipped follow-up no longer needs the carried quest")
+            Press("undo")
+            assert(char.guide.step == 3, "restoring the delivery keeps the carried quest again")
+            onQuest[1531], completed[1531] = nil, true
+            FG.Guide:Advance()
+            assert(char.guide.step == 4, "the carried variant completes the old guide's delivery")
+            completed[1531] = nil
+        elseif case.name == "drop-unneeded" then
+            onQuest[1531], onQuest[1532] = nil, true
+            FG.Guide:Advance()
+            assert(char.guide.step == 2, "an absent abandon target does not drop its held equivalent")
+            onQuest[1532] = nil
+        end
+        onQuest[1531] = nil
+    end
+    useRoute("skip-test")
+end
+print("alternative delivery abandonment ok")
 
 -- Marking one objective does not omit its quest or replay earlier travel. Undo revisits only
 -- the restored work, whether the marked row was current, ahead, behind, or the route's last.

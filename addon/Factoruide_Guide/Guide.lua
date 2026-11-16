@@ -215,7 +215,7 @@ end
 local function QuestId(step)
     local q = step.q
     local variants = q and PICKUP_VARIANTS[q]
-    if not variants or QuestLog.IsOnQuest(q) then return q end
+    if not variants or step.k == "abandon" or QuestLog.IsOnQuest(q) then return q end
     for _, id in ipairs(variants) do
         if QuestLog.IsOnQuest(id) then return id end
     end
@@ -433,8 +433,17 @@ function IsDone(step, index)
         if QuestLog.IsQuestFlaggedCompleted(q) then return true end
         return AcceptSkipped(step, index or state.step), true
     elseif step.k == "abandon" then
-        -- Done once the quest has left the log (or was never in it).
-        return not QuestLog.IsOnQuest(q)
+        -- Drop only the exact quest named. Older guides may abandon a delivery before taking
+        -- its equivalent from another trainer: keep it when our later turn-in still needs it.
+        if not QuestLog.IsOnQuest(q) then return true end
+        for _, other in ipairs(PICKUP_VARIANTS[q] or {}) do
+            local at = other ~= q and turninIndex[other]
+            local turnin = at and route.steps[at]
+            if at and at > (index or state.step) and group:ForMe(turnin) and not IsDone(turnin, at) then
+                return true, true
+            end
+        end
+        return false
     elseif step.k == "grind" then
         -- To a level, or to an XP amount in it (grind placed before the end of the level), with
         -- the XP of the quests complete in the log the route turns in before that level.
