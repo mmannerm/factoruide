@@ -1409,13 +1409,20 @@ do
         steps[#steps + 1] = { k = "grind", t = "Grind", lvl = 60 }
         local guide =
             { race = 7, class = 8, faction = "Alliance", fromLevel = 21, toLevel = 60, time = 1, steps = steps }
+        local wasInGroup, wasInParty = IsInGroup, UnitInParty
         if case.otherPlayer then
+            IsInGroup = function() return true end
+            UnitInParty = function(name) return name == "Other" end
             guide.players = { { n = "Brouz-Realm", race = 7, class = 8 }, { n = "Other-Realm", race = 1, class = 1 } }
             steps[3].mb = 2
         end
         FG.Routes[case.name] = guide
         onQuest[1531] = true
         useRoute(case.name)
+        if case.otherPlayer then
+            fire("CHAT_MSG_ADDON", "FGGRP1", "S:1:4:1:21:0:1000", "PARTY", "Other-Realm")
+            assert(#FG.Group:Present() == 1, "the other player's unfinished delivery is present")
+        end
         assert(char.guide.step == case.expected, case.name .. " preserves the intended abandonment")
         if case.name == "keep-equivalent" then
             FG.Guide:ToggleSkip(3)
@@ -1434,6 +1441,7 @@ do
             onQuest[1532] = nil
         end
         onQuest[1531] = nil
+        IsInGroup, UnitInParty = wasInGroup, wasInParty
     end
     useRoute("skip-test")
 end
