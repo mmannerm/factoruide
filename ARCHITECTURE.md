@@ -33,8 +33,8 @@ window; unsupported or conflicting choices are reported. Required quests keep a 
 past its target level until they are complete. Generated guides and saved edits check completion.
 Entries can include `min_level` and/or `max_level`, inclusive at turn-in before reward XP:
 `--required-quest '{"quest":21,"min_level":3,"max_level":4}'`. IDs and exact names without
-bounds remain unbounded. Automatic class requirements favor upstream's default yellow-to-green
-window as a scheduling target; missing that target does not refuse a guide. Prerequisites and child quests inherit deadline priority,
+bounds remain unbounded. Automatic class requirements start early and use turning gray as a
+scheduling target, never a completion limit. Prerequisites and child quests inherit deadline priority,
 not the lower bound. Near a deadline, the chain's available quest work takes priority, though
 forced and must-have dungeons (their quest pickups and runs) can come first. Replay omits optional
 work needing grinding beyond a player-specified deadline. Turn-ins check each member
@@ -288,7 +288,8 @@ stays the real one.
 | Class unlock kept below the guide's levels: `unlock_delay_weight` per level gained before its turn-in | 300 s | A character that lacks a spell whose quests are gray (a late start, a recorded character) still gets it, and soon: such a quest gives little XP, so nothing else would bring it forward. |
 | Profession quest left out: `profession_quest_weight` each | 300 s | Only with professions leveled, for quests whose skill the curve reaches by the target level, once for a group of alternatives: Camping 101 at a trainer the route passes by is planned even when gray and worth no XP, without a long detour for it. |
 | Time outside the preferred zones: `preferred_zone_weight` × its time | 0.5 | Only with preferred zones: the guide stays in them unless leaving saves a lot. |
-| Missing goal: `mandatory_penalty` each | 7200 s | A required class quest left out or a forced dungeon not run: kept in the route unless impossible. |
+| Missing required quest | 10,000,000 s each | Class quests and explicitly required quests stay in the route unless impossible. |
+| Other missing goal: `mandatory_penalty` each | 7200 s | A forced zone, dungeon or reputation goal left unfinished. |
 
 
 ## 3. The search
@@ -347,7 +348,7 @@ that wins. A longer calculation gives a shorter guide.
 
 `export/` turns the best route into steps: a guide for the app (JSON) and a route for the addon
 (Lua). The app shows the route improving live while the search runs. On WoW Forever the guides can
-also go to Polestar as a guide pack (`export/polestar/`, its pack format 3, Polestar 0.2.5; `source.rs` writes the same steps as Polestar's own `.guide` source, which the app and `fg polestar --source` write into a pack folder, `job::add_polestar_source`): a goal per step,
+also go to Polestar as a guide pack (`export/polestar/`, its pack format 3, Polestar 0.2.5, a file per guide; `job::add_polestar_guide` adds one guide to a pack folder and retains legacy packed guides): a goal per step,
 the goals at one NPC in one step, and travels and notes in the step of the goal after them, since
 Polestar counts a travel done once a later goal of its step is (place names differ by language).
 

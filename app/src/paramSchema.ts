@@ -30,9 +30,22 @@ export const sections: Section[] = [
       { key: "dungeon_pickup_ahead", kind: "number", label: "Prendre les quêtes de donjon jusqu'à N niveaux avant", help: "Prises en passant à côté du donneur, gardées jusqu'au donjon.", unit: "niveaux", min: 0, max: 20, step: 1 },
       { key: "auction_house", kind: "bool", label: "Acheter à l'hôtel des ventes", help: "Les objets demandés par une quête que rien d'autre ne donne (faits par un métier, comme la Dynamite basique) sont achetés à l'hôtel des ventes le plus proche. Sans cela, ces quêtes sont laissées de côté." },
       { key: "allow_elite", kind: "bool", label: "Quêtes élites (groupe)", help: "Quêtes dont les objectifs sont des mobs élites hors donjon." },
+      {
+        key: "desolace_clan",
+        kind: "select",
+        label: "Clan centaure de Désolace",
+        help: "Les quêtes d'un clan demandent sa réputation, gagnée en tuant les centaures de l'autre clan (qui la perd). Les quêtes de l'autre clan sont laissées de côté. Auto : le guide choisit.",
+        options: [
+          { value: "auto", label: "Auto" },
+          { value: "magram", label: "Magram" },
+          { value: "gelkis", label: "Gelkis" },
+        ],
+      },
       { key: "all_class_quests", kind: "bool", label: "Toutes les quêtes de classe", help: "Impose toutes les quêtes de ta classe, pas seulement celles qui donnent un sort : plus long, mais rien n'est laissé de côté." },
       { key: "solo_elite_kills", kind: "number", label: "Élites seules (en solo)", help: "Sans les quêtes élites, garde celles qui demandent au plus ce nombre de kills d'élite (Hogger, Tharil'zun, Mor'Ladim...). 0 = aucune.", min: 0, max: 5, step: 1 },
       { key: "elite_kill_factor", kind: "number", label: "Durée d'un kill d'élite", help: "Par rapport à un mob normal du même niveau (les élites donnent 2× l'XP).", unit: "×", min: 1, max: 6, step: 0.5 },
+      { key: "min_drop_chance", kind: "number", label: "Taux de butin minimum", help: "Une quête dont un objet tombe moins souvent que ce taux, même sur le meilleur monstre, est retirée du guide (sauf quêtes de classe et quêtes demandées). 0 (défaut) = aucune.", unit: "%", scale: 0.01, min: 0, max: 100, step: 5 },
+      { key: "low_drop_weight", kind: "number", label: "Poids des kills sans butin", help: "Les kills qui ne font pas tomber l'objet de quête comptent ce poids en plus de leur temps : plus le taux est bas, plus la quête pèse. 0 (défaut) = leur temps seul ; plus haut = le guide évite les quêtes à butin rare quand d'autres valent presque autant.", min: 0, max: 5, step: 0.25 },
       {
         key: "progression",
         kind: "select",
@@ -203,7 +216,7 @@ export const sections: Section[] = [
 ];
 
 /** Settings of the simple view (left out of the advanced sections). */
-export const SIMPLE_KEYS: (keyof Params)[] = ["dungeons", "allow_elite", "crowded", "progression", "dungeon_from", "dungeon_to", "death_skips"];
+export const SIMPLE_KEYS: (keyof Params)[] = ["dungeons", "allow_elite", "crowded", "progression", "dungeon_from", "dungeon_to", "death_skips", "desolace_clan"];
 
 /** Speed presets applied on top of the defaults. */
 export const presets: { label: string; values: Partial<Params> }[] = [

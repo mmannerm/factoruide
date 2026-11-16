@@ -549,6 +549,20 @@ pub(super) const TEMPLATES: &[(&str, [&str; 9])] = &[
         ],
     ),
     (
+        "grind.reputation",
+        [
+            "Kill {mobs} {npc} for reputation with {faction} (~{minutes} min)",
+            "Tuer {mobs} {npc} pour la réputation auprès de {faction} (~{minutes} min)",
+            "{mobs} {npc} für Ruf bei {faction} töten (~{minutes} Min.)",
+            "Matar {mobs} {npc} por reputación con {faction} (~{minutes} min)",
+            "Matar {mobs} {npc} pela reputação com {faction} (~{minutes} min)",
+            "Убить {npc} ({mobs}) ради репутации: {faction} (~{minutes} мин)",
+            "{faction} 평판을 위해 {npc} {mobs}마리 처치 (~{minutes}분)",
+            "击杀{mobs}只{npc}以获得{faction}声望（约{minutes}分钟）",
+            "擊殺{mobs}隻{npc}以獲得{faction}聲望（約{minutes}分鐘）",
+        ],
+    ),
+    (
         "checkpoint",
         [
             "Checkpoint: be level {level} before going on (grind if needed)",
@@ -747,15 +761,15 @@ pub(super) const TEMPLATES: &[(&str, [&str; 9])] = &[
     (
         "profession.book",
         [
-            "Buy {item} from {who} and read it to raise your {profession} skill cap to {cap}",
-            "Acheter {item} auprès de {who} et le lire pour augmenter le plafond de {profession} à {cap}",
-            "{item} bei {who} kaufen und lesen, um die Fertigkeitsgrenze für {profession} auf {cap} zu erhöhen",
-            "Comprar {item} a {who} y leerlo para aumentar el límite de {profession} a {cap}",
-            "Comprar {item} de {who} e ler para aumentar o limite de {profession} para {cap}",
-            "Купить {item} у {who} и прочитать, чтобы повысить предел навыка «{profession}» до {cap}",
-            "{who}에게서 {item} 구매 후 읽어 {profession} 숙련도 한도를 {cap}(으)로 올리기",
-            "向{who}购买{item}并阅读，将{profession}技能上限提高至{cap}",
-            "向{who}購買{item}並閱讀，將{profession}技能上限提高至{cap}",
+            "Buy {book} from {who} and read it to learn Expert {profession}",
+            "Acheter {book} auprès de {who} et le lire pour apprendre {profession} (expert)",
+            "{book} bei {who} kaufen und lesen, um {profession} (Experte) zu lernen",
+            "Comprar {book} a {who} y leerlo para aprender {profession} (experto)",
+            "Comprar {book} de {who} e lê-lo para aprender {profession} (perito)",
+            "Купить «{book}» ({who}) и прочитать, чтобы изучить профессию «{profession}» (специалист)",
+            "{who}에게서 {book} 구입 후 읽어 {profession} (전문가) 배우기",
+            "向{who}购买{book}并阅读，学习{profession}（专家）",
+            "向{who}購買{book}並閱讀，學習{profession}（專家）",
         ],
     ),
     (

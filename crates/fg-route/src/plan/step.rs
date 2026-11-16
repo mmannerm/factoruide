@@ -14,6 +14,10 @@ const TIMED_SHARE: f64 = 0.75;
 /// for it.
 const AT_HAND: f64 = 100.0;
 
+/// Cost of a class quest or a quest the player asked for left out: more than any route could save,
+/// so the search never trades one for time. Only one that cannot be done at all stays out.
+const MUST_HAVE_LEFT_OUT: f64 = 1e7;
+
 impl Simulator<'_> {
     /// Training after a step: the class, then the professions. Not inside a dungeon (its steps
     /// of unknown places stand at its entrance, maybe by a trainer): once out of it.
@@ -297,7 +301,7 @@ impl Simulator<'_> {
             let start = &q.starts[0].pos;
             let content = xp::content_at(start.continent, start.zone);
             let mob_xp = (q.start_kills
-                * self.rules().mob_xp(s.level, q.start_mob_level, content)
+                * self.rules().mean_mob_xp(s.level, q.start_mob_level, content)
                 * self.params.group_xp_share()) as i64;
             s.spent.mob_xp += self.growth().gain_kills(s, mob_xp);
             self.growth().gather(s, q.starts[0].zone, q.start_kills);
@@ -340,9 +344,9 @@ impl Simulator<'_> {
                 .count() as u32;
             s.forced_left = s.forced_left.saturating_sub(u32::from(q.zone_forced) + closed);
         }
-        for (g, goal) in self.params.reputation_goals.iter().enumerate() {
+        for (g, followed) in self.model.followed_factions(self.params).into_iter().enumerate() {
             for &(faction, points) in &q.reputation {
-                if faction == goal.faction {
+                if faction == followed {
                     s.reputation[g] += points as f32;
                 }
             }
@@ -422,6 +426,7 @@ impl Simulator<'_> {
         // Chosen once, before grinding to it: the place the stop is gated by is the one gone to.
         let spot = self.spot_of(s, stop);
         self.grind_to_gate(s, stop, spot, record);
+        self.grind_reputation(s, stop, record);
         let loc = self.arrive(s, stop, spot, record);
         if !(Self::timed(stop.kind) && self.failed_in_time(s, stop.index, record)) {
             let rewards = if stop.kind == Kind::TurnIn {
@@ -742,6 +747,57 @@ impl Simulator<'_> {
             .fold(combat.guard_level(&q.end_guard, s.might()), i64::max)
     }
 
+    /// Before taking a quest asking for a standing the character does not have: kill, at the
+    /// nearest place of the creatures whose kills bring it there, as many as it takes
+    /// (`Event::GrindReputation`), what each kill takes from other factions counted too.
+    fn grind_reputation(&self, s: &mut State, stop: Stop, record: &mut impl FnMut(&State, Event)) {
+        if stop.kind != Kind::Accept || self.mode == Mode::Replay || self.explicit {
+            return;
+        }
+        let Some((faction, min)) = self.quest(stop.index).required_reputation else {
+            return;
+        };
+        let Some(k) = self.model.followed_index(self.params, faction) else {
+            return;
+        };
+        let have = f64::from(s.reputation[k]);
+        if have >= min {
+            return;
+        }
+        let camps = self.model.reputation_camps.get(&faction).map_or(&[][..], Vec::as_slice);
+        let best = (camps.iter().enumerate())
+            .filter(|(_, c)| c.gain.cap >= min)
+            .flat_map(|(i, c)| c.places.iter().map(move |p| (i, p)))
+            .min_by(|a, b| s.pos.dist(&a.1.0).total_cmp(&s.pos.dist(&b.1.0)));
+        let Some((i, &(near, zone))) = best else {
+            return;
+        };
+        let camp = &camps[i];
+        self.go(s, &near, zone, record);
+        if !s.time.is_finite() {
+            return;
+        }
+        let kills = ((min - have) / camp.gain.value).ceil().max(1.0) as u32;
+        let seconds = self.growth().kill_for_reputation(s, kills, camp.level);
+        for effect in &camp.effects {
+            if let Some(j) = self.model.followed_index(self.params, effect.faction) {
+                s.reputation[j] = effect.after(f64::from(s.reputation[j]), f64::from(kills)) as f32;
+            }
+        }
+        record(
+            s,
+            Event::GrindReputation {
+                faction,
+                camp: i,
+                kills,
+                points: f64::from(s.reputation[k]),
+                seconds,
+                near,
+                zone,
+            },
+        );
+    }
+
     fn grind_to_gate(
         &self,
         s: &mut State,
@@ -945,7 +1001,9 @@ impl Simulator<'_> {
         let wait = self.shared_wait(&s.together, o, mobs);
         s.together = s.together.with(kind_of(o), &o.pool, mobs);
         let extra = (o.extra - o.pool.wait) * share + wait;
-        let kill_work = kills * self.combat().kill_time(s.level, s.bonus, o);
+        let kill_time = self.combat().kill_time(s.level, s.bonus, o);
+        let kill_work = kills * kill_time;
+        s.spent.low_drop += o.low_drop_kills * left * kill_time;
         let other = uses * self.params.object_time + extra;
         self.growth().gather(s, o.loc.zone, kills);
         s.time += kill_work + other;
@@ -954,7 +1012,41 @@ impl Simulator<'_> {
         let mob_xp = (kills * self.combat().mob_xp(s.level, o)) as i64;
         s.spent.mob_xp += self.growth().gain_kills(s, mob_xp);
         self.hold(s, i, k);
+        self.credit_kills(s, quest, k, o, kills);
         (kill_work, uses * self.params.object_time)
+    }
+
+    /// The `kills` of objective `k` of `quest` at `o` count for the other objectives of the log
+    /// wanting those mobs, wherever they are done, as in the game: their share done
+    /// (`State::started`), the objective done once it is whole.
+    fn credit_kills(&self, s: &mut State, quest: u32, k: u8, o: &Objective, kills: f64) {
+        if kills <= 0.0 || o.mobs.is_empty() {
+            return;
+        }
+        let each_kind = kills / o.mobs.len() as f64;
+        for (mob, _) in &o.mobs {
+            let Some(credits) = self.ix.credit.get(mob) else {
+                continue;
+            };
+            for &(j, k2, each) in credits {
+                let ju = j as usize;
+                if j == quest && k2 == k || !s.accepted[ju] || s.turned[ju] || s.objectives[ju] & (1 << k2) != 0 {
+                    continue;
+                }
+                let share = each_kind * each;
+                let total = if let Some(e) = s.started.iter_mut().find(|e| e.0 == j && e.1 == k2) {
+                    e.2 = (e.2 + share).min(1.0);
+                    e.2
+                } else {
+                    s.started.push((j, k2, share.min(1.0)));
+                    share
+                };
+                if total >= 1.0 - 1e-9 {
+                    s.started.retain(|e| !(e.0 == j && e.1 == k2));
+                    self.hold(s, ju, k2);
+                }
+            }
+        }
     }
 
     /// Dungeon `i` entered: its run's fixed time, its mobs' XP, the boss loot the character may
@@ -1035,7 +1127,8 @@ impl Simulator<'_> {
         // flights and missing goals cost.
         s.time
             + self.weights(&s.spent)
-            + (missing + zone + dungeons + self.reputation_goals_unmet(s)) as f64 * self.params.mandatory_penalty
+            + f64::from(missing) * MUST_HAVE_LEFT_OUT
+            + (zone + dungeons + self.reputation_goals_unmet(s)) as f64 * self.params.mandatory_penalty
             + s.spent.reputation_missing * self.params.reputation_weight
             + f64::from(s.spent.missing_profession_quests) * self.params.profession_quest_weight
     }

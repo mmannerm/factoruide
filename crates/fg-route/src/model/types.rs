@@ -258,8 +258,8 @@ pub struct ProfessionTrainer {
     /// The highest skill cap the trainer teaches, or the book's exact cap (75, 150, 225 or 300).
     pub cap: i64,
     pub loc: Loc,
-    /// A book grants only its own rank, not the lower ranks a trainer can also teach.
-    pub book: Option<&'static crate::profession::ProfessionBook>,
+    /// A vendor of this book, which teaches the expert rank only, rather than a trainer.
+    pub book: Option<&'static crate::profession::ExpertBook>,
 }
 
 #[derive(Debug, Clone)]
@@ -268,7 +268,10 @@ pub struct Objective {
     pub text: String,
     /// Expected number of kills, their level, and object interactions.
     pub kills: f64,
-    pub mob_level: i64,
+    /// Of `kills`, those that drop nothing for an item objective (`1 - rate` of them), weighed by
+    /// `Params::low_drop_weight`: 0 for the other objectives.
+    pub low_drop_kills: f64,
+    pub mob_level: f64,
     pub uses: f64,
     /// Fixed extra time (buying, exploring).
     pub extra: f64,
@@ -280,6 +283,11 @@ pub struct Objective {
     pub count: f64,
     /// NPCs to target for it (mobs to kill, or that drop the item): ID and English name.
     pub mobs: Vec<(i64, String)>,
+    /// Every mob whose kill gives progress on it, with the share of the objective one kill
+    /// gives: 1 / kills for a kill objective, the drop rate over the items asked for a loot
+    /// objective. Kills for another objective count for it, wherever it is
+    /// (`plan::State::started`).
+    pub credit: Vec<(i64, f64)>,
     /// Where its mobs or objects are, to kill or loot those met on the way to other stops (kill
     /// and loot objectives on normal mobs, objects to use or loot).
     pub spots: Option<Spots>,
@@ -365,6 +373,14 @@ pub struct Vendor {
 }
 
 impl Objective {
+    /// Whether it is done around `pos`: its place, or a spawn of its mobs, within `radius` of it
+    /// (a camp of harpies spread over a hillside is one place). Never in a dungeon.
+    pub fn around(&self, pos: &Pos, radius: f64) -> bool {
+        self.dungeon_of().is_none()
+            && (self.loc.pos.continent == pos.continent && self.loc.pos.dist(pos) <= radius
+                || self.spots.as_ref().is_some_and(|s| s.near(pos, radius)))
+    }
+
     /// The dungeon the objective belongs to: done by entering it (`dungeon`), or inside it.
     pub fn dungeon_of(&self) -> Option<usize> {
         self.dungeon.or(self.loc.inside.map(usize::from))
@@ -441,6 +457,17 @@ impl Spots {
             max,
             points,
         })
+    }
+
+    /// Whether one of the spawns is within `radius` of `pos`.
+    #[must_use]
+    pub fn near(&self, pos: &Pos, radius: f64) -> bool {
+        pos.continent == self.continent
+            && pos.x >= self.min.0 - radius
+            && pos.x <= self.max.0 + radius
+            && pos.y >= self.min.1 - radius
+            && pos.y <= self.max.1 + radius
+            && (self.points.iter()).any(|&(x, y)| (x - pos.x).hypot(y - pos.y) <= radius)
     }
 
     /// Other places to look for them than around `first` (world x, y): the centres of up to
@@ -542,6 +569,8 @@ pub struct Quest {
     /// Mean seconds waited at the giver before it offers the quest: a giver offering it only
     /// after an event that comes back now and then (Private Thorsen saved from his ambush).
     pub start_wait: f64,
+    /// Taking it starts an escort or an event (QuestFlags 2: the party is asked to join it).
+    pub escort: bool,
     pub starts: Vec<Loc>,
     pub ends: Vec<Loc>,
     pub objectives: Vec<Objective>,
@@ -557,7 +586,7 @@ pub struct Quest {
     pub breadcrumb_for: Option<i64>,
     /// Work to get the item that starts the quest (kills at mob level, object uses).
     pub start_kills: f64,
-    pub start_mob_level: i64,
+    pub start_mob_level: f64,
     pub start_uses: f64,
     /// An explicit auction-house purchase and assembly before accepting the item quest.
     pub auction_start: Option<AuctionStart>,
@@ -602,6 +631,9 @@ pub struct Quest {
     /// Reputation points its turn-in gives the character, by Faction ID (the human's Diplomacy
     /// counted).
     pub reputation: Vec<(i64, f64)>,
+    /// The standing it asks for before it is offered: Faction ID and points from Neutral's
+    /// bottom (Friendly 3000).
+    pub required_reputation: Option<(i64, f64)>,
     /// The members of the group it is for (race and class), a bit each: the character's 1.
     pub members: u8,
 }
@@ -671,8 +703,15 @@ pub struct Model {
     pub initial: Initial,
     /// Names in the guide's language.
     pub names: Names,
-    /// Names of the factions of the reputation goals (Faction ID -> name in the database).
+    /// Names of the factions of the reputation goals and of `reputation_factions` (Faction ID ->
+    /// name in the database).
     pub faction_names: HashMap<i64, String>,
+    /// The factions whose reputation the route follows besides the goals' (`State::reputation`
+    /// holds the goals' first, then these): those quests ask a standing with, and the ones the
+    /// kills for those take from.
+    pub reputation_factions: Vec<i64>,
+    /// The creatures to kill for the reputation of each faction a quest asks a standing with.
+    pub reputation_camps: HashMap<i64, Vec<super::reputation::RepCamp>>,
     /// Areas that give XP when discovered.
     pub explore: Vec<ExploreArea>,
     /// Indexes into `explore` by zone.
@@ -994,5 +1033,22 @@ impl EntityKind {
             "dungeon" => Some(Self::Dungeon),
             _ => None,
         }
+    }
+}
+
+impl Model {
+    /// The factions `State::reputation` follows, in its order: the goals', then
+    /// `reputation_factions`.
+    pub fn followed_factions(&self, params: &crate::params::Params) -> Vec<i64> {
+        (params.reputation_goals.iter().map(|g| g.faction))
+            .chain(self.reputation_factions.iter().copied())
+            .collect()
+    }
+
+    /// The index of `faction` in `followed_factions`, without building it.
+    pub fn followed_index(&self, params: &crate::params::Params, faction: i64) -> Option<usize> {
+        let goals = &params.reputation_goals;
+        (goals.iter().position(|g| g.faction == faction))
+            .or_else(|| (self.reputation_factions.iter().position(|&f| f == faction)).map(|k| goals.len() + k))
     }
 }

@@ -60,13 +60,15 @@ impl Objective {
             loc,
             text,
             kills: 0.0,
-            mob_level: 0,
+            low_drop_kills: 0.0,
+            mob_level: 0.0,
             uses: 0.0,
             extra,
             dungeon: None,
             elite: false,
             count: 1.0,
             mobs: vec![],
+            credit: vec![],
             pull: 1.0,
             spawns: 0,
             pack: 1.0,
@@ -234,7 +236,7 @@ impl QuestBuilder<'_> {
         // Mobs to kill set the power by themselves; objects, areas and NPCs to talk to may
         // stand among stronger ones.
         for o in objs.iter_mut().filter(|o| o.kills <= 0.0 && o.dungeon_of().is_none()) {
-            o.guard = self.sources.guards.around(&o.loc.pos);
+            o.guard = self.sources.guards.around(&o.loc.pos, r.level.unwrap_or(1).max(1));
         }
         self.spots_and_crowd(r, objs);
     }
@@ -327,7 +329,9 @@ impl QuestBuilder<'_> {
                 .get_item(quest, target, text, amount)?
                 .map(|o| Objective { item: true, ..o })),
             ObjectiveKind::Trigger => self.explore(quest, text, extra.as_deref()).map(Some),
-            ObjectiveKind::Other => Err("reputation/spell objective"),
+            // Asked for before the quest is taken (`Quest::required_reputation`).
+            ObjectiveKind::Reputation => Ok(None),
+            ObjectiveKind::Other => Err("spell objective"),
         }
     }
 
@@ -409,7 +413,7 @@ impl QuestBuilder<'_> {
                         .or(quest_dungeon)
                 }
             }
-            ObjectiveKind::Trigger | ObjectiveKind::Other => None,
+            ObjectiveKind::Trigger | ObjectiveKind::Reputation | ObjectiveKind::Other => None,
         }?;
         let dungeon = &self.sources.dungeons[d];
         let name = self.sources.entities.name(kind.entity(), target);
@@ -572,6 +576,7 @@ impl QuestBuilder<'_> {
                 .iter()
                 .map(|id| (*id, entities.name(EntityKind::Npc, *id)))
                 .collect(),
+            credit: credited.iter().map(|id| (*id, 1.0 / kills.max(1.0))).collect(),
             spots: if elite { None } else { Spots::new(&points, &pos) },
             ..Objective::plain(loc(pos, zone), String::new(), 0.0)
         };

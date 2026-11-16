@@ -181,7 +181,7 @@ impl<'s> Simulator<'s> {
             log: 0,
             grind_used: 0,
             farm_used: 0,
-            reputation: (0..self.params.reputation_goals.len())
+            reputation: (0..self.params.reputation_goals.len() + self.model.reputation_factions.len())
                 .map(|g| init.reputation.get(g).copied().unwrap_or(0.0) as f32)
                 .collect(),
             forced_left: 0,
@@ -298,6 +298,7 @@ impl<'s> Simulator<'s> {
             growth: self.growth(),
             availability: self.availability(),
             to_level: self.profile.to_level,
+            credit: &self.ix.credit,
         }
     }
 
@@ -322,6 +323,7 @@ impl<'s> Simulator<'s> {
         (self.params.grind_weight() - 1.0) * spent.grinding
             + (self.params.grind_over_weight() - self.params.grind_weight()) * spent.grind_over
             + (self.params.grind_weight - 1.0).max(0.0) * spent.farming
+            + self.params.low_drop_extra() * spent.low_drop
             + (self.params.flight_weight - 1.0) * spent.flights
             + spent.flight_gold
             + spent.bag_overflow

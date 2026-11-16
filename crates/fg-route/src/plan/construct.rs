@@ -6,7 +6,7 @@ use super::{Planner, ZoneChange};
 use crate::params::Construction;
 use crate::world::Pos;
 
-/// Leave room for a deadline chain before the last two levels of its completion window.
+/// Leave room for a player-specified deadline chain before its last two levels.
 const DEADLINE_AHEAD: i64 = 2;
 
 /// A stop `nearest_stop` weighs: where it is, its weights, the quest that must be worth taking
@@ -338,7 +338,8 @@ impl Planner<'_> {
                         * dungeon
                         * preferred
                         * self.worth().level_fit(i, s.level)
-                        * self.worth().efficiency_weight(s, i, s.level),
+                        * self.worth().efficiency_weight(s, i, s.level)
+                        * self.worth().shared_weight(s, i, s.level),
                     Some(i),
                     lower,
                 );
@@ -355,17 +356,26 @@ impl Planner<'_> {
                 add(stop, weight, None, bound.at(&self.places().pos(s, stop)));
             }
         }
+        // An imminent player deadline wins over starting another class chain. Only members
+        // still needing the quest set its urgency; an older finished member cannot rush it.
         let deadline = candidates
             .iter()
             .filter(|c| c.stop.is_quest())
-            .filter_map(|c| {
-                let deadline = self.quest(c.stop.index).priority_deadline?;
-                let level = self.availability().completion_ceiling(s, c.stop.index);
-                (deadline < self.rules().max_level && deadline <= level + DEADLINE_AHEAD).then_some(deadline)
-            })
+            .filter_map(|c| self.imminent_deadline(s, c.stop.index))
             .min();
         if let Some(deadline) = deadline {
-            candidates.retain(|c| !c.stop.is_quest() || self.quest(c.stop.index).priority_deadline == Some(deadline));
+            candidates.retain(|c| !c.stop.is_quest() || self.imminent_deadline(s, c.stop.index) == Some(deadline));
+        } else {
+            // Automatic class chains start early, so a long chain has time to finish before
+            // gray. Explicit choices without a nearby deadline remain free to fit the route.
+            let class = |c: &Candidate| {
+                c.stop.is_quest()
+                    && !self.quest(c.stop.index).required
+                    && self.quest(c.stop.index).priority_deadline.is_some()
+            };
+            if candidates.iter().any(class) {
+                candidates.retain(|c| !c.stop.is_quest() || class(c));
+            }
         }
         // Staying in a zone only matters while it has something left to do: with few stops left
         // there, the weight of leaving it fades to nothing (`Params::zone_stay_quests`).
@@ -380,7 +390,7 @@ impl Planner<'_> {
             }
         }
         if let Some(stop) = self.least_score(s, candidates) {
-            return Some(stop);
+            return Some(self.sharing_first(s, stop));
         }
 
         // Zone exhausted: move on to the closest quest worth doing on its own, wherever it is.
@@ -424,6 +434,71 @@ impl Planner<'_> {
             }
         }
         self.least_score(s, candidates)
+    }
+
+    /// A player-specified deadline close to an unfinished member's level. Class targets are
+    /// advisory and start their chains early without displacing these explicit bounds.
+    fn imminent_deadline(&self, s: &State, i: u32) -> Option<i64> {
+        let q = self.quest(i);
+        let deadline = q.priority_deadline.filter(|_| q.required)?;
+        let level = self.availability().completion_ceiling(s, i);
+        (deadline < self.rules().max_level && deadline <= level + DEADLINE_AHEAD).then_some(deadline)
+    }
+
+    /// Before going to the camp of an objective stop, the quest wanting the same mobs there to
+    /// take first, when its detour costs less than the kills it then shares (the scraps of canvas
+    /// on the sailors of Vanquish the Betrayers): `stop` itself otherwise.
+    pub(crate) fn sharing_first(&self, s: &State, stop: Stop) -> Stop {
+        let Kind::Objective(k) = stop.kind else { return stop };
+        // Sharing kills is optional: preserve the required stop selected for an imminent
+        // deadline, and finish a running timed quest before taking another quest's detour.
+        if self.imminent_deadline(s, stop.index).is_some()
+            || s.timers.iter().any(|&(quest, _)| quest == stop.index)
+            || self.on_clock(s, stop.index)
+        {
+            return stop;
+        }
+        let sim = self.sim();
+        let o = sim.spot(s, stop.index, k);
+        if o.kills <= 0.0 || o.dungeon_of().is_some() {
+            return stop;
+        }
+        let trips = self.trips();
+        let at = trips.at(s);
+        let open = trips.open_links(s);
+        let reach = self.quest_reach(s);
+        let direct = trips.fastest(s, &o.loc.pos).0;
+        let r = self.params.gather_radius;
+        let mut best: Option<(f64, Stop)> = None;
+        for (mob, _) in &o.mobs {
+            let Some(credits) = self.ix.credit.get(mob) else {
+                continue;
+            };
+            for &(j, k2, _) in credits {
+                let ju = j as usize;
+                let q = self.quest(j);
+                let theirs = &q.objectives[usize::from(k2)];
+                if j == stop.index
+                    || s.accepted[ju]
+                    || s.turned[ju]
+                    || q.min_level > s.level
+                    || self.combat().guard_need(&q.start_guard) > reach
+                    || !(theirs.around(&o.loc.pos, r) || o.around(&theirs.loc.pos, r))
+                    || !self.availability().can_accept(s, j)
+                {
+                    continue;
+                }
+                let accept = Stop::quest(j, Kind::Accept);
+                let giver = self.places().pos(s, accept);
+                let trip = trips.fastest(s, &giver).0;
+                let detour = trip + at.leg(&giver, &o.loc.pos, s.level, s.known, open).0 - direct;
+                let gain = self.worth().shared_saving(s, j, s.level, true).0 - detour;
+                if gain > 0.0 && best.is_none_or(|(g, _)| gain > g) && self.worth().worth_it(s, j, s.level, trip) {
+                    best = Some((gain, accept));
+                }
+            }
+        }
+        best.map_or(stop, |(_, accept)| accept)
     }
 
     /// The candidate of least score (the first of equal ones), weighed from the least bound up.
@@ -1385,6 +1460,53 @@ mod deadline_tests {
             let state = plan.sim().initial_state();
             let next = plan.nearest_stop(&state, None).unwrap();
             assert_eq!(next, Stop::quest(u32::from(need != 3), Kind::Accept));
+        }
+    }
+
+    #[test]
+    fn an_imminent_player_deadline_precedes_an_available_class_chain() {
+        let mut p = crate::plan::tests::quests_at_start(2);
+        p.model.quests[0].required = true;
+        p.model.quests[0].mandatory = true;
+        p.model.quests[0].priority_deadline = Some(1);
+        p.model.quests[0].completion_window.max_level = Some(1);
+        p.model.quests[0].starts[0].pos.x += 10_000.0;
+        p.model.quests[1].mandatory = true;
+        p.model.quests[1].implicit_window = true;
+        p.model.quests[1].priority_deadline = Some(1);
+        let plan = Planner::new(&p.model, &p.world, &p.params, &p.profile);
+        let state = plan.sim().initial_state();
+        assert_eq!(plan.nearest_stop(&state, None), Some(Stop::quest(0, Kind::Accept)));
+    }
+
+    #[test]
+    fn shared_camp_pickups_do_not_displace_a_deadline_or_running_timer() {
+        for (deadline, timed) in [(None, false), (Some(1), false), (None, true)] {
+            let mut p = crate::plan::tests::shared_camp();
+            p.model.initial.accepted.clear();
+            p.model.quests[0].required = true;
+            p.model.quests[0].mandatory = true;
+            p.model.quests[0].priority_deadline = deadline;
+            p.model.quests[0].completion_window.max_level = deadline;
+            p.model.quests[0].time_limit = timed.then_some(60.0);
+            p.model.quests[1].xp = 1000;
+            let plan = Planner::new(&p.model, &p.world, &p.params, &p.profile);
+            let mut state = plan.sim().initial_state();
+            plan.sim().accept(&mut state, 0);
+            let kill = Stop::quest(0, Kind::Objective(0));
+            let expected = if deadline.is_some() || timed {
+                kill
+            } else {
+                Stop::quest(1, Kind::Accept)
+            };
+            assert_eq!(
+                plan.sharing_first(&state, kill),
+                expected,
+                "deadline {deadline:?}, timed {timed}"
+            );
+            if deadline.is_some() {
+                assert_eq!(plan.nearest_stop(&state, None), Some(kill));
+            }
         }
     }
 }

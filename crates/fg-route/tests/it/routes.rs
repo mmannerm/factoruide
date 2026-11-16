@@ -1029,6 +1029,58 @@ fn a_creature_of_no_known_faction_in_a_capital_guards_nothing() {
     assert_eq!(guard(14), 61, "a monster's faction");
 }
 
+/// Out of the capitals too, a creature of no known faction or side around a quest giver is a
+/// townsman (WoW Forever's Southshore Defenders, placed by the sources with no side), not a
+/// hostile guard; one of a hostile faction still is.
+#[test]
+fn a_creature_of_no_known_faction_beside_a_giver_guards_nothing() {
+    let guard = |faction: i64| {
+        let conn = Fixture::new(Edition::Classic)
+            .file("classic_northshire")
+            .toml(&format!(
+                "[[npc]]\nid = 90100\nname = \"Townsfolk\"\nlevel = 61\nfaction = {faction}\nat = [{{ zone = 12, x = 48.9, y = 40.3 }}, {{ zone = 12, x = 49.0, y = 40.0 }}, {{ zone = 12, x = 48.8, y = 40.1 }}]\n"
+            ))
+            .open();
+        let p = prepare_in(&conn, "human", "warrior", 10, &[], None);
+        p.model.quests[quest(&p, 33).unwrap() as usize].start_guard.level
+    };
+    assert!(guard(0) < 61, "no faction known");
+    assert_eq!(guard(14), 61, "a monster's faction");
+}
+
+/// The creatures of no known side around an objective guard it out in the field, near the quest's
+/// level; not in a town of the character's side (Southshore Defenders by Serge Hinott, in Tarren
+/// Mill), nor far above the quest (level 55 by a level 20 quest). One of a hostile faction still
+/// guards it there.
+#[test]
+fn a_creature_of_no_known_faction_guards_an_objective_only_out_of_town_near_its_level() {
+    let guard = |faction: i64, level: i64, friend: bool| {
+        let at =
+            "[{ zone = 12, x = 60.0, y = 60.0 }, { zone = 12, x = 60.1, y = 60.1 }, { zone = 12, x = 59.9, y = 60.1 }]";
+        let mut toml = format!(
+            "[[npc]]\nid = 90100\nname = \"Defender\"\nlevel = {level}\nfaction = {faction}\nat = {at}\n\n\
+             [[quest]]\nid = 90200\nname = \"Wait for the cure\"\nlevel = 5\nraces_mask = 77\nzone = 12\nxp = 300\n\
+             starts = [{{ npc = 197 }}]\nends = [{{ npc = 197 }}]\n\
+             objectives = [{{ trigger = \"Cure Completed\", at = {{ zone = 12, x = 60.0, y = 60.0 }} }}]\n"
+        );
+        if friend {
+            toml.push_str("\n[[npc]]\nid = 90101\nname = \"Apothecary\"\nlevel = 30\nfaction = 12\nfriendly_to = \"A\"\nat = [{ zone = 12, x = 60.05, y = 60.0 }]\n");
+        }
+        let conn = Fixture::new(Edition::Classic)
+            .file("classic_northshire")
+            .toml(&toml)
+            .open();
+        let p = prepare_in(&conn, "human", "warrior", 10, &[], None);
+        p.model.quests[quest(&p, 90200).unwrap() as usize].objectives[0]
+            .guard
+            .level
+    };
+    assert_eq!(guard(0, 8, false), 8, "out in the field, near the quest's level");
+    assert_eq!(guard(0, 8, true), 0, "in a town of the character's side");
+    assert_eq!(guard(0, 55, false), 0, "far above the quest");
+    assert_eq!(guard(14, 55, true), 55, "a monster's faction");
+}
+
 /// The Deadmines' Collecting Memories and Oh Brother... are filed under the dungeon but their
 /// items drop from elites in the quarry beside its entrance (GitHub #82): done with the dungeon's
 /// group, at that place; Red Silk Bandanas also drops inside and stays a dungeon objective.
@@ -1421,7 +1473,9 @@ fn gathering_next_to_kills_overlaps_them() {
             loc: loc.clone(),
             text: format!("objective {i}"),
             kills,
-            mob_level: 1,
+            low_drop_kills: 0.0,
+            credit: vec![],
+            mob_level: 1.0,
             uses,
             extra: 0.0,
             dungeon: None,
@@ -2907,6 +2961,31 @@ fn crowded_server_waits_for_escorts_and_rare_spawns() {
     assert!(wait(33) / 8.0 < wait(34) / 2.0, "wolves: {} s for 8 meats", wait(33));
 }
 
+/// Taking an escort starts it at once: its accept step tells the addon, which never takes it by
+/// itself (in a group, the others would not have time to turn in the quest before it). Miran's
+/// escort is one, Bellygrub's meat is not.
+#[test]
+fn addon_knows_escorts() {
+    let human = human_warrior();
+    let escort = |id: i64| human.model.quests[quest(human, id).unwrap() as usize].escort;
+    assert!(escort(309), "Protecting the Shipment");
+    assert!(!escort(34), "Bellygrub");
+    let mut p = quests_at_start(1);
+    p.model.quests[0].escort = true;
+    let planner = planner(&p);
+    let route = vec![Stop::quest(0, Kind::Accept), Stop::quest(0, Kind::TurnIn)];
+    let guide = fg_route::export::build(&planner, &p.profile, &route);
+    let lua = fg_route::export::to_lua(std::slice::from_ref(&guide));
+    let line = |k: &str| {
+        lua.lines()
+            .find(|l| l.contains(&format!("k = \"{k}\"")))
+            .unwrap()
+            .to_owned()
+    };
+    assert!(line("accept").contains("es = true"), "{}", line("accept"));
+    assert!(!line("turnin").contains("es = true"), "{}", line("turnin"));
+}
+
 /// The clean-up at the end of the search never makes the route worse: cutting the stops after
 /// the target level would drop a turn-in planned there that was made at hand before, losing its
 /// XP to grinding (it did).
@@ -2958,7 +3037,9 @@ fn kills_east_of_start(p: &Prepared, dx: f64, kills: f64, mob_level: i64) -> Obj
         loc,
         text: format!("kill x{kills} at {dx} yd"),
         kills,
-        mob_level,
+        low_drop_kills: 0.0,
+        credit: vec![],
+        mob_level: mob_level as f64,
         uses: 0.0,
         extra: 0.0,
         dungeon: None,
@@ -3223,6 +3304,8 @@ fn a_guide_is_written_in_any_language() {
     let saved = |locale: &str| {
         let p = prepare_request(&PlanRequest {
             locale: Some(locale.into()),
+            // The quests of these tests only: no class quest to go far for.
+            required_class_quests: Some(vec![]),
             ..request("orc", "warlock", 4, &[])
         });
         let planner = planner(&p);
@@ -3341,7 +3424,7 @@ fn small_spot_in_pairs_is_harder_and_slower() {
     assert!(o.pack >= 1.5, "{} mobs per pull", o.pack);
     let q = &p.model.quests[quest(p, 20).unwrap() as usize];
     let need = planner(p).combat().need(q, &o);
-    assert!(need >= o.mob_level as f64 + p.params.pack_extra() + 0.5, "need {need}");
+    assert!(need >= o.mob_level + p.params.pack_extra() + 0.5, "need {need}");
     assert!(o.extra > 0.0, "respawns waited for");
     let crowded = objective(&prepare("human", "warrior", 30, &["progression=cautious", "crowded=1"])).extra;
     let fixed = objective(&prepare(
@@ -3935,9 +4018,13 @@ fn profession_trainer_stops_are_off_unless_chosen() {
     let on = plan(&["profession_trainers=true"]);
     let found = stops(&on);
     let lines: Vec<i64> = on.professions.iter().map(|p| p.skill_line).collect();
+    // Learned at its trainer: its first rank, or more when the route gets there once the skill
+    // curve is past it (Leatherworking from Mak at level 14 teaches up to 150 at once).
     for line in &lines {
         assert!(
-            found.iter().any(|s| s.line == Some(*line) && s.skill == Some(75)),
+            found
+                .iter()
+                .any(|s| s.line == Some(*line) && s.skill.is_some_and(|k| k >= 75)),
             "{line}: the profession is learned at its trainer"
         );
     }
@@ -5113,4 +5200,68 @@ fn a_dungeon_is_run_from_the_minimum_level_of_its_must_have_quest() {
     assert!(dungeon_level(&p) < 18, "an advisory target does not delay the run");
     p.model.quests[i].implicit_window = false;
     assert!(dungeon_level(&p) >= 18, "asked at level 18: run from it");
+}
+
+/// Creatures whose kills give reputation 92 (+20 up to Friendly) and a quest asking for some.
+fn reputation_fixture(min: i64) -> Connection {
+    Fixture::new(Edition::Classic)
+        .file("classic_northshire")
+        .toml(&format!(
+            r#"
+[[npc]]
+id = 90110
+name = "Rival Centaur"
+level = 4
+at = [{{ zone = 12, x = 47.0, y = 36.0 }}, {{ zone = 12, x = 47.3, y = 36.2 }}, {{ zone = 12, x = 47.6, y = 36.4 }}]
+reputation = [{{ faction = 92, value = 20 }}]
+
+[[quest]]
+id = 90111
+name = "Clan Errand"
+level = 3
+giver = 197
+required_reputation = {{ faction = 92, min = {min} }}
+objectives = [{{ creature = 6, amount = 2 }}]
+"#
+        ))
+        .open()
+}
+
+/// A quest asking for a standing with a faction is planned: before taking it, the character
+/// kills creatures whose kills give that reputation until it has enough (a human starts at 2000
+/// with it, and gets 22 a kill with Diplomacy: 23 kills for 2500).
+#[test]
+fn a_quest_asking_for_reputation_is_taken_after_kills_that_give_it() {
+    let conn = reputation_fixture(2500);
+    let p = prepare_in(&conn, "human", "warrior", 6, &[], None);
+    let q = quest(&p, 90111).expect("the quest is planned");
+    let route = [Stop::quest(q, Kind::Accept)];
+    let mut trace = Vec::new();
+    assert!(planner(&p).simulate(&route, Some(&mut trace)).is_some());
+    let kills: u32 = (trace.iter())
+        .filter_map(|t| match t.event {
+            Event::GrindReputation { kills, .. } => Some(kills),
+            _ => None,
+        })
+        .sum();
+    assert_eq!(kills, 23);
+}
+
+/// A standing no kill gives (beyond Friendly: Honored's bottom at most) keeps the quest out.
+#[test]
+fn a_quest_asking_for_more_reputation_than_kills_give_is_left_out() {
+    let conn = reputation_fixture(9500);
+    let p = prepare_in(&conn, "human", "warrior", 6, &[], None);
+    assert!(quest(&p, 90111).is_none());
+}
+
+/// Siding with one Desolace clan leaves out the quests asking for the other's standing; either
+/// (the default) keeps them.
+#[test]
+fn siding_with_a_desolace_clan_leaves_the_others_quests_out() {
+    let conn = reputation_fixture(2500);
+    let planned = |side: &[&str]| quest(&prepare_in(&conn, "human", "warrior", 6, side, None), 90111).is_some();
+    assert!(planned(&[]), "either clan");
+    assert!(planned(&["desolace_clan=gelkis"]), "the quest's clan");
+    assert!(!planned(&["desolace_clan=magram"]), "the other clan");
 }

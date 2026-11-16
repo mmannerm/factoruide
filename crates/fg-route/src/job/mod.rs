@@ -45,9 +45,9 @@ pub use request::{
 };
 pub use required::{QuestChoice, quest_choices};
 pub use routes::{
-    DATA_ADDON, GUIDE_FORMAT, POLESTAR_SOURCE_FOLDER, add_polestar_source, addon_walks, data_addon_files, guides_lua,
-    load_routes, lua_long_string, polestar_source_dir, render_routes, save_route, slug, write_addon_routes,
-    write_data_addon, write_polestar_pack, write_polestar_source, write_polestar_strings,
+    DATA_ADDON, GUIDE_FORMAT, add_polestar_guide, addon_walks, data_addon_files, guides_lua, load_routes,
+    lua_long_string, polestar_addon_dir, render_routes, save_route, slug, write_addon_routes, write_data_addon,
+    write_polestar_pack, write_polestar_strings,
 };
 pub(crate) use services::profession_of;
 pub use services::{Place, Service, places, services_lua};
@@ -326,7 +326,13 @@ pub fn prepare(conn: &Connection, overrides: &Overrides, req: &PlanRequest, prog
         )));
     }
     model.initial.abilities = model.abilities.initial(start, profile.from_level);
-    model.initial.reputation = reputation::starting(conn, &params.reputation_goals, &profile, start, &mut start_notes)?;
+    model.initial.reputation = reputation::starting(
+        conn,
+        &model.followed_factions(&params),
+        &profile,
+        start,
+        &mut start_notes,
+    )?;
     let mut notes = notes::model_notes(&model, &world);
     notes.extend(start_notes);
     Ok(Prepared {

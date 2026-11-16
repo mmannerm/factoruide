@@ -266,8 +266,8 @@ pub(super) fn settle_class_quest_versions(quests: &mut [Quest], versions: &[(Cla
     }
 }
 
-/// Prefer automatic class requirements while yellow (orange with risky progression) or green.
-/// Explicit quest choices use only the completion bounds the player supplied.
+/// Automatic class requirements start as soon as they are approachable; turning gray never
+/// prevents their completion. Explicit quest choices keep only the player's completion bounds.
 pub(super) fn default_completion_windows(quests: &mut [Quest], profile: &Profile, params: &Params) {
     let above = match params.progression {
         crate::params::Progression::Risky => 4,
@@ -277,30 +277,30 @@ pub(super) fn default_completion_windows(quests: &mut [Quest], profile: &Profile
         .filter(|c| c.selected)
         .flat_map(|c| c.quests.iter().copied())
         .collect();
-    for q in quests.iter_mut() {
+    let mut due: Vec<(i64, usize)> = Vec::new();
+    for (i, q) in quests.iter_mut().enumerate() {
         let asked = profile.required_quests.iter().any(|r| r.id == q.id);
-        let must_have = q.mandatory && !asked && required_by_class.contains(&q.id);
-        if !must_have || q.completion_window.min_level.is_some() || q.completion_window.max_level.is_some() {
+        let automatic = q.mandatory && !asked && required_by_class.contains(&q.id);
+        if !automatic || q.completion_window.min_level.is_some() || q.completion_window.max_level.is_some() {
             continue;
         }
+        // Gray is a scheduling target, not a completion bound. A chain already gray at the
+        // start still comes first, rather than being left out or making the route invalid.
         let gray_from = (q.level..=q.level + 40).find(|&l| crate::xp::Rules::gray_level(l) >= q.level);
-        // A quest that cannot be taken before it is gray (its level under its minimum) has no limit.
-        let max = gray_from
+        let last = gray_from
             .map(|l| l - 1)
-            .filter(|&m| m >= profile.from_level && m >= q.min_level);
+            .filter(|&m| m >= profile.from_level && m >= q.min_level)
+            .unwrap_or(profile.from_level);
+        due.push((last, i));
         let min = (q.level - above).max(1);
         q.completion_window = CompletionWindow {
             min_level: Some(min).filter(|&m| m > profile.from_level),
-            max_level: max,
+            max_level: None,
         };
         q.implicit_window = true;
     }
-    // Prioritize the quest and what leads to it by the earliest shared class target.
+    // Prioritize the class chain without replacing an earlier player-supplied deadline.
     let index: HashMap<i64, usize> = quests.iter().enumerate().map(|(i, q)| (q.id, i)).collect();
-    let mut due: Vec<(i64, usize)> = (quests.iter().enumerate())
-        .filter(|(_, q)| q.implicit_window)
-        .filter_map(|(i, q)| Some((q.completion_window.max_level?, i)))
-        .collect();
     due.sort_unstable();
     for (max, i) in due {
         let mut stack = vec![i];

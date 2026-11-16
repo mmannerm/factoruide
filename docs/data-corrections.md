@@ -1,19 +1,20 @@
 # Data corrections
 
 The fork uses upstream's bundled databases without editing their archives. The current Forever
-import records identify QuestieDB `d57637f490`, Questie `84b9da17fb`, AllTheThings `ab0d11aecd`,
-EG Link `3067c69190`, and client cache builds `70790` and `70862` in the [v0.19.0 snapshot](https://github.com/brouznouf/factoruide/blob/469aa5a20e0676f3f8e01de6bbd34715e014e53a/data/forever.sqlite.zst).
+import records identify QuestieDB `4dbb82440a`, Questie `624cb783bf`, AllTheThings `6486f88fed`,
+EG Link `e0f8585914`, and client cache builds `70790` and `70938` in the [November 14 snapshot](https://github.com/brouznouf/factoruide/blob/23041dc0b74d0dae768ee98612921d8e342e3ff7/data/forever.sqlite.zst).
 The archive's `import_run` table and [NOTICE](../NOTICE.md) record the complete source provenance.
 
 Source-data corrections live in `overrides/database/`; upstream's database builder reapplies them
-at each build. The builder is not included in this checkout. The fork's remaining runtime
-corrections add behavior or facts the bundled data does not yet supply:
+at each build. The builder is not included in this checkout. The runtime handling below remains
+necessary for behavior or facts the bundled data does not yet supply:
 
 | Correction | Source and behavior |
 | --- | --- |
-| Expert Cooking (all editions) | The [Expert Cookbook](https://www.wowhead.com/forever/item=16072/expert-cookbook) (#16072) requires Cooking 125 and raises the cap to 225. The bundled archives have Wulan (#12033, Horde, Desolace) and Shandrina (#3955, Alliance, Ashenvale), but omit the book and its vendor relations. `profession::EXPERT_COOKBOOK` supplies the item and faction-vendor facts; locations use the existing NPC data. Ordinary Cooking trainers teach only through cap 150. |
+| Expert Cooking (all editions) | The [Expert Cookbook](https://www.wowhead.com/forever/item=16072/expert-cookbook) (#16072) requires Cooking 125 and raises the cap to 225. The bundled archives have Wulan (#12033, Horde, Desolace) and Shandrina (#3955, Alliance, Ashenvale), but omit the book and its vendor relations. `profession::EXPERT_BOOKS` supplies the item and faction-vendor facts; locations use the existing NPC data. Ordinary Cooking trainers teach only through cap 150. |
 | Expert Fishing and First Aid (all editions) | [Fishing book #16083](https://db.icy-veins.com/wow-forever/items/16083) is sold by Old Man Heming (#2626, both factions, Booty Bay); [First Aid book #16084](https://db.icy-veins.com/wow-forever/items/16084) by Balai Lok'Wein (#13476, Horde, Dustwallow) and Deneb Walker (#2805, Alliance, Arathi). Both require skill 125 and raise the cap to 225. Fishing requires character level 20 in Forever/Classic; [TBC's book](https://www.wowhead.com/tbc/item=16083) has no level requirement. First Aid has none. `profession::EXPERT_BOOKS` supplies these missing item/vendor facts; the archives supply NPC locations. Ordinary secondary trainers stop at cap 150. |
-| Primary profession trainer ranks | Forever/Classic crafting titles name the trainer's rank: [Journeyman, Expert, Artisan, Master Blacksmith](https://www.wow-professions.com/forever/blacksmithing-trainers) teach caps 75, 150, 225, 300 respectively. [TBC primary trainers](https://www.wowhead.com/tbc/npc=3355/saru-steelfury) consolidate training through 300. Ordinary [Skinning](https://www.wow-professions.com/forever/skinning-trainers), Mining and Herbalism trainers teach through 300, Junior trainers through 75; [Zephras gathering trainers](https://www.wowhead.com/forever/guide/zephras-isle-zone-overview-maps-locations-and-trainers-34862) and [Edward Egan](https://www.wowhead.com/forever/guide/professions/herbalism/overview-leveling) are included in that verified rule. [Linzy Blackbolt](https://www.wow-professions.com/forever/alchemy-trainers) (#246795) and Alard Schmied (#28694) have verified Forever cap-225 exceptions despite their plain titles. Specialty trainers and other unverified plain crafting titles are not assumed to teach ranks. This deliberately omits some sources whose lower-rank coverage is unverified; it does not claim those NPCs cannot train. |
+| Primary profession trainer ranks | Forever/Classic crafting titles name the trainer's rank: [Journeyman, Expert, Artisan, Master Blacksmith](https://www.wow-professions.com/forever/blacksmithing-trainers) teach caps 75, 150, 225, 300 respectively. Plain ordinary crafting titles are modeled through cap 75; [TBC ordinary trainers](https://www.wowhead.com/tbc/npc=3355/saru-steelfury) through 300. Apprentice crafting titles teach cap 75; TBC Master titles are outside the planner's range. Ordinary [Skinning](https://www.wow-professions.com/forever/skinning-trainers), Mining and Herbalism trainers teach through 300, Junior trainers through 75. [Linzy Blackbolt](https://www.wow-professions.com/forever/alchemy-trainers) (#246795) and Alard Schmied (#28694) retain verified Forever cap-225 exceptions despite their plain titles. Specialty titles do not establish rank training. |
+| Secondary profession trainer titles | Recognized Cook, Superior Cook, Cooking Trainer, First Aid Trainer, Physician and Fishing Trainer titles teach through cap 150; a trailing ` & Supplies` does not change that. A trainer flag alone does not establish rank training: recipe vendors such as TBC Naka (#18993, Cooking Supplies) are excluded. |
 | The Glowing Shard (all editions) | The bundled quest text sends the player to Ratchet, but its objective row classifies Sputtervalve (#3442) as a creature credit under Wailing Caverns. The common `overrides/quests.toml` entry treats that credit as an outdoor conversation, using ordinary talk timing and translation without requiring the quest's level; nearby enemies still guard the NPC. Item #10441 still comes from Mutanus (#3654); the dungeon is needed until each eligible party member has accepted the quest. Save a fresh addon profile and regenerate existing guides. |
 | Call of Fire | The Skyborne Horde [ritual and torch delivery](https://www.wowhead.com/forever/quest=97257/call-of-fire) uses two NPC credits as interactions. The guide follows the quest's instructions and retains its six-minute limit. |
 | Cat relic trials | The [Skyborne](https://www.wowhead.com/forever/quest=98404/the-great-windborne-cat-spirit), [Tauren](https://www.wowhead.com/forever/quest=98342/the-great-cat-spirit) and [Night elf](https://www.wowhead.com/forever/quest=98396/the-great-cat-spirit) trials use the entrance statue's temporary stealth to collect relics. Guards keep their actual levels. The guide asks the player to renew the blessing; expiry and detection failures are not simulated. |
@@ -50,12 +51,12 @@ The corrections above apply to Forever, except The Glowing Shard and profession 
 Every edition retains upstream's bundled archive.
 
 Expert profession book visits use the existing optional profession-trainer setting and travel-time
-estimate. They assume the player can buy the book; bags, auction purchases, gold affordability
-and profession practice are not simulated. A fresh addon profile records the learned cap, avoiding
+estimate. They assume the player can buy and read the book; gold affordability and profession
+practice are not simulated. A fresh addon profile records the learned cap, avoiding
 a new book trip for a character who already read it at skill 125–150. Older profiles still infer
 known ranks from current skill. Regenerate saved guides to replace their old trainer directions.
 
-The v0.19.0 Forever snapshot also incorporates the [in-game prerequisite correction](https://github.com/brouznouf/factoruide/commit/673513fa65c7641f75625eaaf8b4816c5ca5ee2d)
+The bundled Forever data retain the [in-game prerequisite correction](https://github.com/brouznouf/factoruide/commit/673513fa65c7641f75625eaaf8b4816c5ca5ee2d)
 for Lightforge Ingots (#526): it follows The Lost Ingots (#324), rather than replacing it.
 The Forever regression tests reject taking #526 before #324, allow it afterwards, and allow
 requiring both quests together. Classic and TBC still reject #526 when #324 is completed.

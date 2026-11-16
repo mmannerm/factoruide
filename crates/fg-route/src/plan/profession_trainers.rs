@@ -1,4 +1,4 @@
-//! Profession rank visits (`Params::profession_trainers`): the character learns each rank of
+//! Profession trainer visits (`Params::profession_trainers`): the character learns each rank of
 //! its professions before the skill the curve asks needs it. A trainer close to the route is a
 //! detour as soon as the game lets the rank be learned; a trainer far away is a trip, once the
 //! skill has passed what the rank before allows. The time is the route's.
@@ -45,6 +45,9 @@ pub(crate) const RANKS: [Rank; 4] = [
     },
 ];
 
+/// Index of the expert rank in `RANKS` (a book for the secondary professions).
+const EXPERT: usize = 2;
+
 impl Simulator<'_> {
     /// The reported profession cap tells the ranks already learned. Older profiles only record
     /// the skill: infer its first rank once it has any, and each next rank past the previous cap.
@@ -90,80 +93,71 @@ impl Simulator<'_> {
         for (p, plan) in self.model.professions.iter().enumerate().take(s.ranks.len()) {
             let line = crate::profession::skill_line(&plan.key);
             let skill = plan.curve.get(s.level.clamp(0, 60) as usize).copied().unwrap_or(0);
+            let book = crate::profession::expert_book(line);
             let known = s.ranks[p];
-            let level = s.level;
             // The ranks open (the game lets them be learned), not learned yet, and needed.
             let mut open = 0u8;
             let mut needed = 0u8;
             for (r, rank) in RANKS.iter().enumerate() {
-                // Apprentice is useful for any positive goal; later ranks only when the
-                // goal exceeds the previous cap, even if a trainer is already nearby.
+                let level = match book {
+                    Some(book) if r == EXPERT => book.level_in(self.params.edition),
+                    _ => rank.level,
+                };
+                // Apprentice serves every positive goal; later ranks only serve goals past
+                // the previous cap, even when their trainer or book vendor is nearby.
                 let useful = plan.target > if r == 0 { 0 } else { rank.due };
-                if useful && s.ranks[p] & 1 << r == 0 && s.level >= rank.level.max(plan.start) && skill >= rank.skill {
+                if useful && known & 1 << r == 0 && s.level >= level.max(plan.start) && skill >= rank.skill {
                     open |= 1 << r;
                     if skill > rank.due {
                         needed |= 1 << r;
                     }
                 }
             }
-            let teaching = |needed_only: bool| {
+            if open == 0 {
+                continue;
+            }
+            let teaching = |ranks: u8| {
                 (self.model.profession_trainers.iter().enumerate())
-                    .filter(move |(_, t)| t.line == line)
-                    .filter_map(move |(k, t)| {
-                        let learns = if let Some(book) = t.book {
-                            RANKS
-                                .iter()
-                                .enumerate()
-                                .find(|(_, rank)| rank.cap == book.cap)
-                                .filter(|(r, rank)| {
-                                    let lower = (1 << r) - 1;
-                                    known & (1 << r) == 0
-                                        && known & lower == lower
-                                        && level >= book.minimum_level(self.params.edition).max(plan.start)
-                                        && skill >= book.skill
-                                        && plan.target > rank.due
-                                        && (!needed_only || skill > rank.due)
-                                })
-                                .map_or(0, |(r, _)| 1 << r)
-                        } else {
-                            let taught = Self::taught_by(t.cap);
-                            // A needed rank justifies the trip; once there, learn every open
-                            // rank this trainer teaches in the same visit.
-                            if needed_only && needed & taught == 0 {
-                                0
-                            } else {
-                                open & taught
-                            }
-                        };
-                        (learns != 0).then_some((k, t.loc.pos, learns))
+                    .filter(move |(_, t)| {
+                        // The projected skill curve does not prove earlier ranks were learned.
+                        // A book cannot replace the trainer visit for those ranks.
+                        let lower = (1 << EXPERT) - 1;
+                        t.line == line
+                            && ranks & Self::taught_by(t) != 0
+                            && (t.book.is_none() || known & lower == lower)
                     })
+                    .map(|(k, t)| (k, t.loc.pos))
             };
-            let close = teaching(false)
-                .map(|(k, pos, learns)| (k, s.pos.dist(&pos), learns))
-                .filter(|(_, d, _)| *d <= self.params.train_radius)
+            let close = teaching(open)
+                .map(|(k, pos)| (k, s.pos.dist(&pos)))
+                .filter(|(_, d)| *d <= self.params.train_radius)
                 .min_by(|a, b| a.1.total_cmp(&b.1));
             let trainer = match close {
-                Some((k, _, learns)) => Some((k, learns)),
+                Some((k, _)) => Some(k),
                 // Nearest by travel time (it may be worth a flight or the hearthstone).
-                None => teaching(true)
-                    .map(|(k, pos, learns)| (k, self.trips().fastest(s, &pos).0, learns))
-                    .filter(|(_, time, _)| time.is_finite())
+                None => teaching(needed)
+                    .map(|(k, pos)| (k, self.trips().fastest(s, &pos).0))
+                    .filter(|(_, time)| time.is_finite())
                     .min_by(|a, b| a.1.total_cmp(&b.1))
-                    .map(|(k, _, learns)| (k, learns)),
+                    .map(|(k, _)| k),
             };
-            if let Some((k, learns)) = trainer {
-                return Some((p, k, learns));
+            if let Some(k) = trainer {
+                return Some((p, k, open & Self::taught_by(&self.model.profession_trainers[k])));
             }
         }
         None
     }
 
-    /// The ranks (a bit each) a trainer whose title says `cap` teaches: those up to it.
-    fn taught_by(cap: i64) -> u8 {
+    /// The ranks (a bit each) a trainer teaches: those up to the cap its title says, or the expert
+    /// rank alone for a vendor of its book.
+    fn taught_by(trainer: &crate::model::ProfessionTrainer) -> u8 {
+        if trainer.book.is_some() {
+            return 1 << EXPERT;
+        }
         RANKS
             .iter()
             .enumerate()
-            .filter(|(_, r)| r.cap <= cap)
+            .filter(|(_, r)| r.cap <= trainer.cap)
             .fold(0, |bits, (r, _)| bits | 1 << r)
     }
 

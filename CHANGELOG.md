@@ -10,14 +10,18 @@ An addon change also goes, in the same words, under Unreleased in that addon's o
 
 ### App
 
+- WoW Forever: **Export → Polestar: addon** puts one guide, however long, into the Factoruide_Polestar addon folder you choose, next to the guides already there, ready to copy into the game. It replaces the export to Polestar's .guide format, which the game could not load.
 - Saved objective guides show their must-have quests and completion bounds, and let you remove them.
 
 ### Guides
 
+- Two new settings for quest items that drop rarely: a minimum drop rate under which their quest is left out, and a weight that makes the guide avoid them the rarer they drop. Both are off by default.
+- Monsters count at the average of their level range, and a camp of several kinds at the average of them all rather than its lowest: fewer camps turn out tougher than the guide planned.
+- Kills count for every quest in your log that wants them, as in the game (the scarlet warriors to kill also drop the rings to bring back): guide times and levels are closer to what you play, and quests on the same monsters are done together.
+- Profession trainer visits go to trainers that teach the rank you need: Expert Cooking, Fishing and First Aid come from their book, bought from its vendor, and crafting trainers teach the rank below their title (an Expert Blacksmith teaches Journeyman).
 - Guides from saved profiles no longer revisit quest givers to pick up quests already in the log, even before any objective progress.
 
-- Expert Cooking, Fishing and First Aid guides visit their book vendors instead of trainers to unlock the 225 skill cap.
-- Profession visits choose trainers for the ranks they actually teach and stop at the ranks needed for your goal.
+- Profession visits stop at the ranks needed for your goal and skip ranks already learned in a saved profile.
 - Guides for The Glowing Shard keep quests already in the log, talk in Ratchet without extra leveling, and return to Wailing Caverns only for missing pickups.
 - Group dungeon guides include each member's unfinished objectives even when the leading character has already completed them.
 - Zone and dungeon guides follow available prerequisite branches, even at maximum level; saved guides keep valid alternative quest chains.
@@ -31,6 +35,7 @@ An addon change also goes, in the same words, under Unreleased in that addon's o
 
 ### Addon
 
+- WoW Forever: a click on a quest in the quest panel makes the game track it, as from the game's own tracker, and a click on the step already shown sets the game's waypoint again.
 - Candle of Beckoning and The Rescue's keys are recognized in your bags and stay done after use; right-click a pickup to retry.
 - Marking an objective done skips only that step and keeps your place; undo returns only to the work you marked.
 - Completed journeys stay done after you leave, without marking travel merely by browsing ahead.
@@ -42,6 +47,38 @@ An addon change also goes, in the same words, under Unreleased in that addon's o
 - Profession caps use the client's skill IDs and localized profession names, including skills hidden under collapsed legacy headers.
 - Saved profiles record learned profession caps so guides avoid ranks you already know.
 - Profession caps are recognized in the game's language even when the addon uses a different display language.
+
+### WoW data
+
+- WoW Forever: the latest quest data, with the Shen'dralas chains in their order, quest givers corrected in Stranglethorn Vale, Riverglades and Desolace, and more names checked in Spanish, Korean and Russian.
+
+## 0.20.0 (2026-11-13)
+
+WoW Forever's new dungeons and reputation quests in the guides, class quests always planned, and fixes from players' reports.
+
+### App
+
+- A new version of a guide (set up again, computed again, edited or imported) is the one sent to the game, even after an older one was chosen with "Use this version".
+- A new guide's name filled in from its character follows the level to reach: lowering it to 40 no longer leaves "Name 25-60" on the guide, its file and its Polestar title.
+
+### Guides
+
+- Class quests are always in the guide, started as soon as they can be: the dwarf shaman's and the Horde rogues' guides could not be made.
+- Townsfolk the game data knows little of no longer pass for monsters guarding the quests around them, nor do creatures far above the quest's level: the guides keep those quests (Southshore, Tarren Mill, Lakeshire, Goldshire, and many in Feralas and Winterspring).
+- Skyborne guides no longer take the portal from Stormwind to Dalaran, removed from the game; the one from Dalaran to Stormwind is taken for Welcome to Azeroth only.
+- Quests asking for a reputation are planned: the guide first kills the creatures whose kills give it ("Kill 50 Gelkis Mauler for reputation with Magram Clan Centaur"). A new setting picks Desolace's centaur clan: Auto, Magram or Gelkis.
+
+### Addon
+
+- Escort and event quests are never accepted automatically, nor joined when a party member starts them: in a group, everyone has time to turn in the quest before.
+
+### WoW data
+
+- The latest quest data: more quests known in Riverglades, Shen'dralas and Stranglethorn Vale, and Riverglades chains completed with their missing objectives.
+- The Drowned City, a dungeon of levels 35-40 off Stranglethorn Vale: its quests are done during its run (the four tablets of The Drowned City, the Saltseers, Var'Taka).
+- Krol'dok Stronghold (40-45), Alcaz Prison (48-53) and Blackmaw Hold (55-60), WoW Forever's other new dungeons: their quests are done during their run.
+- The Magram and Gelkis quests of the Valley of Bones ask for Honored with their clan, with their objectives.
+- WoW Forever: Skyborne shamans of the Horde get Storm, Earth, and Fire and the rest of its chain.
 
 ## 0.19.0 (2026-11-12)
 
@@ -139,7 +176,7 @@ A guide for one dungeon from your character, dungeons as zones with their steps 
 - A must-have quest asked at a minimum level ("complete it at level 18") has its dungeon run from that level, instead of before it and the hand-in after (GitHub #108).
 - WoW Forever: Lost in the Thicket Things (Excavation Site: Wetlands) is ended to Ardin Grassman inside the dungeon, who gives Heartwoven to take back to Caitlin Grassman in Menethil Harbor: the guide runs the dungeon once for both (GitHub #107).
 - A quest the guide takes and never hands in is grinding in all but name: the time of its kills counts as grinding, in the planner's score and against the grind limit. Guides no longer end on a many-hour step for a quest they never hand in, nor keep quests only for their kills (GitHub #117, #124).
-- Automatic class requirements favor the levels where quests are yellow (orange with the risky profile) or green, without refusing a guide for missing that target. Manually selected must-have quests use the optional completion range you supply; leaving it empty imposes no deadline.
+- A must-have quest (one you ask for, or a class quest the guide requires) is done while the game shows it yellow (orange with the risky profile) or green, not before and not once it is gray; a guide that cannot do it in time is refused instead of doing it levels late: the warlock's Felhunter comes by level 37 and the Felsteed by 50 instead of 44-51 (GitHub #113). Guides already made are not refused for it.
 - A quest started by an item found in a dungeon's object is planned with the run and taken in it: WoW Forever's The Treaty of Understanding, from the Hall of Thanes.
 - Dungeons run above their monsters' level: the level-60 dungeons are run at 60 instead of leaving the guide impossible to make (GitHub #99).
 - "Profession trainer stops" option (under the professions of a player of the new guide, off by default): with professions, the route goes to the trainer to learn each profession and, before the skill reaches the cap of its rank, each next rank. A trainer near the route is a detour, a far one a trip, both counted in the route's time; a rank no trainer teaches has no stop (GitHub #106).
@@ -188,7 +225,6 @@ Forced dungeons run inside their levels, optional XP buffs and turn-in levels fo
 
 ### Guides
 
-- Forever: Cat Form trials use the entrance statue's stealth blessing; keep verified quest, training and wind-bridge corrections outside the bundled database.
 - Rested XP reduces pre-grinding and group catch-up work in every edition and is consumed from the character's finite pool. Group kill work is rounded only at the final player reward in every edition. Group guides export each player's quest XP, including its own Sleeping Bag bonus.
 - Death skips (option, off by default, in the play style): up to level 10 and a half, the guide has the character die to respawn at the nearest spirit healer when that is faster (no resurrection sickness before level 11). The guide editor has them as steps ("Die here").
 - Group guides: each player levels its own professions, from its own skill: their profession quests are planned for them, the group goes to the vendor when the fullest bags are, and each player's addon follows its own profession curve.

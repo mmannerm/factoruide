@@ -104,6 +104,8 @@ export interface Params {
   reputation_goals: ReputationGoal[];
   /** Seconds each point missing from the goals at the end of the guide is worth. */
   reputation_weight: number;
+  /** Desolace's centaur clan the character sides with (the other clan's quests are left out). */
+  desolace_clan: "auto" | "gelkis" | "magram";
   min_efficiency: number;
   hearth_cooldown: number;
   hearth_cast: number;
@@ -131,6 +133,8 @@ export interface Params {
   power_scale: number;
   dungeon_loot_share: number;
   gear_value: number;
+  min_drop_chance: number;
+  low_drop_weight: number;
   mandatory_penalty: number;
   grind_weight: number;
   allow_grind: boolean;
@@ -640,7 +644,7 @@ export const api = {
   installAddon: () => invoke<number>("install_addon").then((n) => (settingsChanged(), n)),
   /** Whether Polestar is installed in WoW Forever. */
   polestarInstalled: () => invoke<boolean>("polestar_installed"),
-  /** Export a guide version into a pack folder for Polestar's own tools in `dir` (WoW Forever only): the pack's folder. */
+  /** Export a guide version as a guide of the Polestar pack addon (Factoruide_Polestar) in `dir`, the pack's other guides kept (web: a zip of the pack with it alone; WoW Forever only): the pack's folder. */
   exportPolestar: (guide: string, version: number, dir: string) => invoke<string | WebFile>("export_polestar", { guide, version, dir }).then(saved),
   /** Whether the addon in the game has the current settings. */
   addonSynced: () => invoke<boolean>("addon_synced"),

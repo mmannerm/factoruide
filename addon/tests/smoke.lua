@@ -367,7 +367,10 @@ C_Map = {
 UiMapPoint = {
     CreateFromCoordinates = function(m, x, y) return { m = m, x = x, y = y } end,
 }
-C_SuperTrack = { SetSuperTrackedUserWaypoint = function() end }
+C_SuperTrack = {
+    SetSuperTrackedUserWaypoint = function() end,
+    SetSuperTrackedQuestID = function(q) C_SuperTrack.quest = q end,
+}
 C_QuestLog = {
     GetAllCompletedQuestIDs = function() return {} end,
     GetNumQuestLogEntries = function() return 0 end,
@@ -2347,6 +2350,9 @@ FG.Guide:PointToStep(5)
 assert(waypoint and waypoint.x == 0.32, "hand-picked step pointed at")
 FG.Guide:Advance()
 assert(waypoint.x == 0.32, "still pointed at after a refresh")
+waypoint = nil -- moved or cleared by something else
+FG.Guide:PointToStep(5)
+assert(waypoint and waypoint.x == 0.32, "the step pointed at again sets the game's waypoint again")
 onQuest[6006] = true
 FG.Guide:Advance()
 assert(waypoint.x ~= 0.32, "back to the route once taken")
@@ -3114,7 +3120,7 @@ onQuest[8101] = nil
 print("dungeon group ok")
 
 -- Only the guide's quests: those it still takes, not those it abandons, marked done by hand or
--- out of it, nor escorts shared by the group (the event does not tell which quest).
+-- out of it. Never an escort, nor one shared by the group.
 FG:Save("autoAccept", nil)
 FG.Routes["accept-test"] = {
     race = 7,
@@ -3127,6 +3133,7 @@ FG.Routes["accept-test"] = {
         { k = "abandon", t = "Abandon Unwanted (not in this guide)", q = 9001, lvl = 21 },
         { k = "accept", t = "Accept Wanted", q = 9002, lvl = 21 },
         { k = "accept", t = "Accept Skipped", q = 9003, lvl = 21 },
+        { k = "accept", t = "Accept Escort", q = 9004, es = true, lvl = 21 },
         { k = "grind", t = "Grind", lvl = 60 },
     },
 }
@@ -3143,6 +3150,11 @@ assert(taken(9002), "a quest of the guide is taken")
 FG.Guide:ToggleSkip(3) -- right click on its step
 assert(not taken(9003), "a quest marked done by hand is not taken")
 assert(not taken(9999), "a quest out of the guide is not taken")
+assert(not taken(9004), "an escort of the guide is not taken")
+FG:Save("routeQuestsOnly", false)
+assert(not taken(9004), "an escort is not taken with every quest either")
+assert(taken(9999), "a quest out of the guide is taken with every quest")
+FG:Save("routeQuestsOnly", nil)
 -- Classic and TBC have no quests taken on sight (no QuestGetAutoAccept).
 local autoAccept = QuestGetAutoAccept
 QuestGetAutoAccept = nil
@@ -3165,8 +3177,10 @@ assert(opened({ 9999, 9002 }) == 2, "the guide's quest opened")
 assert(opened({ 9999 }) == nil, "a quest out of the guide is not opened")
 assert(opened({ 0 }) == 1, "a quest without ID is opened")
 calls.ConfirmAcceptQuest = nil
+FG:Save("routeQuestsOnly", false)
 fire("QUEST_ACCEPT_CONFIRM", "Friend", "Shared Escort")
 assert(not calls.ConfirmAcceptQuest, "a shared escort is not confirmed")
+FG:Save("routeQuestsOnly", nil)
 GetQuestID = questID
 print("guide quests only ok")
 
@@ -3671,6 +3685,14 @@ C_QuestLog.GetInfo = function(i) return { questID = 8100 + i, title = "Quest " .
 FG:Set("trackerAll", true)
 FG.Tracker:Refresh()
 assert(#FG.Tracker.shown == 6 and FG.Tracker.lines == 6, "a line a quest, got " .. FG.Tracker.lines)
+-- A click on a quest makes the game track it, as from the game's own tracker.
+for _, f in ipairs(frames) do
+    if rawget(f, "questID") == 8102 and f._shown then
+        f:GetScript("OnClick")(f, "LeftButton")
+        break
+    end
+end
+assert(C_SuperTrack.quest == 8102, "the clicked quest tracked by the game: " .. tostring(C_SuperTrack.quest))
 FG:Save("guideMode", "minimal")
 FG.Tracker:Refresh()
 assert(FG.Tracker.lines == 6, "the same with the minimal guide")

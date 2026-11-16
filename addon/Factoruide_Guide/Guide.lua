@@ -1501,6 +1501,12 @@ function Guide:WantsQuest(questID)
     return not IsDone(step, at)
 end
 
+--- Whether accepting this quest starts an escort or an event (the guide's step says so).
+function Guide:IsEscort(questID)
+    local at = route and questID and acceptIndex[questID]
+    return at ~= nil and route.steps[at].es == true
+end
+
 --- Fields of the guide state that belong to the route in use: the step shown, the steps
 --- marked by their index and the quests marked done by hand.
 local PROGRESS = { "step", "marks", "skippedQuests", "handedIn", "player" }
@@ -1914,10 +1920,12 @@ function Guide:NextStepByQuest()
 end
 
 --- Point the compass and the waypoint at a step until it is done (or another step is picked).
+--- The game's waypoint is set again even for the step already pointed at: something else may
+--- have moved or cleared it.
 function Guide:PointToStep(index)
     local step = route and route.steps[index]
     if not step or not step.m then return end
-    pointed, detour = index, nil
+    pointed, detour, waypointStep = index, nil, nil
     self:Refresh()
 end
 

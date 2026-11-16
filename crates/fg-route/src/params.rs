@@ -236,6 +236,10 @@ pub struct Params {
     /// Seconds of the guide each reputation point missing from `reputation_goals` at its end is
     /// worth: quests giving the reputation are planned until the goal is reached.
     pub reputation_weight: f64,
+    /// Desolace's centaur clan the character sides with, whose standing each kill of the other
+    /// clan gives: the quests asking for the other clan's standing are left out. `auto`: either,
+    /// as the route finds best.
+    pub desolace_clan: DesolaceClan,
     /// Minimum quest efficiency, relative to grinding, to be worth accepting.
     pub min_efficiency: f64,
     /// Hearthstone cooldown and cast time.
@@ -281,6 +285,13 @@ pub struct Params {
     pub power_scale: f64,
     pub dungeon_loot_share: f64,
     pub gear_value: f64,
+    /// A quest item whose best known drop rate is under `min_drop_chance` leaves its quest out,
+    /// unless the player asked for the quest (0: none left out).
+    pub min_drop_chance: f64,
+    /// The kills of a quest item that drop nothing (`1 - rate` of them) weigh this much more
+    /// than their time, in the score and when a quest is weighed against grinding: the rarer the
+    /// drop, the heavier the quest (0: their time only).
+    pub low_drop_weight: f64,
     /// Class quests giving a pet or a form are done as soon as taken when that costs at most
     /// this many seconds: the route only counts their power in faster fights, not the safety.
     pub class_power_slack: f64,
@@ -358,7 +369,8 @@ pub struct Params {
     /// Seconds a change of zone costs the optimizer on top of the trip (0 = only the trip): finding
     /// one's way and the NPCs of another zone, which makes a few quests far away not worth it.
     pub zone_change_weight: f64,
-    /// Cost of a class quest left out (keeps them in the route).
+    /// Cost of a forced zone's quest, a forced dungeon or a reputation goal left out (keeps them
+    /// in the route). Class quests and the player's must-haves are never traded: `MUST_HAVE_LEFT_OUT`.
     pub mandatory_penalty: f64,
     /// Seconds each quest the route takes and gives up costs the optimizer (gone gray, its
     /// dungeon run without it): taking a quest, killing for one of its objectives and dropping it
@@ -590,6 +602,7 @@ impl Default for Params {
             preferred_zone_weight: 0.5,
             reputation_goals: vec![],
             reputation_weight: 10.0,
+            desolace_clan: DesolaceClan::Auto,
             min_efficiency: 0.5,
             hearth_cooldown: 3600.0,
             hearth_cast: 10.0,
@@ -613,6 +626,8 @@ impl Default for Params {
             power_scale: 1.0,
             dungeon_loot_share: 0.35,
             gear_value: 0.5,
+            min_drop_chance: 0.0,
+            low_drop_weight: 0.0,
             class_power_slack: 600.0,
             tidy_slack: 30.0,
             tidy_radius: 100.0,
@@ -836,8 +851,8 @@ impl Params {
     /// power (what gear and spells add, see `power`). The level difference keeps its weight (gear
     /// does not remove misses, resists and the danger of mobs above the character): power only
     /// makes every fight faster, by 10% per level.
-    pub fn kill_time(&self, level: i64, bonus: f64, mob: i64) -> f64 {
-        self.kill_time * kill_factor((mob - level) as f64) * power_speed(bonus) / self.group_damage()
+    pub fn kill_time(&self, level: i64, bonus: f64, mob: f64) -> f64 {
+        self.kill_time * kill_factor(mob - level as f64) * power_speed(bonus) / self.group_damage()
     }
 
     /// Damage of the group, in solo players.
@@ -849,6 +864,12 @@ impl Params {
     pub(crate) fn group_xp_share(&self) -> f64 {
         let n = self.group_size.clamp(1, 5);
         [1.0, 1.0, 1.166, 1.3, 1.4][n as usize - 1] / n as f64
+    }
+
+    /// What a second of the kills that drop nothing weighs on top of itself (see
+    /// `low_drop_weight`).
+    pub(crate) fn low_drop_extra(&self) -> f64 {
+        self.low_drop_weight.max(0.0)
     }
 }
 
@@ -879,6 +900,35 @@ impl Params {
             (params.dungeon_from, params.dungeon_to) = params.progression.dungeon_window();
         }
         Ok(params)
+    }
+}
+
+/// Desolace's centaur clan a character sides with (`Params::desolace_clan`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DesolaceClan {
+    /// Either, as the route finds best.
+    #[default]
+    Auto,
+    /// Gelkis Clan Centaur (Faction 92).
+    Gelkis,
+    /// Magram Clan Centaur (Faction 93).
+    Magram,
+}
+
+impl DesolaceClan {
+    const GELKIS: i64 = 92;
+    const MAGRAM: i64 = 93;
+}
+
+impl Params {
+    /// Whether `faction` is the Desolace clan the character does not side with.
+    pub fn rival_clan_chosen(&self, faction: i64) -> bool {
+        match self.desolace_clan {
+            DesolaceClan::Auto => false,
+            DesolaceClan::Gelkis => faction == DesolaceClan::MAGRAM,
+            DesolaceClan::Magram => faction == DesolaceClan::GELKIS,
+        }
     }
 }
 

@@ -134,6 +134,17 @@ pub enum Event {
         near: Pos,
         zone: i64,
     },
+    /// Creatures killed for the reputation they give before a quest asking for a standing
+    /// (`faction`: its ID; `camp`: index in its `Model::reputation_camps`), up to `points`.
+    GrindReputation {
+        faction: i64,
+        camp: usize,
+        kills: u32,
+        points: f64,
+        seconds: f64,
+        near: Pos,
+        zone: i64,
+    },
     /// Mobs of the character's level killed where it stands (a step of an edited route).
     GrindMobs {
         mobs: u32,
@@ -352,8 +363,9 @@ pub(crate) struct State {
     pub(crate) completion_error: Option<(u32, u8, i64)>,
     /// Timed quests of the log: (quest, time by which the route must turn it in).
     pub(crate) timers: Vec<(u32, f64)>,
-    /// Objectives started before the route (a character met in game), with the share already
-    /// done (0 to 1): (quest, objective, share). A share, not kills: the places of an objective
+    /// Objectives started before the route (a character met in game) or by the kills for other
+    /// objectives (`Simulator::credit_kills`), with the share already done (0 to 1): (quest,
+    /// objective, share). A share, not kills: the places of an objective
     /// may need different kills (their drop rates differ).
     pub(crate) started: Vec<(u32, u8, f64)>,
     /// The objective stops done one after the other at the same place (see `Together`).
@@ -396,8 +408,8 @@ pub(crate) struct State {
     /// and `Params::farm_cap`).
     pub(crate) grind_used: i64,
     pub(crate) farm_used: i64,
-    /// Points with the faction of each reputation goal (`Params::reputation_goals`; none
-    /// without goals).
+    /// Points with each faction the route follows (`Model::reputation_factions`: the goals'
+    /// first; none without goals or quests asking for a standing).
     pub(crate) reputation: Vec<f32>,
     /// Quests of the forced zones not done yet (nor closed by an exclusive one): the guide
     /// goes on past the target level until they are.
@@ -407,6 +419,14 @@ pub(crate) struct State {
 }
 
 impl State {
+    /// The share of objective `k` of `quest` done before its stop: before the route, or by the
+    /// kills for other objectives (`started`).
+    pub(crate) fn share_done(&self, quest: u32, k: u8) -> f64 {
+        (self.started.iter())
+            .find(|e| e.0 == quest && e.1 == k)
+            .map_or(0.0, |e| e.2)
+    }
+
     pub(crate) fn member_levels(&self, mates: usize) -> impl Iterator<Item = (u8, i64)> + '_ {
         std::iter::once((self.order[0], self.level)).chain(
             self.mates[..mates]
@@ -492,6 +512,9 @@ pub struct Breakdown {
     /// for respawns, for an event or for the other players, buying, exploring.
     #[serde(default)]
     pub waiting: f64,
+    /// The kills of quest items that drop nothing (part of `fighting`).
+    #[serde(default)]
+    pub low_drop: f64,
     /// Copper spent on flights.
     #[serde(default)]
     pub flight_cost: i64,

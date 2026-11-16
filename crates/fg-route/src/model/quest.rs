@@ -26,13 +26,14 @@ impl QuestBuilder<'_> {
                 // Inside a dungeon (an item dropped there, an NPC there): done during the group's
                 // run, the creatures around its entrance outside guard nothing of it.
                 .filter(|l| l.inside.is_none())
-                // A creature gives the quest in a town its own side's guards watch; an item is
-                // found where it lies, among the camps of the other side too.
+                // A creature or an object gives the quest in a town its own side's guards watch,
+                // among its townsfolk; an item is found where it lies, among the camps of the
+                // other side too.
                 .map(|l| {
                     if l.kind == EntityKind::Item && givers.starter != Some(l.id) {
-                        self.sources.guards.around_hostile(&l.pos)
+                        self.sources.guards.around_hostile(&l.pos, level)
                     } else {
-                        self.sources.guards.around(&l.pos)
+                        self.sources.guards.around_giver(&l.pos)
                     }
                 })
                 .fold(super::types::Guard::default(), super::types::Guard::max)
@@ -48,6 +49,7 @@ impl QuestBuilder<'_> {
             xp_observed: r.xp_observed,
             time_limit: r.time_limit.filter(|t| *t > 0).map(|t| t as f64),
             start_wait: r.start_wait.filter(|w| *w > 0.0).unwrap_or(0.0),
+            escort: r.flags.is_some_and(|f| f & 2 != 0),
             starts: givers.starts,
             ends: givers.ends,
             objectives,
@@ -101,6 +103,7 @@ impl QuestBuilder<'_> {
                 .into_iter()
                 .map(|(f, v)| (f, v as f64 * self.profile.reputation_rate()))
                 .collect(),
+            required_reputation: r.rep.filter(|&f| f != 0).map(|f| (f, r.rep_min.unwrap_or(0) as f64)),
             // A profession quest is for those leveling the profession.
             members: self.profile.members_of(r.races, r.classes)
                 & skill
@@ -142,7 +145,7 @@ impl QuestBuilder<'_> {
         if kills <= 0.0 {
             return min_level;
         }
-        let need = mob_level as f64 + if kills <= 2.0 { -1.0 } else { self.params.pack_extra() };
+        let need = mob_level + if kills <= 2.0 { -1.0 } else { self.params.pack_extra() };
         min_level.max(self.params.level_for(need, crate::params::Might::PLAIN))
     }
 
