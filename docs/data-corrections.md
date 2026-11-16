@@ -1,8 +1,8 @@
 # Data corrections
 
 The fork uses upstream's bundled databases without editing their archives. The current Forever
-import records identify QuestieDB `4dbb82440a`, Questie `624cb783bf`, AllTheThings `6486f88fed`,
-EG Link `e0f8585914`, and client cache builds `70790` and `70938` in the [November 14 snapshot](https://github.com/brouznouf/factoruide/blob/23041dc0b74d0dae768ee98612921d8e342e3ff7/data/forever.sqlite.zst).
+import records identify QuestieDB `4dbb82440a`, Questie `6e2d15b485`, AllTheThings `0624f0589e`,
+EG Link `0f202e892f`, and client cache builds `70790` and `70938` in the [November 16 snapshot](https://github.com/brouznouf/factoruide/blob/a7b7e0c132c3a3fde06e94c768d80fc09eda5a3f/data/forever.sqlite.zst).
 The archive's `import_run` table and [NOTICE](../NOTICE.md) record the complete source provenance.
 
 Source-data corrections live in `overrides/database/`; upstream's database builder reapplies them
@@ -21,6 +21,7 @@ necessary for behavior or facts the bundled data does not yet supply:
 | Druid training | [Blizzard's October 1](https://us.forums.blizzard.com/en/wow/t/2360696/4) and [October 15](https://us.forums.blizzard.com/en/wow/t/2360696/6) updates and [client spell levels](https://wago.tools/db2/SpellLevels?build=1.60.1.70532&useHotfixes=1): Shred rank 1 at level 20, Tiger's Fury omitted from training estimates. |
 | Wind bridge | [Path 12018](https://wago.tools/db2/TaxiPathNode?build=1.60.1.70532&useHotfixes=1) is one way and available while the faction's Confront Lorthuna is held. The bundled client path now contains the same geometry, but its node is not a faction flight node, so ordinary flight routing does not expose it. |
 | Shipping Label | Requiring #98247 (Alliance) or #98248 (Horde), or choosing it as a quest objective, adds an Auction House stop for one Apprentice Herbs crate and 20 Peacebloom per character needing a label. Fill the crate before accepting the quest. Sources are linked in `overrides/forever/quests.toml`. |
+| What We Lost | Quest #94829's burial objective must follow looting the Farmers' Mementos from a Twilight Raider (#256952). `overrides/objectives.toml` supplies this ordering; the bundled objective rows alone do not enforce it. |
 
 Shipping Label estimates assume auction stock and affordability, using the ordinary purchase-time
 estimate. Use owned inputs when possible. Random crate drops, other bundles and repeat deliveries
