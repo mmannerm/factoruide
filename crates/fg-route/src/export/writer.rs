@@ -95,6 +95,15 @@ impl StepWriter<'_> {
                 near,
                 zone,
             } => self.grind_mobs(&mut step, t, *mobs, *seconds, near, *zone),
+            Event::GrindReputation {
+                faction,
+                camp,
+                kills,
+                seconds,
+                near,
+                zone,
+                ..
+            } => self.grind_reputation(&mut step, *faction, *camp, *kills, *seconds, near, *zone),
             Event::CatchUp {
                 members,
                 seconds,
@@ -336,6 +345,7 @@ impl StepWriter<'_> {
             party: t.party.clone(),
             members: None,
             keep: false,
+            escort: false,
             event: None,
         }
     }
@@ -427,7 +437,7 @@ impl StepWriter<'_> {
         step.objective = Some(k);
         step.slot = Some(o.slot.unwrap_or(0));
         step.elite = o.elite;
-        step.mob_level = (o.kills > 0.0 && o.mob_level > 0).then_some(o.mob_level);
+        step.mob_level = (o.kills > 0.0 && o.mob_level > 0.0).then_some(o.mob_level.round() as i64);
         for (id, name) in o.mobs.iter().take(4) {
             if !step.mob_ids.contains(id) {
                 step.mobs.push(name.clone());
@@ -598,6 +608,42 @@ impl StepWriter<'_> {
         self.place(near, Some(zone))
     }
 
+    /// Creatures to kill for the reputation a quest asks for.
+    #[expect(clippy::too_many_arguments, reason = "the fields of the event, unpacked")]
+    fn grind_reputation(
+        &self,
+        step: &mut Step,
+        faction: i64,
+        camp: usize,
+        kills: u32,
+        seconds: f64,
+        near: &Pos,
+        zone: i64,
+    ) -> Place {
+        let model = &self.planner.model;
+        let id = faction;
+        let camp = &model.reputation_camps[&faction][camp];
+        step.kind = StepKind::Grind;
+        step.target = Some(Target {
+            kind: TargetKind::Npc,
+            id: camp.npc,
+            name: camp.name.clone(),
+        });
+        let name = model
+            .faction_names
+            .get(&id)
+            .cloned()
+            .unwrap_or_else(|| format!("Faction {id}"));
+        step.say.push(
+            Phrase::new("grind.reputation")
+                .arg("mobs", num(i64::from(kills)))
+                .arg("npc", Arg::Npc(camp.npc, camp.name.clone()))
+                .arg("faction", Arg::Text(name))
+                .arg("minutes", num((seconds / 60.0).ceil() as i64)),
+        );
+        self.place(near, Some(zone))
+    }
+
     /// The players behind killing mobs to catch up with the group.
     fn group_catch_up(&self, step: &mut Step, members: u8, seconds: f64, near: &Pos, zone: i64) -> Place {
         step.kind = StepKind::Grind;
@@ -674,21 +720,16 @@ impl StepWriter<'_> {
     /// Learn a profession rank at a trainer or by buying and reading its book.
     fn profession_train(&self, step: &mut Step, profession: usize, trainer: usize, ranks: u8) -> Place {
         let model = self.planner.model;
-        let (plan, npc) = (&model.professions[profession], &model.profession_trainers[trainer].loc);
+        let teacher = &model.profession_trainers[trainer];
+        let (plan, npc) = (&model.professions[profession], &teacher.loc);
         step.kind = StepKind::Profession;
         step.line = Some(crate::profession::skill_line(&plan.key));
         let top = (RANKS.iter().enumerate()).rev().find(|(r, _)| ranks & 1 << r != 0);
         step.skill = top.map(|(_, rank)| rank.cap);
-        let phrase = if let Some(book) = model.profession_trainers[trainer].book {
-            Phrase::new("profession.book")
-                .arg("item", Arg::Item(book.item, book.name.to_owned()))
-                .arg("cap", Arg::Num(book.cap))
-        } else {
-            Phrase::new(if ranks & 1 != 0 {
-                "profession.learn"
-            } else {
-                "profession.rank"
-            })
+        let phrase = match teacher.book {
+            Some(book) => Phrase::new("profession.book").arg("book", Arg::Item(book.item, book.name.to_owned())),
+            None if ranks & 1 != 0 => Phrase::new("profession.learn"),
+            None => Phrase::new("profession.rank"),
         };
         step.say.push(
             phrase
@@ -895,6 +936,7 @@ impl StepWriter<'_> {
                     step.say
                         .push(Phrase::new("objective.text").arg("text", Arg::Text(purchase.action.clone())));
                 }
+                step.escort = q.escort;
                 // An item dropped by a mob: named, targeted by the addon's macro, and its other
                 // places.
                 let say = match &q.start_mob {
@@ -902,7 +944,7 @@ impl StepWriter<'_> {
                     Some((id, name)) if loc.kind == EntityKind::Item => {
                         step.mobs.push(name.clone());
                         step.mob_ids.push(*id);
-                        step.mob_level = (q.start_mob_level > 0).then_some(q.start_mob_level);
+                        step.mob_level = (q.start_mob_level > 0.0).then_some(q.start_mob_level.round() as i64);
                         step.spots = self.spots(q.start_spots.as_ref(), &loc.pos, loc.zone);
                         Phrase::new("accept.item.mob").arg("mob", Arg::Npc(*id, name.clone()))
                     }

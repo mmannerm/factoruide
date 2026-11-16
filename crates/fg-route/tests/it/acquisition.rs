@@ -89,7 +89,7 @@ fn shipping_label_buys_and_fills_a_crate_before_the_faction_turn_in() {
             .unwrap();
         assert_eq!(turnin.say[0].key, "turnin");
         let pack = fg_route::export::polestar::pack(&[("shipping".into(), guide.clone())], "test");
-        let lua = &pack.iter().find(|(file, _)| *file == "Guides.lua").unwrap().1;
+        let lua = &pack.iter().find(|(file, _)| *file == "Guide_shipping.lua").unwrap().1;
         assert_eq!(lua.matches(format!("t = \"accept\", quest = {id}").as_str()).count(), 1);
         // Compare the same route without purchase work: no travel or kill-XP difference.
         p.model.quests[i].auction_start = None;
@@ -225,10 +225,19 @@ fn an_objective_guide_reaches_an_explicit_completion_floor() {
 
 #[test]
 fn shipping_label_still_needs_an_accessible_auction_house() {
-    let conn = database_of("forever");
-    let mut o = Overrides::load_edition(&repo().join("overrides"), Edition::Forever).unwrap();
-    o.params.excluded_zones = conn.prepare("SELECT DISTINCT s.zone_id FROM m_spawn s JOIN m_npc n ON s.entity_type='npc' AND s.entity_id=n.id WHERE coalesce(n.npc_flags,0) & 4096 != 0").unwrap()
-        .query_map([], |row| row.get(0)).unwrap().collect::<Result<Vec<i64>,_>>().unwrap();
+    // Remove auction services in a private copy: excluding their whole zones would also
+    // exclude the Barrens turn-in now that Auctioneer Quickcoin is there.
+    let mut source = database_of("forever");
+    let data = source.serialize(rusqlite::MAIN_DB).unwrap();
+    let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+    conn.deserialize_read_exact(rusqlite::MAIN_DB, &*data, data.len(), false)
+        .unwrap();
+    conn.execute(
+        "UPDATE m_npc SET npc_flags = npc_flags & ~4096 WHERE coalesce(npc_flags, 0) & 4096 != 0",
+        [],
+    )
+    .unwrap();
+    let o = Overrides::load_edition(&repo().join("overrides"), Edition::Forever).unwrap();
     let mut req = request("skyborne_horde", 98248);
     let error = job::prepare(&conn, &o, &req, &|_| {}).err().unwrap();
     assert!(format!("{error:#}").contains("no reachable quest giver"));

@@ -128,9 +128,32 @@ impl QuestBuilder<'_> {
                 ..buy(pos, zone, 10.0 + wait, Vec::new())
             }
         } else if let Some((pos, zone, _)) = best_cluster(&places.mobs, Some(&quest.anchor)) {
+            // Dropping too seldom for the player even from its best mob: the quest is left out,
+            // unless it is a class quest (never left out).
+            let best = (places.mob_ids.iter())
+                .filter_map(|id| self.sources.drop_chance.get(&(target, *id)).copied())
+                .fold(0.0, f64::max);
+            if best > 0.0 && best < self.params.min_drop_chance && !self.sources.class_quest_ids.contains(&quest.row.id)
+            {
+                return Err("quest item drop rate under the minimum");
+            }
             let farm =
                 |pos: Pos, zone: i64| self.farm(quest, target, &places.mob_ids, count, at(pos, zone), text.clone());
             let first = farm(pos, zone);
+            // Every mob dropping it gives progress when killed, wherever (for another quest).
+            let credit: Vec<(i64, f64)> = (places.sources.iter())
+                .filter(|(t, id)| {
+                    *t == SourceKind::Npc
+                        && (self.params.allow_elite || !self.sources.entities.is_elite(*id))
+                        && !self.sources.entities.friendly.contains(id)
+                })
+                .map(|(_, id)| {
+                    let chance = (self.sources.drop_chance.get(&(target, *id)).copied())
+                        .unwrap_or(self.params.default_drop_chance);
+                    (*id, chance / (count * self.per_player).max(1.0))
+                })
+                .collect();
+            let first = Objective { credit, ..first };
             Objective {
                 alts: alternatives(
                     &places.mobs,
@@ -174,7 +197,7 @@ impl QuestBuilder<'_> {
             // Unknown source: mobs of the quest level around the quest giver.
             Objective {
                 kills: count / self.params.default_drop_chance * self.per_player,
-                mob_level: quest.level,
+                mob_level: quest.level as f64,
                 count,
                 ..Objective::plain(at(quest.anchor, quest.zone), text, 0.0)
             }
@@ -339,7 +362,7 @@ impl QuestBuilder<'_> {
         let fit: Vec<i64> = ids
             .iter()
             .copied()
-            .filter(|id| entities.npc_level(*id) <= quest.level + 3)
+            .filter(|id| entities.npc_level(*id) <= (quest.level + 3) as f64)
             .collect();
         if fit.is_empty() { ids } else { fit }
     }
@@ -409,11 +432,12 @@ impl QuestBuilder<'_> {
             })
             .collect();
         let here = if here.is_empty() { mob_ids.to_vec() } else { here };
-        let mob_level = here
-            .iter()
-            .map(|id| entities.npc_level(*id))
-            .min()
-            .unwrap_or(quest.level);
+        // The mobs there are all fought: the average of their levels, not the lowest of them.
+        let mob_level = if here.is_empty() {
+            quest.level as f64
+        } else {
+            here.iter().map(|id| entities.npc_level(*id)).sum::<f64>() / here.len() as f64
+        };
         let chances: Vec<f64> = here
             .iter()
             .filter_map(|id| self.sources.drop_chance.get(&(target, *id)).copied())
@@ -433,8 +457,10 @@ impl QuestBuilder<'_> {
                 .collect();
             Spots::new(&points, &pos)
         };
+        let kills = count / chance * self.per_player;
         Objective {
-            kills: count / chance * self.per_player,
+            kills,
+            low_drop_kills: kills * (1.0 - chance),
             mob_level,
             elite: here.iter().all(|id| entities.is_elite(*id)),
             count,
@@ -547,5 +573,101 @@ values = { area = 1581, name = "The Deadmines", entrance_zone = 40, entrance_x =
         );
         assert_eq!(objective.mobs, vec![(990002, "Outdoor dropper".into())]);
         assert_eq!(objective.uses, 0.0);
+        assert_eq!(objective.low_drop_kills, 18.0, "three kills in four drop nothing");
+    }
+
+    /// Two kinds of ghouls dropping a rib one time in ten, side by side: 24-25 and 26-27.
+    fn ghoul_ribs(params: &serde_json::Value, required: &[i64]) -> job::Prepared {
+        let conn = Fixture::new(Edition::Classic)
+            .toml(
+                r#"
+[[npc]]
+id = 990101
+name = "Giver"
+npc_flags = 2
+friendly_to = "AH"
+at = [{ zone = 40, x = 56.0, y = 47.0 }]
+[[npc]]
+id = 990102
+name = "Rotting Ghoul"
+level = 24
+max_level = 25
+at = [{ zone = 40, x = 42.0, y = 72.0 }]
+[[npc]]
+id = 990103
+name = "Brittle Ghoul"
+level = 26
+max_level = 27
+at = [{ zone = 40, x = 42.2, y = 72.2 }]
+[[item]]
+id = 990104
+name = "Ghoul Rib"
+class = 12
+drops = [{ npc = 990102, chance = 0.1 }, { npc = 990103, chance = 0.1 }]
+[[quest]]
+id = 990105
+name = "Rib collection"
+level = 25
+zone = 40
+giver = 990101
+objectives = [{ item = 990104, amount = 5 }]
+[[quest]]
+id = 990106
+name = "Ghoul cull"
+level = 25
+zone = 40
+giver = 990101
+objectives = [{ creature = 990102, amount = 8 }]
+"#,
+            )
+            .open();
+        let mut all = serde_json::json!({"edition":"classic", "all_class_quests":false, "dungeons":false});
+        all.as_object_mut()
+            .expect("an object")
+            .extend(params.as_object().cloned().unwrap_or_default());
+        let request = serde_json::from_value(serde_json::json!({
+            "race":"human", "class":"warrior", "from_level":23, "to_level":30, "params": all,
+            "required_quests": required
+        }))
+        .unwrap();
+        let overrides = job::Overrides::load_edition(
+            &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../overrides"),
+            Edition::Classic,
+        )
+        .unwrap();
+        job::prepare(&conn, &overrides, &request, &|_| {}).unwrap()
+    }
+
+    #[test]
+    fn the_kills_that_drop_nothing_are_counted_for_their_weight() {
+        let p = ghoul_ribs(&serde_json::json!({}), &[]);
+        let ribs = &p.model.quests[p.model.index[&990105]].objectives[0];
+        assert_eq!(ribs.kills, 50.0, "five ribs at ten percent");
+        assert_eq!(ribs.low_drop_kills, 45.0, "nine kills in ten drop nothing");
+        let cull = &p.model.quests[p.model.index[&990106]].objectives[0];
+        assert_eq!(cull.low_drop_kills, 0.0, "a kill objective drops nothing to wait for");
+    }
+
+    #[test]
+    fn a_quest_item_dropping_under_the_minimum_leaves_its_quest_out() {
+        let p = ghoul_ribs(&serde_json::json!({"min_drop_chance": 0.2}), &[]);
+        assert!(!p.model.index.contains_key(&990105), "ten percent is under twenty");
+        assert!(p.model.index.contains_key(&990106), "the kill quest stays");
+        let p = ghoul_ribs(&serde_json::json!({"min_drop_chance": 0.1}), &[]);
+        assert!(p.model.index.contains_key(&990105), "at the minimum, the quest stays");
+        let p = ghoul_ribs(&serde_json::json!({"min_drop_chance": 0.2}), &[990105]);
+        assert!(
+            p.model.index.contains_key(&990105),
+            "asked for by the player, the quest stays"
+        );
+    }
+
+    #[test]
+    fn mobs_are_fought_at_the_average_of_their_levels() {
+        let p = ghoul_ribs(&serde_json::json!({}), &[]);
+        let cull = &p.model.quests[p.model.index[&990106]].objectives[0];
+        assert_eq!(cull.mob_level, 24.5, "a 24-25 mob");
+        let ribs = &p.model.quests[p.model.index[&990105]].objectives[0];
+        assert_eq!(ribs.mob_level, 25.5, "24-25 and 26-27 together, not the lowest");
     }
 }

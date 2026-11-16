@@ -689,3 +689,52 @@ fn forever_call_of_fire_keeps_braziers_as_interactions() {
         "{error:#}"
     );
 }
+
+#[test]
+fn what_we_lost_buries_mementos_only_after_looting_them() {
+    let conn = database_of("forever");
+    let o = overrides(Edition::Forever);
+    let mut req = request(&json!([94829]));
+    req.from_level = 40;
+    req.to_level = 41;
+    let editor = Editor::open(&conn, &o, &req, None).unwrap();
+    let names = Names::load(&conn, "enUS").unwrap();
+    let accept = RouteStep::Accept { quest: 94829 };
+    let collect = RouteStep::Objective {
+        quest: 94829,
+        objective: 0,
+        farm: false,
+        spot: None,
+    };
+    let bury = RouteStep::Objective {
+        quest: 94829,
+        objective: 1,
+        farm: false,
+        spot: None,
+    };
+    let turn_in = RouteStep::TurnIn { quest: 94829 };
+    let direct = vec![accept.clone(), collect.clone(), bury.clone(), turn_in.clone()];
+    // Saving Sunnyglade kills the same Twilight Raiders: its kills can supply the mementos
+    // while both quests are accepted, without a separate collection stop for What We Lost.
+    let shared = vec![
+        accept.clone(),
+        RouteStep::Accept { quest: 94877 },
+        RouteStep::Objective {
+            quest: 94877,
+            objective: 0,
+            farm: false,
+            spot: None,
+        },
+        bury.clone(),
+        turn_in.clone(),
+    ];
+    for route in [direct, shared] {
+        let report = editor.simulate(&route, &names);
+        assert_eq!(report.errors, 0, "{:?}", report.steps);
+        editor.save(&route, vec![]).unwrap();
+    }
+    let before_loot = vec![accept, bury, collect, turn_in];
+    let invalid = editor.simulate(&before_loot, &names);
+    assert!(invalid.errors > 0, "burial cannot precede collecting the mementos");
+    assert!(editor.save(&before_loot, vec![]).is_err());
+}

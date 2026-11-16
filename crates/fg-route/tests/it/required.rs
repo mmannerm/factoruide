@@ -698,10 +698,10 @@ fn class_quests_are_open_to_the_races_new_to_a_class_of(race: &str, class: &str,
     }
 }
 
-/// Automatic class requirements keep their default window; a quest already gray at the start
-/// has no limit. Explicit player choices are tested separately.
+/// Automatic class quests have an advisory starting level, with no upper completion bound.
+/// Explicit player choices are tested separately.
 #[test]
-fn an_automatic_class_quest_is_done_while_it_is_not_too_hard_nor_gray() {
+fn an_automatic_class_quest_has_no_gray_completion_limit() {
     let window = |progression: Option<&str>, level: i64, from: i64| {
         let s = Scenario::new()
             .levels(from, 40)
@@ -722,13 +722,12 @@ fn an_automatic_class_quest_is_done_while_it_is_not_too_hard_nor_gray() {
         let w = p.model.quests[0].completion_window;
         (w.min_level, w.max_level)
     };
-    // Yellow from two levels below, gray from level 18 (a quest of level 12).
-    assert_eq!(window(None, 12, 1), (Some(10), Some(17)));
+    // Yellow from two levels below (a quest of level 12).
+    assert_eq!(window(None, 12, 1), (Some(10), None));
     // Orange from four levels below for a risky character.
-    assert_eq!(window(Some("risky"), 12, 1), (Some(8), Some(17)));
-    // Already in the window at the start: no minimum.
-    assert_eq!(window(None, 12, 11), (None, Some(17)));
-    // Already gray at the start: nothing to ask.
+    assert_eq!(window(Some("risky"), 12, 1), (Some(8), None));
+    // Already in the window, or gray, at the start: nothing to ask.
+    assert_eq!(window(None, 12, 11), (None, None));
     assert_eq!(window(None, 12, 20), (None, None));
 }
 
@@ -795,7 +794,8 @@ fn an_automatic_class_target_does_not_refuse_a_quest_guarded_past_its_window() {
         count: 2,
         elite: false,
     };
-    assert_eq!(p.model.quests[0].completion_window.max_level, Some(37));
+    assert_eq!(p.model.quests[0].completion_window.max_level, None);
+    assert_eq!(p.model.quests[0].priority_deadline, Some(37));
     let planner = Planner::new(&p.model, &p.world, &p.params, &p.profile);
     let route = planner.greedy();
     planner.validate_required(&route).unwrap();
@@ -847,7 +847,8 @@ fn an_older_group_member_can_start_past_an_automatic_class_target() {
     let i = p.model.index[&98397];
     assert_eq!(p.model.initial.need(i), 0b10);
     assert!(p.model.quests[i].implicit_window);
-    assert_eq!(p.model.quests[i].completion_window.max_level, Some(26));
+    assert_eq!(p.model.quests[i].completion_window.max_level, None);
+    assert_eq!(p.model.quests[i].priority_deadline, Some(26));
     Editor::open(&conn, &o, &req, None).unwrap();
 
     req.required_quests = serde_json::from_value(serde_json::json!([{"quest":98397,"max_level":26}])).unwrap();
@@ -856,4 +857,66 @@ fn an_older_group_member_can_start_past_an_automatic_class_target() {
         format!("{error:#}").contains("Older is already above completion level 26"),
         "{error:#}"
     );
+}
+
+/// A class chain of eight quests going back and forth between far places (the dwarf shaman's Call
+/// of Water), level 12, gray from level 18, with forty quests at hand that give more XP, planned from
+/// `from`: the levels its last quest is turned in at, the route valid.
+fn long_class_chain_turn_in(from: i64) -> i64 {
+    let mut s = Scenario::new()
+        .levels(from, 20)
+        .zone(2, "Far")
+        .zone(3, "Farther")
+        .zone(4, "Farthest");
+    for id in 1..=8 {
+        let zone = if id % 2 == 0 { 4 } else { 1 };
+        let mut q = Q::new(id, "Call of Water")
+            .mandatory()
+            .level(12)
+            .min_level(10)
+            .xp(9000)
+            .giver(zone, 50.0, 50.0)
+            .objective(Obj::visit("Fill the waterskin", At { zone, x: 52.0, y: 52.0 }));
+        if id > 1 {
+            q = q.after_any(&[id - 1]);
+        }
+        s = s.quest(q);
+    }
+    for id in 100..140 {
+        let x = 30.0 + (id - 100) as f64 * 0.3;
+        s = s.quest(
+            Q::new(id, "Nearby")
+                .level(12)
+                .xp(3000)
+                .giver(1, x, 30.0)
+                .kill("Boar", 12, 2, 1, x + 1.0, 31.0),
+        );
+    }
+    let p = s.requirement("Call of Water", &[8]).build();
+    let planner = Planner::new(&p.model, &p.world, &p.params, &p.profile);
+    let route = planner.construct(|_| {});
+    assert_eq!(planner.diagnose(&route), None);
+    let mut trace = Vec::new();
+    planner.simulate(&route, Some(&mut trace)).expect("valid");
+    let last = Stop::quest(p.model.index[&8] as u32, Kind::TurnIn);
+    (trace.iter())
+        .find_map(|t| match t.event {
+            fg_route::plan::Event::Stop { stop, .. } if stop == last => Some(t.level),
+            _ => None,
+        })
+        .expect("the class chain is done")
+}
+
+/// Class quests are started as soon as they can be, the rest of the route arranged around them:
+/// a long chain ends before it turns gray. Pushed only near its deadline, it ended past it and no
+/// route was found (issue #171).
+#[test]
+fn a_long_class_chain_is_started_early_enough_to_end_before_gray() {
+    assert!(long_class_chain_turn_in(10) <= 17);
+}
+
+/// A class quest is always done: started too late to end before it turns gray, it is done gray.
+#[test]
+fn a_class_chain_that_cannot_end_before_gray_is_done_anyway() {
+    assert!(long_class_chain_turn_in(17) >= 18);
 }

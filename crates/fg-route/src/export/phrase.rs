@@ -4,16 +4,38 @@
 
 use super::templates::{Lang, profession_name, template};
 use crate::model::Names;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Phrase {
     #[serde(rename = "k")]
     pub key: String,
-    #[serde(rename = "a", default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(rename = "a", skip_serializing_if = "BTreeMap::is_empty")]
     pub args: BTreeMap<String, Arg>,
+}
+
+impl<'de> Deserialize<'de> for Phrase {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        struct SavedPhrase {
+            #[serde(rename = "k")]
+            key: String,
+            #[serde(rename = "a", default)]
+            args: BTreeMap<String, Arg>,
+        }
+        let SavedPhrase { key, mut args } = SavedPhrase::deserialize(deserializer)?;
+        // Fork guides saved before the upstream book template used `item` and `cap`.
+        // Normalize that persisted argument once on load; new phrases already use `book`.
+        if key == "profession.book"
+            && !args.contains_key("book")
+            && let Some(item) = args.remove("item")
+        {
+            args.insert("book".to_owned(), item);
+        }
+        Ok(Self { key, args })
+    }
 }
 
 /// An argument of a sentence: a name translated by ID (its English name when no translation
@@ -105,4 +127,33 @@ impl Arg {
 /// The sentences of a step, one after the other.
 pub(crate) fn render_all(phrases: &[Phrase], names: &Names) -> String {
     phrases.iter().map(|p| p.render(names)).collect::<Vec<_>>().join(" ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn saved_fork_profession_books_keep_their_item_when_rendered_again() {
+        let saved = r#"{
+            "k": "profession.book",
+            "a": {
+                "item": {"item": [16072, "Expert Cookbook"]},
+                "cap": {"num": 225},
+                "profession": {"profession": ["cooking", "Cooking"]},
+                "who": {"npc": [12033, "Wulan"]}
+            }
+        }"#;
+        let phrase: Phrase = serde_json::from_str(saved).unwrap();
+        assert_eq!(
+            phrase.render(&Names::default()),
+            "Buy Expert Cookbook from Wulan and read it to learn Expert Cooking"
+        );
+        let saved_again = serde_json::to_value(&phrase).unwrap();
+        assert_eq!(
+            saved_again["a"]["book"],
+            serde_json::json!({"item": [16072, "Expert Cookbook"]})
+        );
+        assert!(saved_again["a"].get("item").is_none());
+    }
 }

@@ -99,7 +99,7 @@ fn secondary_expert_book_sources_and_exports_match_each_faction() {
                 assert_eq!(step.zone_id, Some(zone));
                 assert_eq!(
                     step.text,
-                    format!("Buy {book_name} from {name} and read it to raise your {profession_name} skill cap to 225")
+                    format!("Buy {book_name} from {name} and read it to learn Expert {profession_name}")
                 );
                 let lua = export::to_lua(std::slice::from_ref(&route));
                 assert!(lua.contains(book_name));
@@ -113,7 +113,7 @@ fn secondary_expert_book_sources_and_exports_match_each_faction() {
                         .find(|s| s.kind == StepKind::Profession)
                         .unwrap()
                         .say[0]
-                        .args["item"],
+                        .args["book"],
                     export::Arg::Item(item, book_name.to_owned())
                 );
                 let french = export::render(&route, &fg_route::model::Names::new("frFR"));
@@ -156,6 +156,12 @@ fn actual_trainer_ranks_match_the_supported_editions() {
         if edition == Edition::Tbc {
             assert_eq!(cap(3355), Some(300), "TBC Saru teaches all ranks through Artisan");
             assert_eq!(cap(1383), None, "Snarl is no longer a rank trainer in TBC");
+            assert_eq!(cap(2855), Some(75), "TBC Snang still teaches Apprentice Tailoring");
+            assert_eq!(
+                cap(18993),
+                None,
+                "Naka's cooking supplies do not establish a rank trainer"
+            );
         } else {
             for (id, rank_cap) in [
                 (10266, 75),

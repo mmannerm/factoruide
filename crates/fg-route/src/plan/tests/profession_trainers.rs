@@ -218,10 +218,7 @@ fn a_character_met_in_game_knows_the_ranks_its_skill_needs() {
 fn secondary_with_book(key: &str, skill: i64) -> Prepared {
     let mut p = quests_at_start(1);
     let def = crate::profession::find(key).unwrap();
-    let book = *crate::profession::EXPERT_BOOKS
-        .iter()
-        .find(|book| book.line == def.skill_id)
-        .unwrap();
+    let book = crate::profession::expert_book(def.skill_id).unwrap();
     let mut loc = p.model.start.clone();
     loc.pos.x += 50.0;
     p.model.professions = vec![ProfessionPlan {
@@ -234,7 +231,7 @@ fn secondary_with_book(key: &str, skill: i64) -> Prepared {
     }];
     p.model.profession_trainers = vec![ProfessionTrainer {
         line: book.line,
-        cap: book.cap,
+        cap: 225,
         loc,
         book: Some(book),
     }];
@@ -393,4 +390,62 @@ fn secondary_books_respect_reported_caps_and_goals_ending_at_150() {
             }
         }
     }
+}
+
+/// Cooking's trainers teach up to journeyman: past skill 150 the character buys the expert book
+/// from its vendor, not from the trainer next door.
+#[test]
+fn the_expert_rank_of_cooking_comes_from_its_book() {
+    let mut p = quests_at_start(1);
+    let mut near = p.model.start.clone();
+    near.pos.x += 50.0;
+    let mut far = p.model.start.clone();
+    far.pos.x += 1500.0;
+    p.model.professions = vec![ProfessionPlan {
+        key: "cooking".to_owned(),
+        name: "Cooking".to_owned(),
+        target: 300,
+        start: 5,
+        curve: (0..=60).map(|l: i64| (8 * (l - 5)).clamp(0, 300)).collect(),
+        members: 1,
+    }];
+    p.model.profession_trainers = vec![
+        ProfessionTrainer {
+            line: 185,
+            cap: 150,
+            loc: near,
+            book: None,
+        },
+        ProfessionTrainer {
+            line: 185,
+            cap: 225,
+            loc: far,
+            book: crate::profession::expert_book(185),
+        },
+    ];
+    p.params.profession_trainers = true;
+    p.profile.to_level = 60;
+    let planner = planner(&p);
+    let mut s = planner.sim().initial_state();
+    // Skill 160: apprentice and journeyman from the trainer, expert needed from the book.
+    s.level = 25;
+    let events = visits(&planner, &mut s);
+    assert!(
+        matches!(
+            events[..],
+            [
+                Event::ProfTrain {
+                    trainer: 0,
+                    ranks: 0b11,
+                    ..
+                },
+                Event::ProfTrain {
+                    trainer: 1,
+                    ranks: 0b100,
+                    ..
+                }
+            ]
+        ),
+        "{events:?}"
+    );
 }

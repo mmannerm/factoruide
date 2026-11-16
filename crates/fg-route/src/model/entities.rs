@@ -212,8 +212,10 @@ impl Entities {
         .unwrap_or_else(|| format!("{} {id}", kind.as_str()))
     }
 
-    pub(super) fn npc_level(&self, id: i64) -> i64 {
-        self.npc.get(&id).map_or(1, |n| i64::midpoint(n.1, n.2))
+    /// The level an NPC is fought at on average: the middle of its range, as the game picks
+    /// each spawn's level in it (a 24-25 mob is 24.5; 1 when unknown).
+    pub(super) fn npc_level(&self, id: i64) -> f64 {
+        self.npc.get(&id).map_or(1.0, |n| (n.1 + n.2) as f64 / 2.0)
     }
 
     pub(super) fn is_elite(&self, id: i64) -> bool {

@@ -20,3 +20,10 @@ after = [3] # Overhear Lescovar and Marzon's Conversation
 quest = 434
 objective = 2 # Kill Marzon the Silent Blade
 after = [3]
+
+# What We Lost (Riverglades): collect the Farmers' Mementos from a Twilight Raider before
+# burying them in the graves. A kill for another accepted quest can supply the mementos too.
+[[order]]
+quest = 94829
+objective = 2 # Bury the mementos
+after = [1] # Loot the Farmers' Mementos
