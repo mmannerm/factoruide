@@ -4,6 +4,8 @@
 # orbs, lifts). Links work both ways unless `one_way = true`. `races` (keys of races.toml): only
 # those races can take it (default: every race of `faction`). `after_quest`: open once that
 # quest is taken; with `while_held = true`, only while it is in the log (a quest's free flight).
+# after_turnin: open only after this quest is turned in (a reward unlocking transport), including
+# completion recorded in a saved profile. Cannot be combined with after_quest or while_held.
 #
 # This file: the links of every game version; <edition>/travel.toml adds those of one version
 # (forever, classic, tbc).

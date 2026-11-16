@@ -252,6 +252,13 @@ impl Overrides {
         let passes = parse_toml::<Passes>(&file, "passes.toml")?;
         let travel = parse_toml::<Travel>(&file, "travel.toml")?;
         let client = parse_toml::<Client>(&file, "client.toml")?;
+        for link in travel.link.iter().chain(&client.link) {
+            anyhow::ensure!(
+                link.after_turnin.is_none() || (link.after_quest.is_none() && !link.while_held),
+                "Transport link {:?}: after_turnin cannot be combined with after_quest or while_held",
+                link.name
+            );
+        }
         let mut movement = parse_toml::<Abilities>(&file, "movement.toml")?;
         for ability in &mut movement.ability {
             ability.trained_at = movement.training.get(&ability.name).copied();
@@ -284,6 +291,24 @@ impl Overrides {
 #[cfg(test)]
 mod tests {
     use super::{ClassPower, Overrides};
+
+    #[test]
+    fn contradictory_transport_unlocks_are_rejected() {
+        for other in ["after_quest = 1", "while_held = true"] {
+            let text = format!(
+                r#"[[link]]
+name = "invalid reward link"
+from = {{ zone = 33, x = 27.63, y = 77.55 }}
+to = {{ zone = 1, x = 21.36, y = 37.14 }}
+seconds = 10
+after_turnin = 2843
+{other}
+"#
+            );
+            let err = Overrides::parse(|name| (name == "travel.toml").then(|| text.clone())).unwrap_err();
+            assert!(err.to_string().contains("after_turnin cannot be combined"));
+        }
+    }
 
     /// The class curve between the levels given is a straight line, flat beyond them; Forever's
     /// file changes some of the levels of a class and keeps the others.

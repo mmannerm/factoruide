@@ -263,7 +263,7 @@ impl Planner<'_> {
             route = best.1;
             run = done(self.run(&route).expect("best route was valid"));
         }
-        let early = self.power_first(route.clone());
+        let early = self.transport_first(self.power_first(route.clone()));
         if early != route {
             route = early;
             run = done(self.run(&route).expect("power_first keeps the route valid"));
