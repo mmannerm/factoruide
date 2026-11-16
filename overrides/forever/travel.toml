@@ -88,3 +88,17 @@ instant = true
 one_way = true
 after_quest = 94947
 while_held = true
+
+# Goblin Transponder, awarded by Gnomer-gooooone!; accepting the quest is not enough.
+# Both pads are outside the instance. Coordinates: bundled m_spawn objects
+# 142172/143230 (Booty Bay) and 142175/142176 (Dun Morogh, underground entrance).
+# https://www.wowhead.com/forever/quest=2843/gnomer-gooooone
+# The travel time is an estimated teleport/loading time, not a timed observation.
+[[link]]
+name = "Goblin Transponder: Booty Bay - Gnomeregan (keep the transponder)"
+faction = "Horde"
+from = { zone = 33, x = 27.63, y = 77.55 }
+to = { zone = 1, x = 21.36, y = 37.14 }
+seconds = 10
+instant = true
+after_turnin = 2843

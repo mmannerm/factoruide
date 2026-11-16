@@ -650,7 +650,7 @@ impl Planner<'_> {
             self.insert_missing_mandatory(self.settle(route))
         };
         let route = self.keep_log_quests(route);
-        let route = self.place_hearths(self.rebind(self.place_hearths(self.power_first(route))));
+        let route = self.place_hearths(self.rebind(self.place_hearths(self.transport_first(self.power_first(route)))));
         if self.diagnostics.debug {
             for (reason, n) in self.explain_unused(&route) {
                 log(&format!("  unused {reason}: {n}"));
@@ -690,6 +690,50 @@ impl Planner<'_> {
                 && t < best
             {
                 (route, best) = (candidate, t);
+            }
+        }
+        route
+    }
+
+    /// Move an already planned transport unlock near its giver. A zero-XP unlock can
+    /// otherwise be left until after the journey it shortens; moving one stop at a time
+    /// cannot discover that saving. Keep the rearrangement only if the full route is valid
+    /// and cheaper, without adding a required quest or a new routing preference.
+    pub(crate) fn transport_first(&self, mut route: Vec<Stop>) -> Vec<Stop> {
+        let Some(mut total) = self.simulate(&route, None) else {
+            return route;
+        };
+        for &(id, state) in &self.world.link_quests {
+            if self.aborted() {
+                break;
+            }
+            if state != crate::world::LinkQuestState::TurnedIn {
+                continue;
+            }
+            let Some(&q) = self.model.index.get(&id) else { continue };
+            let q = q as u32;
+            if !route
+                .iter()
+                .any(|s| s.is_quest() && s.index == q && s.kind == Kind::TurnIn)
+            {
+                continue;
+            }
+            let belongs = |s: &Stop| s.is_quest() && s.index == q;
+            let work: Vec<_> = route.iter().copied().filter(belongs).collect();
+            let rest: Vec<_> = route.iter().copied().filter(|s| !belongs(s)).collect();
+            // insert_quest places stops after another stop; also try the current starting
+            // location, important when the saved character is standing at the unlock giver.
+            let mut first = work;
+            first.extend_from_slice(&rest);
+            let mut nearby = rest;
+            self.insert_quest(&mut nearby, q);
+            for candidate in [first, nearby] {
+                if let Some(t) = self.simulate(&candidate, None)
+                    && t < total
+                {
+                    route = candidate;
+                    total = t;
+                }
             }
         }
         route

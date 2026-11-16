@@ -192,13 +192,32 @@ impl Trips<'_> {
     }
 
     /// The links `s` may take (see `World::link_chain`): those a quest opens once it is taken,
-    /// or when the character cannot take it; those open only while a quest is in the log, while
-    /// it is.
+    /// or when the character cannot take it; held-only links close on turn-in. Completion-gated
+    /// links require a real turn-in, or recorded completion for every member of a saved group.
     pub(crate) fn open_links(&self, s: &State) -> u8 {
-        let open = |&(id, held): &(i64, bool)| match self.model.index.get(&id) {
-            Some(&q) if held => s.accepted[q] && !s.turned[q],
-            Some(&q) => s.accepted[q] || s.turned[q],
-            None => !held,
+        use crate::world::LinkQuestState;
+        let open = |&(id, required): &(i64, LinkQuestState)| match self.model.index.get(&id) {
+            Some(&q) => match required {
+                LinkQuestState::Held => s.accepted[q] && !s.turned[q],
+                LinkQuestState::Taken => s.accepted[q] || s.turned[q],
+                LinkQuestState::TurnedIn => {
+                    s.rewarded(q)
+                        && (0..=self.model.initial.mates.len())
+                            .all(|m| self.model.initial.need(q) & (1 << m) != 0 || self.model.initial.done_by(m, id))
+                }
+            },
+            None => match required {
+                LinkQuestState::Taken => true,
+                LinkQuestState::Held => false,
+                LinkQuestState::TurnedIn => {
+                    self.model
+                        .initial
+                        .completed
+                        .as_ref()
+                        .is_some_and(|done| done.contains(&id))
+                        && self.model.initial.mates.iter().all(|mate| mate.completed.contains(&id))
+                }
+            },
         };
         (self.world.link_quests.iter().enumerate())
             .filter(|(_, l)| open(l))

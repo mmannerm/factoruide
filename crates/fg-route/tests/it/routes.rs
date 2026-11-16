@@ -1948,6 +1948,7 @@ fn link_opened_by_a_quest() {
         one_way: true,
         instant: true,
         races: vec![],
+        after_turnin: None,
         after_quest: Some(p.model.quests[1].id),
         while_held: false,
     };
@@ -1991,6 +1992,7 @@ fn link_open_while_a_quest_is_held() {
         one_way: true,
         instant: true,
         races: vec![],
+        after_turnin: None,
         after_quest: Some(p.model.quests[1].id),
         while_held: true,
     };
@@ -2022,6 +2024,105 @@ fn link_open_while_a_quest_is_held() {
     assert!(!takes_it(&mut p, vec![0], vec![]), "quest 1 not taken: closed");
     assert!(takes_it(&mut p, vec![0, 1], vec![]), "quest 1 in the log: open");
     assert!(!takes_it(&mut p, vec![0], vec![1]), "quest 1 turned in: closed");
+}
+
+/// A reward unlock is closed while its quest is merely held, opens after the turn-in,
+/// and cannot be assumed just because the unlock quest is absent from the model.
+#[test]
+fn transport_reward_requires_turnin() {
+    let mut p = quests_at_start(2);
+    let unlock = p.model.quests[1].id;
+    let point = |zone, x, y| fg_route::world::ZonePoint { zone, x, y, z: None };
+    let link = fg_route::world::LinkDef {
+        name: "Reward transport".into(),
+        faction: None,
+        from: point(12, 48.17, 42.94),
+        to: point(1537, 50.0, 50.0),
+        seconds: 5.0,
+        one_way: false,
+        instant: true,
+        races: vec![],
+        after_quest: None,
+        while_held: false,
+        after_turnin: Some(unlock),
+    };
+    p.world.add_links(
+        &[link],
+        p.profile.faction,
+        p.params.run_speed / p.params.detour,
+        p.params.link_wait,
+        fg_route::world::WorldTables::shared(),
+    );
+    let mut objective = one_kill_east_of_start(&p, 0.0);
+    (objective.loc.pos, objective.loc.zone) = (p.world.to_world(1537, 50.0, 50.0).unwrap(), 1537);
+    p.model.quests[0].objectives = vec![objective];
+    let objective = Stop::quest(0, Kind::Objective(0));
+    let turnin = Stop::quest(1, Kind::TurnIn);
+    let takes = |p: &Prepared, route: &[Stop]| {
+        let mut trace = Vec::new();
+        planner(p).simulate_full(route, Some(&mut trace)).unwrap();
+        trace.iter().any(|t| {
+            matches!(t.event, Event::Link { first, .. }
+            if p.world.links[first].name == "Reward transport")
+        })
+    };
+    p.model.initial.accepted = vec![0];
+    assert!(!takes(&p, &[objective]), "not accepted");
+    p.model.initial.accepted.push(1);
+    assert!(!takes(&p, &[objective, turnin]), "acceptance is not the reward");
+    assert!(
+        !takes(&p, &[objective]),
+        "a log quest abandoned by the route grants no reward"
+    );
+    let forward = p
+        .world
+        .links
+        .iter()
+        .position(|l| l.name == "Reward transport" && l.from_zone == 12)
+        .unwrap();
+    let abandoned = planner(&p).explicit().edit(&[
+        Edit::Abandon { quest: 1 },
+        Edit::Link {
+            first: forward,
+            last: forward,
+        },
+    ]);
+    assert_eq!(abandoned.steps[1].outcome, Outcome::Invalid("no such crossing"));
+    assert!(takes(&p, &[turnin, objective]), "turn-in opens the same trip");
+    p.model.initial.accepted = vec![0];
+    p.model.initial.turned = vec![1];
+    assert!(takes(&p, &[objective]), "completed in the model");
+
+    p.model.index.remove(&unlock);
+    p.model.initial.turned.clear();
+    p.model.initial.completed = None;
+    assert!(!takes(&p, &[objective]), "missing history must not grant transport");
+    p.model.initial.completed = Some(std::collections::HashSet::new());
+    assert!(!takes(&p, &[objective]), "known incomplete outside the model");
+    p.model.initial.completed.as_mut().unwrap().insert(unlock);
+    assert!(takes(&p, &[objective]), "recorded completion outside the model");
+    // Return trip uses the same unlock rather than becoming an unconditional shortcut.
+    p.model.initial.pos = Some((p.world.to_world(1537, 50.0, 50.0).unwrap(), 1537));
+    p.model.quests[0].objectives[0].loc.pos = p.world.to_world(12, 48.17, 42.94).unwrap();
+    p.model.quests[0].objectives[0].loc.zone = 12;
+    // The synthetic maps make the walk short enough to bypass automatic link search;
+    // request the return pad explicitly and check the editor's travel gate.
+    let reverse = p
+        .world
+        .links
+        .iter()
+        .position(|l| l.name == "Reward transport" && l.from_zone == 1537)
+        .unwrap();
+    let crossing = Edit::Link {
+        first: reverse,
+        last: reverse,
+    };
+    assert_eq!(planner(&p).explicit().edit(&[crossing]).steps[0].outcome, Outcome::Done);
+    p.model.initial.completed.as_mut().unwrap().clear();
+    assert_eq!(
+        planner(&p).explicit().edit(&[crossing]).steps[0].outcome,
+        Outcome::Invalid("no such crossing")
+    );
 }
 
 /// A quest given up is not turned in: it opens no follow-up. Fire Hardened Mail, left in the log

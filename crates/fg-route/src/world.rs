@@ -211,11 +211,10 @@ pub struct World {
     /// The way each direct flight goes (world x, y, its ends included), by node indexes.
     taxi_paths: HashMap<(usize, usize), Vec<(f64, f64)>>,
     pub links: Vec<Link>,
-    /// Quests whose taking opens links (`LinkDef::after_quest`), with whether only while they
-    /// are in the log (`LinkDef::while_held`).
-    pub link_quests: Vec<(i64, bool)>,
+    /// Quest states opening links: taken, still held, or turned in.
+    pub link_quests: Vec<(i64, LinkQuestState)>,
     /// Time to chain links i..j (boarding i, leaving j), walking in between, by set of opened
-    /// `link_quests` (bit k: quest k taken, or in the log).
+    /// `link_quests` (bit k: the quest state required by link gate k).
     link_chains: LinkChains,
     /// Walkable passages between zones and the shortest walk between any two of them.
     pub passes: Vec<Pass>,
@@ -1161,6 +1160,9 @@ pub struct LinkDef {
     /// free flight Vesprystus gives to Auberdine with Flight to Auberdine).
     #[serde(default)]
     pub while_held: bool,
+    /// Quest ID: usable only after turning it in, not merely accepting it.
+    #[serde(default)]
+    pub after_turnin: Option<i64>,
 }
 
 /// At most this many quests open links: the set of opened ones is a byte of the trip cache key.
@@ -1178,12 +1180,32 @@ pub struct Link {
     pub after_quest: Option<i64>,
     /// Open only while `after_quest` is in the log (`LinkDef::while_held`).
     pub while_held: bool,
+    pub after_turnin: Option<i64>,
+}
+
+/// The quest state required to use a transport link.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum LinkQuestState {
+    Taken,
+    Held,
+    TurnedIn,
 }
 
 impl Link {
-    /// The quest opening it (`after_quest`), and whether only while it is in the log.
-    fn opened_by(&self) -> Option<(i64, bool)> {
-        self.after_quest.map(|q| (q, self.while_held))
+    /// The quest and state opening this link.
+    fn opened_by(&self) -> Option<(i64, LinkQuestState)> {
+        self.after_turnin.map(|q| (q, LinkQuestState::TurnedIn)).or_else(|| {
+            self.after_quest.map(|q| {
+                (
+                    q,
+                    if self.while_held {
+                        LinkQuestState::Held
+                    } else {
+                        LinkQuestState::Taken
+                    },
+                )
+            })
+        })
     }
 }
 
@@ -1218,6 +1240,7 @@ impl World {
                 seconds: d.seconds + if d.instant { 0.0 } else { wait },
                 after_quest: d.after_quest,
                 while_held: d.while_held && d.after_quest.is_some(),
+                after_turnin: d.after_turnin,
             };
             self.links.push(make(a, d.from.zone, b, d.to.zone));
             if !d.one_way {
@@ -1277,7 +1300,7 @@ impl World {
     }
 
     /// Time to chain links i..j (boarding i, leaving j) with the links of `link_quests` in
-    /// `open` (bit k: quest k taken).
+    /// `open` (bit k: quest gate k satisfied).
     pub(crate) fn link_chain(&self, open: u8) -> &[Vec<f64>] {
         &self.link_chains[usize::from(open) & (self.link_chains.len() - 1)]
     }
