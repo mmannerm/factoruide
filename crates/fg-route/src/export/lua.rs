@@ -216,6 +216,9 @@ pub fn to_lua(routes: &[Route]) -> String {
             if let Some(o) = s.objective {
                 fields.push(format!("o = {}", o + 1));
             }
+            if let Some(slot) = s.slot {
+                fields.push(format!("slot = {slot}"));
+            }
             if let Some(m) = &s.map {
                 fields.push(format!("m = {}, x = {}, y = {}", m.ui_map, m.x, m.y));
             }
@@ -482,6 +485,50 @@ mod tests {
             None,
             "a visit without a cap cannot be proven unnecessary"
         );
+    }
+
+    #[test]
+    fn objective_slots_preserve_preparation_and_legacy_steps() {
+        let route = Route {
+            format: crate::export::FORMAT,
+            name: "slots".into(),
+            race_id: 5,
+            class_id: 1,
+            class: "WARRIOR".into(),
+            faction: crate::faction::Faction::Horde,
+            from_level: 12,
+            to_level: 13,
+            total_time: 0.0,
+            total_time_text: String::new(),
+            quests: 0,
+            breakdown: crate::plan::Breakdown::default(),
+            professions: vec![],
+            locale: None,
+            spells: vec![],
+            checkpoints: vec![],
+            reputation: vec![],
+            players: vec![],
+            sync_max: None,
+            class_spells: vec![],
+            buffs: vec![],
+            recommended: None,
+            levels_ignored: false,
+            steps: [Some(0), Some(1), None]
+                .into_iter()
+                .enumerate()
+                .map(|(i, slot)| {
+                    let mut step = Step::bare(StepKind::Objective, 12, 0.0);
+                    step.objective = Some(i as u8);
+                    step.slot = slot;
+                    step
+                })
+                .collect(),
+        };
+        let lua = to_lua(&[route]);
+        assert!(lua.contains("o = 1, slot = 0"));
+        assert!(lua.contains("o = 2, slot = 1"));
+        assert!(lua.contains("o = 3, lvl = 12"));
+        assert_eq!(lua.matches("slot = ").count(), 2);
     }
 
     #[test]
