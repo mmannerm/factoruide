@@ -199,7 +199,7 @@ A guide for one dungeon from your character, dungeons as zones with their steps 
 - A must-have quest asked at a minimum level ("complete it at level 18") has its dungeon run from that level, instead of before it and the hand-in after (GitHub #108).
 - WoW Forever: Lost in the Thicket Things (Excavation Site: Wetlands) is ended to Ardin Grassman inside the dungeon, who gives Heartwoven to take back to Caitlin Grassman in Menethil Harbor: the guide runs the dungeon once for both (GitHub #107).
 - A quest the guide takes and never hands in is grinding in all but name: the time of its kills counts as grinding, in the planner's score and against the grind limit. Guides no longer end on a many-hour step for a quest they never hand in, nor keep quests only for their kills (GitHub #117, #124).
-- A must-have quest (one you ask for, or a class quest the guide requires) is done while the game shows it yellow (orange with the risky profile) or green, not before and not once it is gray; a guide that cannot do it in time is refused instead of doing it levels late: the warlock's Felhunter comes by level 37 and the Felsteed by 50 instead of 44-51 (GitHub #113). Guides already made are not refused for it.
+- Automatic class requirements favor the levels where quests are yellow (orange with the risky profile) or green, without refusing a guide for missing that target. Manually selected must-have quests use the optional completion range you supply; leaving it empty imposes no deadline.
 - A quest started by an item found in a dungeon's object is planned with the run and taken in it: WoW Forever's The Treaty of Understanding, from the Hall of Thanes.
 - Dungeons run above their monsters' level: the level-60 dungeons are run at 60 instead of leaving the guide impossible to make (GitHub #99).
 - "Profession trainer stops" option (under the professions of a player of the new guide, off by default): with professions, the route goes to the trainer to learn each profession and, before the skill reaches the cap of its rank, each next rank. A trainer near the route is a detour, a far one a trip, both counted in the route's time; a rank no trainer teaches has no stop (GitHub #106).
@@ -248,6 +248,7 @@ Forced dungeons run inside their levels, optional XP buffs and turn-in levels fo
 
 ### Guides
 
+- Forever: Cat Form trials use the entrance statue's stealth blessing; keep verified quest, training and wind-bridge corrections outside the bundled database.
 - Rested XP reduces pre-grinding and group catch-up work in every edition and is consumed from the character's finite pool. Group kill work is rounded only at the final player reward in every edition. Group guides export each player's quest XP, including its own Sleeping Bag bonus.
 - Death skips (option, off by default, in the play style): up to level 10 and a half, the guide has the character die to respawn at the nearest spirit healer when that is faster (no resurrection sickness before level 11). The guide editor has them as steps ("Die here").
 - Group guides: each player levels its own professions, from its own skill: their profession quests are planned for them, the group goes to the vendor when the fullest bags are, and each player's addon follows its own profession curve.
