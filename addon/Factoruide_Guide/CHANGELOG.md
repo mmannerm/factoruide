@@ -7,7 +7,6 @@ under Unreleased; `scripts/release.sh` gives them the release's version.
 ## Unreleased
 
 - The original Horde Call of Air, Fire and Water deliveries now recognize equivalent trainer pickups and keep their turn-in.
-- WoW Forever: a click on a quest in the quest panel makes the game track it, as from the game's own tracker, and a click on the step already shown sets the game's waypoint again.
 - Candle of Beckoning and The Rescue's keys are recognized in your bags and stay done after use; right-click a pickup to retry.
 - Marking an objective done skips only that step and keeps your place; undo returns only to the work you marked.
 - Completed journeys stay done after you leave, without marking travel merely by browsing ahead.
@@ -16,6 +15,11 @@ under Unreleased; `scripts/release.sh` gives them the release's version.
 - New solo guides skip profession-only round-trip flights before departure when every planned rank is already learned.
 - Regenerate older guides that send you to the wrong profession trainer, or skip those invalid steps manually.
 - Unreadable profession upgrade caps show an update or manual-check prompt instead of completing the rank at a trainer window.
+
+## 0.21.0 (2026-11-16)
+
+- WoW Forever: a click on a quest in the quest panel makes the game track it, as from the game's own tracker, and a click on the step already shown sets the game's waypoint again.
+- WoW Forever: the items a quest needs are bought at the merchant, as on Classic and TBC, and the low health alert in combat and the items to keep at login no longer run into errors.
 
 ## 0.20.0 (2026-11-13)
 
