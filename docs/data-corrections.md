@@ -1,8 +1,8 @@
 # Data corrections
 
 The fork uses upstream's bundled databases without editing their archives. The current Forever
-import records identify QuestieDB `e1652ce621`, Questie `b379a000e0`, AllTheThings `2770c9c512`,
-EG Link `06b4cc7b81`, and client cache builds `70790` and `70938` in the [upstream snapshot](https://github.com/brouznouf/factoruide/blob/8a16883b37805b83d1080782c204bc7cd22e7a57/data/forever.sqlite.zst).
+import records identify QuestieDB `8b8df2dc12`, Questie `81dd55a3fa`, AllTheThings `1bcd39170a`,
+EG Link `30c3bb9c8e`, and client cache builds `70790` and `70938` in the [upstream snapshot](https://github.com/brouznouf/factoruide/blob/70a3b5d6f3696da590674374024e4acba63dece7/data/forever.sqlite.zst).
 The archive's `import_run` table and [NOTICE](../NOTICE.md) record the complete source provenance.
 
 Source-data corrections live in `overrides/database/`; upstream's database builder reapplies them
