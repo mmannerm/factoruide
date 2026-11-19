@@ -31,6 +31,7 @@ An addon change also goes, in the same words, under Unreleased in that addon's o
 
 ### Addon
 
+- WoW Forever characters sharing a first name now keep separate guides, progress and profiles by surname.
 - The original Horde Call of Air, Fire and Water deliveries now recognize equivalent trainer pickups and keep their turn-in.
 - Candle of Beckoning and The Rescue's keys are recognized in your bags and stay done after use; right-click a pickup to retry.
 - Marking an objective done skips only that step and keeps your place; undo returns only to the work you marked.

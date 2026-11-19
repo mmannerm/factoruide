@@ -262,7 +262,48 @@ function FG.PlayerPosition()
     return mapID, math.floor(x * 10000 + 0.5) / 100, math.floor(y * 10000 + 0.5) / 100
 end
 
-function FG:CharacterKey() return UnitName("player") .. "-" .. (GetNormalizedRealmName() or GetRealmName() or "") end
+--- Saved identity, or the identity of an addon-message sender. Forever's second name is a
+--- surname, not a realm; the full name is unique within a region, across connection realms.
+--- The second result is the old, ambiguous local key on regional-name clients.
+function FG:CharacterKey(sender)
+    local name, surname = UnitName("player")
+    local realm = GetNormalizedRealmName() or GetRealmName() or ""
+    local legacy = name .. "-" .. realm
+    if RegionalUniqueNamesEnabled and RegionalUniqueNamesEnabled() then
+        name, surname = (UnitNameUnmodified or UnitName)("player")
+        if sender then
+            name = sender:match("^[^-]+") -- some clients append their internal connection realm
+        elseif surname and surname ~= "" then
+            name = name .. Constants.CharacterNameSeparatorConsts.CHARACTERNAME_SURNAME_SEPARATOR .. surname
+        end
+        local region = ({ "US", "KR", "EU", "TW", "CN" })[GetCurrentRegion()] or GetCurrentRegionName()
+        return name .. "-" .. region, not sender and legacy or nil
+    end
+    if sender then return sender:find("-", 1, true) and sender or sender .. "-" .. realm end
+    return legacy
+end
+
+-- Allocate the full-name identity before either addon starts using it. Profile and Guide can
+-- update separately, so preserve the old guide here even if an older Guide loads next.
+local function CopyGuide(v)
+    if type(v) ~= "table" then return v end
+    local copy = {}
+    for k, value in pairs(v) do
+        copy[k] = CopyGuide(value)
+    end
+    return copy
+end
+
+FG:On("PLAYER_LOGIN", function()
+    local key, legacy = FG:CharacterKey()
+    local old = legacy and FactoruideDB.characters[legacy]
+    if FactoruideDB.characters[key] or not (old and old.guide) then return end
+    -- The old record may combine several characters. Only guide history is copied; profiles,
+    -- bank contents, flights, profession tracking and collector rows must not cross identities.
+    local guide = CopyGuide(old.guide)
+    guide.identityMigrated = true
+    FactoruideDB.characters[key] = { seq = 0, events = {}, guide = guide }
+end)
 
 -- English translation keys and legacy names for clients without GetProfessions.
 local SKILL_NAMES = {

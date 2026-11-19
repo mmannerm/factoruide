@@ -44,6 +44,8 @@ local sent = {} -- what was sent last: step, level, xp, time
 
 --- "Name-Realm" of a message's sender (the realm is left out for ours on some clients).
 local function Key(sender)
+    local _, regional = FG:CharacterKey()
+    if regional then return FG:CharacterKey(sender) end
     if sender:find("-", 1, true) then return sender end
     return sender .. "-" .. GetNormalizedRealmName()
 end
@@ -54,6 +56,7 @@ local function Short(key) return (key:gsub("%-.*", "")) end
 --- Whether the player of `key` is in our party now.
 local function InParty(key)
     if not UnitInParty then return true end
+    if RegionalUniqueNamesEnabled and RegionalUniqueNamesEnabled() then return UnitInParty(Short(key)) or false end
     local name = Ambiguate and Ambiguate(key, "none") or Short(key)
     return UnitInParty(name) or UnitInParty(Short(key)) or false
 end

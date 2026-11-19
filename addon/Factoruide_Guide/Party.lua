@@ -61,8 +61,17 @@ end)
 
 FG:On("CHAT_MSG_ADDON", function(prefix, message, _, sender)
     if prefix ~= PREFIX then return end
-    local name = Ambiguate(sender, "short")
-    if name == UnitName("player") then return end
+    local key, regional = FG:CharacterKey()
+    local name
+    if regional then
+        local senderKey = FG:CharacterKey(sender)
+        if senderKey == key then return end
+        name = senderKey:match("^[^-]+")
+    else
+        -- The Profile addon can still be an older version without surname-aware identities.
+        name = Ambiguate(sender, "short")
+        if name == UnitName("player") then return end
+    end
     if message == "R" then
         Party.progress[name] = {}
         return

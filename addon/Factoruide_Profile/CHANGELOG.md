@@ -6,6 +6,7 @@ under Unreleased; `scripts/release.sh` gives them the release's version.
 
 ## Unreleased
 
+- WoW Forever characters sharing a first name now keep separate guides, progress and profiles by surname.
 - Profession caps use the client's skill IDs and localized profession names, including skills hidden under collapsed legacy headers.
 
 - Saved profiles record learned profession caps so guides avoid ranks you already know.

@@ -194,6 +194,13 @@ addon's tests follow each of them.
 
 ## In game: the addon
 
+On WoW Forever, guides and profiles are saved separately for each full character name.
+When upgrading from a version that combined characters with the same first name, the addon
+keeps the old record and gives each character an independent copy of the old guide history.
+It selects a guide matching that character's race and class; choose one in `/fg` if several match.
+Already mixed progress cannot be separated retroactively. Profiles and other character caches
+are collected afresh; visit a flight master to record known flight paths again.
+
 The addon comes in two parts, installed from CurseForge: **Factoruide_Profile** records your
 character and what the game shows (profile, collector below; **Export my character** gives it to
 the web app), **Factoruide_Guide** shows the guide and everything around it. Each can go without
