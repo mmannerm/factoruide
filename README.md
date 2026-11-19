@@ -204,6 +204,7 @@ The old mixed profile may still appear in the app; remove it there after the new
 profiles appear. Older group guides continue to synchronize when their players can be identified
 uniquely. If the addon reports an ambiguous group player, save fresh profiles and regenerate the
 group guide; it cannot safely assign an old shared name to one of several characters.
+New group guides made from full-name profiles need every member on the updated fork addon.
 
 The addon comes in two parts, installed from CurseForge: **Factoruide_Profile** records your
 character and what the game shows (profile, collector below; **Export my character** gives it to
