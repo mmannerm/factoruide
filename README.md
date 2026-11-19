@@ -200,6 +200,10 @@ keeps the old record and gives each character an independent copy of the old gui
 It selects a guide matching that character's race and class; choose one in `/fg` if several match.
 Already mixed progress cannot be separated retroactively. Profiles and other character caches
 are collected afresh; visit a flight master to record known flight paths again.
+The old mixed profile may still appear in the app; remove it there after the new full-name
+profiles appear. Older group guides continue to synchronize when their players can be identified
+uniquely. If the addon reports an ambiguous group player, save fresh profiles and regenerate the
+group guide; it cannot safely assign an old shared name to one of several characters.
 
 The addon comes in two parts, installed from CurseForge: **Factoruide_Profile** records your
 character and what the game shows (profile, collector below; **Export my character** gives it to

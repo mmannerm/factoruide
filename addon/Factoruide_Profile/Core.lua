@@ -283,6 +283,46 @@ function FG:CharacterKey(sender)
     return legacy
 end
 
+--- Regional identities of the current party, read from unit tokens instead of display-name
+--- lookups. Both sync features operate in parties, not raids.
+function FG:RegionalParty()
+    if not (RegionalUniqueNamesEnabled and RegionalUniqueNamesEnabled()) then return end
+    local members = {}
+    for i = 0, GetNumSubgroupMembers() do
+        local unit = i == 0 and "player" or "party" .. i
+        local first, surname = (UnitNameUnmodified or UnitName)(unit)
+        if first then
+            local name = first
+            if surname and surname ~= "" then
+                name = name .. Constants.CharacterNameSeparatorConsts.CHARACTERNAME_SURNAME_SEPARATOR .. surname
+            end
+            local _, _, race = UnitRace(unit)
+            local _, _, class = UnitClass(unit)
+            members[#members + 1] = {
+                key = self:CharacterKey(name),
+                name = name,
+                first = first,
+                race = FG.Readable(race),
+                class = FG.Readable(class),
+            }
+        end
+    end
+    return members
+end
+
+--- A sender may include the connection realm or omit the surname. Only a unique roster match
+--- identifies it: two characters sharing a first name must never share one another's messages.
+function FG:PartyMember(sender, members)
+    local name, found = sender:match("^[^-]+")
+    for _, member in ipairs(members) do
+        if name == member.name or name == member.first then
+            if found then return nil, true end
+            found = member
+        end
+    end
+    return found
+end
+
 -- Allocate the full-name identity before either addon starts using it. Profile and Guide can
 -- update separately, so preserve the old guide here even if an older Guide loads next.
 local function CopyGuide(v)

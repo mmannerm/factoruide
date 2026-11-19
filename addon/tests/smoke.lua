@@ -6148,6 +6148,9 @@ local function RegionalIdentityStateTest()
         },
     })
     assert(#candidates == 1 and candidates[1] == 1, "legacy group player resolved by race and class")
+    UnitName = function(unit) return "Shared", unit == "party1" and "Shade" or "Storm" end
+    UnitNameUnmodified = UnitName
+    GetNumSubgroupMembers = function() return 1 end
     wipe(FG.Party.progress)
     fire("CHAT_MSG_ADDON", "FGSYNC1", "900001:1", "PARTY", "Shared Storm-Connection2")
     assert(_G.next(FG.Party.progress) == nil, "own regional party messages ignored")
@@ -6159,3 +6162,129 @@ local function RegionalIdentityStateTest()
     print("regional character identity and guide migration ok")
 end
 RegionalIdentityStateTest()
+
+-- Released guides and peers still synchronize, using roster identities rather than name lookups.
+do
+    (function()
+        local errors = {}
+        for msg, count in pairs(FactoruideDB.errors or {}) do
+            errors[msg] = count
+        end
+        local members = {
+            player = { first = "Leader", surname = "Dawn", class = 7 },
+            party1 = { first = "Peer", surname = "Shade", class = 4 },
+        }
+        UnitName = function(unit)
+            local member = members[unit]
+            if member then return member.first, member.surname end
+        end
+        UnitNameUnmodified = UnitName
+        UnitRace = function(unit)
+            if members[unit] then return "Orc", "Orc", 2 end
+        end
+        UnitClass = function(unit)
+            local member = members[unit]
+            if member then return "Class", member.class == 7 and "SHAMAN" or "ROGUE", member.class end
+        end
+        GetNumSubgroupMembers = function() return members.party2 and 2 or 1 end
+        UnitInParty = function() error("regional sync must use roster tokens, not display-name lookup") end
+        IsInGroup = function() return true end
+        IsInRaid = function() return false end
+        local function group(peerName)
+            FG.Routes["regional-group"] = {
+                race = 2,
+                class = 7,
+                faction = "Horde",
+                time = 87,
+                players = {
+                    { n = "Leader Dawn-US", race = 2, class = 7 },
+                    { n = peerName, race = 2, class = 4 },
+                },
+                steps = { { k = "accept", q = 990001, lvl = 1 } },
+            }
+            FG.Guide:Choose("regional-group")
+            return FG.Guide:Route().steps[1]
+        end
+        local function receive(sender, message) fire("CHAT_MSG_ADDON", "FGGRP1", message, "PARTY", sender) end
+        fire("PLAYER_LOGIN")
+        for _, case in ipairs({
+            { "Peer-OldConnection", "Peer Shade-NewConnection" },
+            { "Peer-OldConnection", "Peer-OldConnection" },
+            { "Peer Shade-OldConnection", "Peer Shade-OldConnection" },
+            { "Peer Shade-US", "Peer Shade" },
+            { "Peer Shade-US", "Peer Shade-NewConnection" },
+        }) do
+            local step = group(case[1])
+            receive("Outsider Other", "S:87:1:1:10:0:100")
+            assert(
+                #FG.Group:Present() == 0 and not FG.Group.ambiguous,
+                "unknown sender does not join or block synchronization"
+            )
+            receive(case[2], "S:87:1:1:10:0:100")
+            local present = FG.Group:Present()
+            assert(
+                #present == 1 and present[1].key == "Peer Shade-US" and present[1].bit == 1,
+                "old and new identities bind the correct guide slot"
+            )
+            assert(
+                not FG.Group:SkipShared(step, 1) and not FG.Group:Passed(step, 1),
+                "peer's unfinished shared work waits"
+            )
+            receive(case[2], "M:87:1:1:1")
+            receive(case[2], "S:87:1:2:10:0:100")
+            assert(FG.Group:SkipShared(step, 1) and FG.Group:Passed(step, 1), "peer marks and advancement synchronize")
+        end
+        local unmatched = group("Someone-OldConnection")
+        receive("Peer Shade", "S:87:1:2:10:0:100")
+        receive("Peer Shade", "M:87:1:1:1")
+        assert(
+            #FG.Group:Present() == 0 and not FG.Group:SkipShared(unmatched, 1) and not FG.Group:Passed(unmatched, 1),
+            "known same-guide peer without a matching slot stays unresolved"
+        )
+        local step = group("Peer-OldConnection")
+        receive("Peer Shade", "S:87:1:2:10:0:100")
+        receive("Peer Shade", "M:87:1:1:1")
+        assert(FG.Group:SkipShared(step, 1), "unique old slot synchronized before another peer joins")
+        members.party2 = { first = "Peer", surname = "Dusk", class = 4 }
+        assert(
+            #FG.Group:Present() == 0 and not FG.Group:SkipShared(step, 1),
+            "a new surname collision revokes the old slot binding"
+        )
+        assert(not FG.Group:Passed(step, 1), "unresolved same-guide peer is not treated as finished")
+        assert(not FG.Group:CaughtUp({ mb = 2, gp = { 1, 0, 1, 0 } }), "unresolved peer is not treated as caught up")
+        local notice = false
+        FG.Group:Chips(step, 1, function(text)
+            if text:find("cannot be matched", 1, true) then notice = true end
+        end, false)
+        assert(notice, "ambiguous old guide exposes a regeneration prompt")
+        step = group("Peer Shade-US")
+        receive("Peer Shade", "S:87:1:1:10:0:100")
+        local present = FG.Group:Present()
+        assert(#present == 1 and present[1].bit == 1, "full-name guide stays unambiguous with same-first-name peers")
+        receive("Peer", "S:87:1:2:10:0:100")
+        assert(
+            not FG.Group:SkipShared(step, 1) and not FG.Group:Passed(step, 1),
+            "ambiguous first-only wire message cannot confirm shared work"
+        )
+        -- Quest progress has the same party boundary and keeps both surnames separate.
+        wipe(FG.Party.progress)
+        fire("CHAT_MSG_ADDON", "FGSYNC1", "990001:2", "PARTY", "Peer Shade-NewConnection")
+        fire("CHAT_MSG_ADDON", "FGSYNC1", "990001:3", "PARTY", "Peer Dusk")
+        fire("CHAT_MSG_ADDON", "FGSYNC1", "990001:9", "PARTY", "Peer")
+        assert(
+            FG.Party.progress["Peer Shade"][990001][1] == "2" and FG.Party.progress["Peer Dusk"][990001][1] == "3",
+            "ambiguous sender cannot overwrite either surname"
+        )
+        members.party2 = nil
+        fire("GROUP_ROSTER_UPDATE")
+        assert(
+            FG.Party.progress["Peer Shade"] and not FG.Party.progress["Peer Dusk"],
+            "roster cleanup does not need name lookup support"
+        )
+        assert(not FG.Group.ambiguous, "departed ambiguous peer no longer blocks synchronization")
+        for msg, count in pairs(FactoruideDB.errors or {}) do
+            assert(errors[msg] == count, "regional party sync produced no addon errors: " .. msg)
+        end
+        print("regional group legacy compatibility and ambiguity waits ok")
+    end)()
+end
