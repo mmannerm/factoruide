@@ -27,6 +27,8 @@ local L = {
     ahead = T("%s ahead: step %d"),
     apart = T("levels %.1f apart: make the guide again in the app"),
     otherVersion = T("%s follows another version of the guide"),
+    unmatched = T("%s cannot be matched to this group guide; save fresh profiles and regenerate it"),
+    ambiguous = T("A party member's name is ambiguous; group progress is not synchronized"),
     train = T("Train at your class trainer"),
     choose = T("Several players of this group guide are of your race and class: choose yours in /fg, Guides"),
 }
@@ -42,8 +44,8 @@ local version -- "time:steps" of the guide
 local state -- the guide state (step, marks, skippedQuests)
 local sent = {} -- what was sent last: step, level, xp, time
 
---- "Name-Realm" of a message's sender (the realm is left out for ours on some clients).
-local function Key(sender)
+--- The transport identity used by older addon versions.
+local function TransportKey(sender)
     if sender:find("-", 1, true) then return sender end
     return sender .. "-" .. GetNormalizedRealmName()
 end
@@ -51,11 +53,57 @@ end
 --- The name players see (without the realm).
 local function Short(key) return (key:gsub("%-.*", "")) end
 
+local function Roster() return FG.RegionalParty and FG:RegionalParty() end
+
 --- Whether the player of `key` is in our party now.
-local function InParty(key)
+local function InParty(key, members)
+    members = members or Roster()
+    if members then
+        for _, member in ipairs(members) do
+            if member.key == key then return true end
+        end
+        return false
+    end
     if not UnitInParty then return true end
     local name = Ambiguate and Ambiguate(key, "none") or Short(key)
     return UnitInParty(name) or UnitInParty(Short(key)) or false
+end
+
+--- Old guides name a first name and connection realm. Resolve those aliases only when both
+--- the party member and the guide slot are unique; race/class disambiguate different characters.
+local function PeerBit(key, sender, members)
+    for i, p in ipairs(route and route.players or {}) do
+        if p.n == key then return i - 1 end
+    end
+    if not members then return end
+    local peer
+    for _, member in ipairs(members) do
+        if member.key == key then peer = member end
+    end
+    if not peer then return end
+    local found
+    for i, p in ipairs(route and route.players or {}) do
+        local full = p.n == TransportKey(sender) and Short(p.n) == peer.name
+        local legacy = Short(p.n) == peer.first
+            and peer.race
+            and peer.class
+            and p.race == peer.race
+            and p.class == peer.class
+        if legacy then
+            local matches = 0
+            for _, member in ipairs(members) do
+                if member.first == peer.first and member.race == p.race and member.class == p.class then
+                    matches = matches + 1
+                end
+            end
+            legacy = matches == 1
+        end
+        if i - 1 ~= me and (full or legacy) then
+            if found then return end
+            found = i - 1
+        end
+    end
+    return found
 end
 
 --- The trainer of our class closest to where the guide trains (a train step is the class
@@ -145,6 +193,7 @@ function Group:Use(r, s)
     route, state, me, version = r, s, nil, nil
     self.choices = nil
     wipe(self.others)
+    self.ambiguous = nil
     sent = {}
     if not r or not r.players then return r end
     local candidates = self:Candidates(r)
@@ -185,14 +234,22 @@ end
 --- The other players in the party following the same guide: { key, name, bit, step, level,
 --- xp, skips, marks }.
 function Group:Present()
-    local out = {}
-    if not me then return out end
-    local now = GetTime()
+    local out, unresolved = {}, {}
+    if not me then return out, unresolved end
+    local now, members = GetTime(), Roster()
+    if self.ambiguous and now - self.ambiguous.seen < GONE then unresolved[#unresolved + 1] = self.ambiguous end
     for key, o in pairs(self.others) do
-        if o.version == version and o.bit and now - o.seen < GONE and InParty(key) then table.insert(out, o) end
+        o.bit = PeerBit(key, o.sender, members)
+        if o.version == version and now - o.seen < GONE and InParty(key, members) then
+            if o.bit then
+                out[#out + 1] = o
+            elseif members then
+                unresolved[#unresolved + 1] = o
+            end
+        end
     end
     table.sort(out, function(a, b) return a.bit < b.bit end)
-    return out
+    return out, unresolved
 end
 
 --- Whether a step is for this player (every step outside a group guide).
@@ -200,7 +257,9 @@ function Group:ForMe(step) return not me or not step.mb or bit.band(step.mb, bit
 
 --- A step marked done by hand is passed once every player in the party marked it too.
 function Group:SkipShared(step, index)
-    for _, o in ipairs(self:Present()) do
+    local present, unresolved = self:Present()
+    if #unresolved > 0 then return false end
+    for _, o in ipairs(present) do
         if not (o.marks[index] or (step.q and o.skips[step.q])) then return false end
     end
     return true
@@ -209,7 +268,11 @@ end
 --- Names of the players of the party a step is for who have not passed it yet.
 function Group:Waiting(step, index)
     local out = {}
-    for _, o in ipairs(self:Present()) do
+    local present, unresolved = self:Present()
+    for _, o in ipairs(unresolved) do
+        out[#out + 1] = o.name
+    end
+    for _, o in ipairs(present) do
         local mine = not step.mb or bit.band(step.mb, bit.lshift(1, o.bit)) ~= 0
         if mine and (o.step or 0) <= index then table.insert(out, o.name) end
     end
@@ -233,7 +296,9 @@ function Group:CaughtUp(step)
         local level, xp = Planned(step, me)
         if level and not Reached(UnitLevel("player"), UnitXP("player"), level, xp) then return false end
     end
-    for _, o in ipairs(self:Present()) do
+    local present, unresolved = self:Present()
+    if #unresolved > 0 then return false end
+    for _, o in ipairs(present) do
         local level, xp = Planned(step, o.bit)
         if bit.band(step.mb, bit.lshift(1, o.bit)) ~= 0 and level and o.level then
             if not Reached(o.level, o.xp or 0, level, xp) then return false end
@@ -289,9 +354,14 @@ function Group:Chips(step, index, chip, done)
             end
         end
         local now = GetTime()
+        if self.ambiguous and now - self.ambiguous.seen < GONE then chip(L.ambiguous, "red") end
         for key, o in pairs(self.others) do
-            if o.version ~= version and now - o.seen < GONE and InParty(key) then
-                chip(string.format(L.otherVersion, o.name), "red")
+            if now - o.seen < GONE and InParty(key) then
+                if o.version ~= version then
+                    chip(string.format(L.otherVersion, o.name), "red")
+                elseif o.bit == nil then
+                    chip(string.format(L.unmatched, o.name), "red")
+                end
             end
         end
         local spread = self:Spread()
@@ -398,31 +468,43 @@ function Group:Tick(ownStep)
     end
 end
 
-local function Other(key)
+local function Other(key, sender)
     local o = Group.others[key]
     if not o then
         o = { key = key, name = Short(key), skips = {}, marks = {} }
         Group.others[key] = o
-        for i, p in ipairs(route and route.players or {}) do
-            if p.n == key then o.bit = i - 1 end
-        end
     end
+    o.sender = sender
     o.seen = GetTime()
     return o
 end
 
 local function Receive(message, sender)
-    local key = Key(sender)
-    if not me or key == FG:CharacterKey() then return end
+    if not me then return end
     local kind, rest = message:match("^(%a):(.*)$")
+    local time, steps, a, b, c, d
+    if rest then
+        time, steps, a, b, c, d = rest:match("^([^:]+):(%d+):([^:]*):?([^:]*):?([^:]*):?([^:]*)$")
+    end
+    local members = Roster()
+    local member, ambiguous
+    if members then
+        member, ambiguous = FG:PartyMember(sender, members)
+    end
+    if members and not member then
+        if ambiguous and time and time .. ":" .. steps == version then
+            Group.ambiguous = { name = Short(sender), seen = GetTime() }
+        end
+        return
+    end
+    local key = member and member.key or TransportKey(sender)
+    if key == FG:CharacterKey() then return end
     if kind == "H" then
         SendAll()
         return
     end
-    if not rest then return end
-    local time, steps, a, b, c, d = rest:match("^([^:]+):(%d+):([^:]*):?([^:]*):?([^:]*):?([^:]*)$")
     if not time then return end
-    local o = Other(key)
+    local o = Other(key, sender)
     o.version = time .. ":" .. steps
     if kind == "S" then
         o.step, o.level, o.xp, o.max = tonumber(a), tonumber(b), tonumber(c), tonumber(d)
@@ -443,6 +525,14 @@ end)
 
 FG:On("GROUP_ROSTER_UPDATE", function()
     if not me then return end
+    if Group.ambiguous then
+        local members = Roster()
+        local _, ambiguous
+        if members then
+            _, ambiguous = FG:PartyMember(Group.ambiguous.name, members)
+        end
+        if not ambiguous then Group.ambiguous = nil end
+    end
     for key in pairs(Group.others) do
         if not InParty(key) then Group.others[key] = nil end
     end

@@ -421,6 +421,40 @@ load("Factoruide_Profile")
 if not profileOnly then load("Factoruide_Guide") end
 local FG = Factoruide
 
+-- Forever names include a surname and belong to a region, not a connection realm or ruleset.
+do
+    local unitName, unmodified = UnitName, UnitNameUnmodified
+    local regional, realm, region, regionName =
+        RegionalUniqueNamesEnabled, GetNormalizedRealmName, GetCurrentRegion, GetCurrentRegionName
+    local constants = Constants
+    local surname, shard, regionID = "Storm", "Connection1", 1
+    UnitName = function() return "Shared", surname end
+    UnitNameUnmodified = UnitName
+    RegionalUniqueNamesEnabled = function() return true end
+    GetNormalizedRealmName = function() return shard end
+    GetCurrentRegion = function() return regionID end
+    Constants = { CharacterNameSeparatorConsts = { CHARACTERNAME_SURNAME_SEPARATOR = " " } }
+    local key, legacy = FG:CharacterKey()
+    assert(key == "Shared Storm-US" and legacy == "Shared-Connection1", "full regional name, legacy retained")
+    surname = "Shade"
+    assert(FG:CharacterKey() == "Shared Shade-US", "same first name, different surname")
+    surname, shard = "Storm", "Connection2"
+    assert(FG:CharacterKey() == key, "connection realm does not change identity")
+    assert(
+        FG:CharacterKey("Shared Storm") == key and FG:CharacterKey("Shared Storm-Connection1") == key,
+        "sender names use the same identity"
+    )
+    regionID = 3
+    assert(FG:CharacterKey() == "Shared Storm-EU", "different region, different identity")
+    RegionalUniqueNamesEnabled = function() return false end
+    assert(FG:CharacterKey() == "Shared-Connection2", "ordinary realm identity unchanged")
+    assert(FG:CharacterKey("Other-OtherRealm") == "Other-OtherRealm", "ordinary cross-realm sender unchanged")
+    UnitName, UnitNameUnmodified = unitName, unmodified
+    RegionalUniqueNamesEnabled, GetNormalizedRealmName, GetCurrentRegion, GetCurrentRegionName =
+        regional, realm, region, regionName
+    Constants = constants
+end
+
 local Press, Key, Click, Option
 do
     -- The key bindings (Bindings.xml): their Lua, run as the game runs them on a key press.
@@ -583,6 +617,39 @@ if profileOnly then
     assert(not json:find('"collector"', 1, true) and not json:find('"events"', 1, true), "no collector rows")
     assert(next(FactoruideDB.errors or {}) == nil, "no error: " .. tostring(next(FactoruideDB.errors or {})))
     print("profile only ok: " .. #char.events .. " events")
+    -- Profile can update before Guide: it preserves history before an older Guide can create
+    -- a blank state. Any progress written during that interval survives the Guide update.
+    UnitName = function() return "Shared", "Storm" end
+    UnitNameUnmodified = UnitName
+    RegionalUniqueNamesEnabled = function() return true end
+    GetCurrentRegion = function() return 1 end
+    Constants = { CharacterNameSeparatorConsts = { CHARACTERNAME_SURNAME_SEPARATOR = " " } }
+    FactoruideDB.characters["Shared-Realm"] = {
+        seq = 9,
+        events = {},
+        guide = { route = "gnome-mage", step = 1, skippedQuests = { [910001] = true } },
+    }
+    fire("PLAYER_LOGIN")
+    local preserved = FactoruideDB.characters["Shared Storm-US"]
+    assert(preserved.seq == 0 and preserved.guide.identityMigrated, "Profile prepares guide migration independently")
+    assert(preserved.guide.skippedQuests[910001], "Profile preserves old guide history before Guide updates")
+    preserved.guide.skippedQuests[910002] = true -- progress written by the still-installed Guide
+    load("Factoruide_Guide")
+    fire("ADDON_LOADED", "Factoruide_Guide")
+    fire("PLAYER_LOGIN")
+    assert(
+        not preserved.guide.identityMigrated and preserved.guide.route == "gnome-mage",
+        "updated Guide completes migration"
+    )
+    assert(
+        preserved.guide.skippedQuests[910001] and preserved.guide.skippedQuests[910002],
+        "progress on either side of the update retained"
+    )
+    assert(
+        not FactoruideDB.characters["Shared-Realm"].guide.skippedQuests[910002],
+        "legacy history remains independent"
+    )
+    print("separate Profile and Guide updates ok")
     os.exit(0)
 end
 assert(char.guide.route == "gnome-mage", "assigned route followed: " .. tostring(char.guide.route))
@@ -5964,3 +6031,260 @@ local function SettingsTest()
     print("settings ok")
 end
 SettingsTest()
+
+-- Two Forever characters with one first name keep independent choices after save/reload.
+local function RegionalIdentityStateTest()
+    local errors = {}
+    for msg, count in pairs(FactoruideDB.errors or {}) do
+        errors[msg] = count
+    end
+    local surname, class, shard = "Storm", 7, "Connection1"
+    UnitName = function() return "Shared", surname end
+    UnitNameUnmodified = UnitName
+    RegionalUniqueNamesEnabled = function() return true end
+    GetNormalizedRealmName = function() return shard end
+    GetCurrentRegion = function() return 1 end
+    Constants = { CharacterNameSeparatorConsts = { CHARACTERNAME_SURNAME_SEPARATOR = " " } }
+    UnitRace = function() return "Orc", "Orc", 2 end
+    UnitClass = function() return class == 7 and "Shaman" or "Rogue", class == 7 and "SHAMAN" or "ROGUE", class end
+    UnitFactionGroup = function() return "Horde" end
+    C_QuestLog.IsOnQuest = function() return false end
+    C_QuestLog.IsQuestFlaggedCompleted = function() return false end
+    local function route(id)
+        return {
+            race = 2,
+            class = id,
+            faction = "Horde",
+            time = 1,
+            steps = {
+                { k = "accept", q = 900001, lvl = 1 },
+                { k = "accept", q = 900002, lvl = 1 },
+                { k = "accept", q = 900003, lvl = 1 },
+            },
+        }
+    end
+    FG.Routes = { storm = route(7), shade = route(4) }
+    FG.Assignments = { ["Shared-Connection1"] = "shade" }
+    local old = {
+        class = "ROGUE",
+        seq = 9,
+        events = {},
+        bank = { [42] = 9 },
+        professionsTaken = { [185] = 20 },
+        guide = {
+            route = "shade",
+            step = 2,
+            version = "1:3",
+            marks = { [1] = true },
+            skippedQuests = { [910001] = true },
+            handedIn = {},
+            player = 1,
+            saved = {
+                storm = {
+                    step = 2,
+                    version = "1:3",
+                    marks = { [1] = true },
+                    skippedQuests = { [910002] = true },
+                    player = 2,
+                },
+                retired = { step = 12, marks = { [4] = true } },
+            },
+        },
+    }
+    FactoruideDB.characters["Shared-Connection1"] = old
+    FactoruideDB.profiles["Shared-Connection1"] = { class = "ROGUE", flights = { [42] = true } }
+    local original = assert(FG.Import.Serialize(old))
+    fire("PLAYER_LOGIN")
+    local storm = FactoruideDB.characters["Shared Storm-US"]
+    assert(
+        storm.guide.route == "storm" and storm.guide.marks[1] and storm.guide.skippedQuests[910002],
+        "fitting guide and its progress restored"
+    )
+    assert(storm.guide.saved.shade.marks[1] and storm.guide.saved.retired.step == 12, "other guide history retained")
+    assert(storm.guide.player == nil and storm.guide.saved.shade.player == nil, "old group roles reevaluated")
+    assert(
+        storm.seq == 0 and #storm.events == 0 and storm.bank == nil and storm.professionsTaken == nil,
+        "ambiguous character caches not copied"
+    )
+    local profile = FactoruideDB.profiles["Shared Storm-US"]
+    assert(
+        profile.class == "SHAMAN" and _G.next(profile.flights) == nil,
+        "profile collected afresh, no other character flights"
+    )
+    assert(FG.Export:Json():find('"character":"Shared Storm-US"', 1, true), "full identity exported")
+    storm.guide.marks[1] = nil
+    storm.guide.skippedQuests[910003] = true
+    assert(FG.Import.Serialize(old) == original, "first character leaves legacy record untouched")
+    -- Round-trip the saved data, then log in as the other surname.
+    FactoruideDB = assert(loadstring(assert(FG.Import.Serialize(FactoruideDB))))()
+    original = assert(FG.Import.Serialize(FactoruideDB.characters["Shared-Connection1"]))
+    surname, class = "Shade", 4
+    fire("PLAYER_LOGIN")
+    local shade = FactoruideDB.characters["Shared Shade-US"]
+    assert(shade.guide.route == "shade" and shade.guide.marks[1], "rogue keeps its own guide and progress")
+    assert(
+        shade.guide.saved.storm.marks[1] and not shade.guide.skippedQuests[910003],
+        "guide copies share no mutable progress"
+    )
+    assert(FactoruideDB.profiles["Shared Shade-US"].class == "ROGUE", "second character gets its own profile")
+    assert(FG.Import.Serialize(FactoruideDB.characters["Shared-Connection1"]) == original, "legacy record untouched")
+    -- The same character reconnecting on another internal realm keeps its choice and writes.
+    surname, class, shard = "Storm", 7, "Connection2"
+    fire("PLAYER_LOGIN")
+    storm = FactoruideDB.characters["Shared Storm-US"]
+    assert(
+        storm.guide.route == "storm" and storm.guide.skippedQuests[910003] and not storm.guide.marks[1],
+        "choice and progress survive character switches"
+    )
+    assert(
+        FactoruideDB.profiles["Shared Storm-US"].class == "SHAMAN",
+        "other profile does not overwrite this character"
+    )
+    -- Old group guides without full identities still select the matching race/class slot.
+    local candidates = FG.Group:Candidates({
+        players = {
+            { n = "Shared-Connection1", race = 2, class = 4 },
+            { n = "Other-Connection1", race = 2, class = 7 },
+        },
+    })
+    assert(#candidates == 1 and candidates[1] == 1, "legacy group player resolved by race and class")
+    UnitName = function(unit) return "Shared", unit == "party1" and "Shade" or "Storm" end
+    UnitNameUnmodified = UnitName
+    GetNumSubgroupMembers = function() return 1 end
+    wipe(FG.Party.progress)
+    fire("CHAT_MSG_ADDON", "FGSYNC1", "900001:1", "PARTY", "Shared Storm-Connection2")
+    assert(_G.next(FG.Party.progress) == nil, "own regional party messages ignored")
+    fire("CHAT_MSG_ADDON", "FGSYNC1", "900001:2", "PARTY", "Shared Shade-Connection1")
+    assert(FG.Party.progress["Shared Shade"][900001][1] == "2", "party peer retains surname")
+    for msg, count in pairs(FactoruideDB.errors or {}) do
+        assert(errors[msg] == count, "identity login produced no addon errors: " .. msg)
+    end
+    print("regional character identity and guide migration ok")
+end
+RegionalIdentityStateTest()
+
+-- Released guides and peers still synchronize, using roster identities rather than name lookups.
+do
+    (function()
+        local errors = {}
+        for msg, count in pairs(FactoruideDB.errors or {}) do
+            errors[msg] = count
+        end
+        local members = {
+            player = { first = "Leader", surname = "Dawn", class = 7 },
+            party1 = { first = "Peer", surname = "Shade", class = 4 },
+        }
+        UnitName = function(unit)
+            local member = members[unit]
+            if member then return member.first, member.surname end
+        end
+        UnitNameUnmodified = UnitName
+        UnitRace = function(unit)
+            if members[unit] then return "Orc", "Orc", 2 end
+        end
+        UnitClass = function(unit)
+            local member = members[unit]
+            if member then return "Class", member.class == 7 and "SHAMAN" or "ROGUE", member.class end
+        end
+        GetNumSubgroupMembers = function() return members.party2 and 2 or 1 end
+        UnitInParty = function() error("regional sync must use roster tokens, not display-name lookup") end
+        IsInGroup = function() return true end
+        IsInRaid = function() return false end
+        local function group(peerName)
+            FG.Routes["regional-group"] = {
+                race = 2,
+                class = 7,
+                faction = "Horde",
+                time = 87,
+                players = {
+                    { n = "Leader Dawn-US", race = 2, class = 7 },
+                    { n = peerName, race = 2, class = 4 },
+                },
+                steps = { { k = "accept", q = 990001, lvl = 1 } },
+            }
+            FG.Guide:Choose("regional-group")
+            return FG.Guide:Route().steps[1]
+        end
+        local function receive(sender, message) fire("CHAT_MSG_ADDON", "FGGRP1", message, "PARTY", sender) end
+        fire("PLAYER_LOGIN")
+        for _, case in ipairs({
+            { "Peer-OldConnection", "Peer Shade-NewConnection" },
+            { "Peer-OldConnection", "Peer-OldConnection" },
+            { "Peer Shade-OldConnection", "Peer Shade-OldConnection" },
+            { "Peer Shade-US", "Peer Shade" },
+            { "Peer Shade-US", "Peer Shade-NewConnection" },
+        }) do
+            local step = group(case[1])
+            receive("Outsider Other", "S:87:1:1:10:0:100")
+            assert(
+                #FG.Group:Present() == 0 and not FG.Group.ambiguous,
+                "unknown sender does not join or block synchronization"
+            )
+            receive(case[2], "S:87:1:1:10:0:100")
+            local present = FG.Group:Present()
+            assert(
+                #present == 1 and present[1].key == "Peer Shade-US" and present[1].bit == 1,
+                "old and new identities bind the correct guide slot"
+            )
+            assert(
+                not FG.Group:SkipShared(step, 1) and not FG.Group:Passed(step, 1),
+                "peer's unfinished shared work waits"
+            )
+            receive(case[2], "M:87:1:1:1")
+            receive(case[2], "S:87:1:2:10:0:100")
+            assert(FG.Group:SkipShared(step, 1) and FG.Group:Passed(step, 1), "peer marks and advancement synchronize")
+        end
+        local unmatched = group("Someone-OldConnection")
+        receive("Peer Shade", "S:87:1:2:10:0:100")
+        receive("Peer Shade", "M:87:1:1:1")
+        assert(
+            #FG.Group:Present() == 0 and not FG.Group:SkipShared(unmatched, 1) and not FG.Group:Passed(unmatched, 1),
+            "known same-guide peer without a matching slot stays unresolved"
+        )
+        local step = group("Peer-OldConnection")
+        receive("Peer Shade", "S:87:1:2:10:0:100")
+        receive("Peer Shade", "M:87:1:1:1")
+        assert(FG.Group:SkipShared(step, 1), "unique old slot synchronized before another peer joins")
+        members.party2 = { first = "Peer", surname = "Dusk", class = 4 }
+        assert(
+            #FG.Group:Present() == 0 and not FG.Group:SkipShared(step, 1),
+            "a new surname collision revokes the old slot binding"
+        )
+        assert(not FG.Group:Passed(step, 1), "unresolved same-guide peer is not treated as finished")
+        assert(not FG.Group:CaughtUp({ mb = 2, gp = { 1, 0, 1, 0 } }), "unresolved peer is not treated as caught up")
+        local notice = false
+        FG.Group:Chips(step, 1, function(text)
+            if text:find("cannot be matched", 1, true) then notice = true end
+        end, false)
+        assert(notice, "ambiguous old guide exposes a regeneration prompt")
+        step = group("Peer Shade-US")
+        receive("Peer Shade", "S:87:1:1:10:0:100")
+        local present = FG.Group:Present()
+        assert(#present == 1 and present[1].bit == 1, "full-name guide stays unambiguous with same-first-name peers")
+        receive("Peer", "S:87:1:2:10:0:100")
+        assert(
+            not FG.Group:SkipShared(step, 1) and not FG.Group:Passed(step, 1),
+            "ambiguous first-only wire message cannot confirm shared work"
+        )
+        -- Quest progress has the same party boundary and keeps both surnames separate.
+        wipe(FG.Party.progress)
+        fire("CHAT_MSG_ADDON", "FGSYNC1", "990001:2", "PARTY", "Peer Shade-NewConnection")
+        fire("CHAT_MSG_ADDON", "FGSYNC1", "990001:3", "PARTY", "Peer Dusk")
+        fire("CHAT_MSG_ADDON", "FGSYNC1", "990001:9", "PARTY", "Peer")
+        assert(
+            FG.Party.progress["Peer Shade"][990001][1] == "2" and FG.Party.progress["Peer Dusk"][990001][1] == "3",
+            "ambiguous sender cannot overwrite either surname"
+        )
+        members.party2 = nil
+        fire("GROUP_ROSTER_UPDATE")
+        assert(
+            FG.Party.progress["Peer Shade"] and not FG.Party.progress["Peer Dusk"],
+            "roster cleanup does not need name lookup support"
+        )
+        assert(not FG.Group.ambiguous, "departed ambiguous peer no longer blocks synchronization")
+        for msg, count in pairs(FactoruideDB.errors or {}) do
+            assert(errors[msg] == count, "regional party sync produced no addon errors: " .. msg)
+        end
+        print("regional group legacy compatibility and ambiguity waits ok")
+    end)()
+end

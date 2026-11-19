@@ -53,16 +53,28 @@ end
 
 FG:On("QUEST_LOG_UPDATE", SendSoon)
 FG:On("GROUP_ROSTER_UPDATE", function()
+    local members = FG.RegionalParty and FG:RegionalParty()
     for name in pairs(Party.progress) do
-        if not UnitInParty(name) then Party.progress[name] = nil end
+        local present = members and FG:PartyMember(name, members) or not members and UnitInParty(name)
+        if not present then Party.progress[name] = nil end
     end
     SendSoon()
 end)
 
 FG:On("CHAT_MSG_ADDON", function(prefix, message, _, sender)
     if prefix ~= PREFIX then return end
-    local name = Ambiguate(sender, "short")
-    if name == UnitName("player") then return end
+    local key = FG:CharacterKey()
+    local members = FG.RegionalParty and FG:RegionalParty()
+    local name
+    if members then
+        local member = FG:PartyMember(sender, members)
+        if not member or member.key == key then return end
+        name = member.name
+    else
+        -- The Profile addon can still be an older version without surname-aware identities.
+        name = Ambiguate(sender, "short")
+        if name == UnitName("player") then return end
+    end
     if message == "R" then
         Party.progress[name] = {}
         return

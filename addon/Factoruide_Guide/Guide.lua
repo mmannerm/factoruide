@@ -1648,8 +1648,11 @@ local function AutoRoute()
         end
     end
     if found then return found end
-    local assigned = FG.Assignments and FG.Assignments[FG:CharacterKey()]
+    local key, legacy = FG:CharacterKey()
+    local assigned = FG.Assignments and FG.Assignments[key]
     if assigned and routes[assigned] then return assigned end
+    assigned = legacy and FG.Assignments and FG.Assignments[legacy]
+    if assigned and routes[assigned] and FG.Import.Fits(routes[assigned]) then return assigned end
 end
 
 --- The guide the character chose (kept in its state), while it is there; else the automatic one.
@@ -1680,9 +1683,20 @@ FG:On("PLAYER_LOGIN", function()
     local char = FactoruideDB.characters[FG:CharacterKey()]
     char.guide = char.guide or { step = 1 }
     state = char.guide
+    local migrated = state.identityMigrated
+    state.identityMigrated = nil
     state.shown = nil -- moved to settings in 0.2
     state.flightLearned = nil -- replaced by marks in 0.3
-    UseRoute(PickRoute())
+    if migrated then
+        -- A group's old player slot can belong to the other character with this first name.
+        state.player = nil
+        for _, saved in pairs(state.saved or {}) do
+            saved.player = nil
+        end
+    end
+    local choice = PickRoute()
+    if migrated and choice and not FG.Import.Fits(FG.Routes[choice]) then choice = AutoRoute() end
+    UseRoute(choice)
     FG.Card:Create(state)
     if FG.Mini then FG.Mini:Create(state) end
     for _, key in ipairs({ "guideMode", "nextTab", "guideShown", "questPanel", "compassShown", "arrowShown" }) do
