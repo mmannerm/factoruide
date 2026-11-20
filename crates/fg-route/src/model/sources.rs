@@ -4,7 +4,7 @@
 use super::dungeons::load_dungeons;
 use super::entities::{EliteSpawns, Entities};
 use super::pvp::pvp_quests;
-use super::types::{Dungeon, EntityKind, FloorPoint, Loc, Profile};
+use super::types::{Dungeon, EntityKind, FloorPoint, Loc, Profile, QuestOverride};
 use crate::params::Params;
 use crate::world::{Pos, World};
 use anyhow::{Context, Result};
@@ -163,14 +163,15 @@ impl Sources {
         reward_quests: &HashSet<i64>,
     ) -> Result<Self> {
         let mut entities = Entities::load(conn, profile.faction)?;
+        entities.fill_object_locations(world, &profile.object_locations)?;
         let start = start_place(&entities, world, profile)?;
         let reachable = world.reachable_continents(start.pos.continent);
         forget_unreachable(&mut entities, world, &reachable);
         entities.borrow_heights(world);
         let (dungeons, dungeon_by_area, inside) =
             load_dungeons(conn, world, profile.faction, &profile.dungeons, &reachable)?;
-        let mut rows = quest_rows(conn)?;
-        let objectives = objective_rows(conn)?;
+        let mut rows = quest_rows(conn, &profile.quest_overrides)?;
+        let objectives = objective_rows(conn, &profile.quest_overrides)?;
         // A standing to keep is the one the quest asks for, when the data gives none.
         for r in rows.iter_mut().filter(|r| r.rep.unwrap_or(0) == 0) {
             let kept = (objectives.get(&r.id).into_iter().flatten()).find(|o| o.0 == ObjectiveKind::Reputation);
@@ -204,7 +205,7 @@ impl Sources {
                 reward_quests,
                 params.max_quest_above,
             ),
-            relations: relations(conn)?,
+            relations: relations(conn, &profile.quest_overrides)?,
             links,
             default_xp: default_xp(conn, params)?,
             pvp: pvp_quests(conn, &rows, &objectives)?,
@@ -329,7 +330,7 @@ fn default_xp(conn: &Connection, params: &Params) -> Result<HashMap<i64, i64>> {
     Ok(rows.collect::<rusqlite::Result<_>>()?)
 }
 
-fn quest_rows(conn: &Connection) -> Result<Vec<QuestRow>> {
+fn quest_rows(conn: &Connection, overrides: &[QuestOverride]) -> Result<Vec<QuestRow>> {
     // Databases built before the column existed have no observed XP.
     let has_observed: bool = conn.query_row(
         "SELECT count(*) > 0 FROM pragma_table_info('m_quest') WHERE name = 'xp_observed'",
@@ -360,44 +361,64 @@ fn quest_rows(conn: &Connection) -> Result<Vec<QuestRow>> {
                 (SELECT json_group_array(json_extract(t.value, '$[1]'))
                  FROM json_each(extra, '$.extra_objectives') e, json_each(e.value, '$.\"5\"') t
                  WHERE json_extract(t.value, '$[0]') = 'object'),
-                {reward_spell}, objectives_text, json_extract(extra, '$.start_wait'), required_min_rep_value
-         FROM m_quest WHERE status = 'available'"
+                {reward_spell}, objectives_text, json_extract(extra, '$.start_wait'), required_min_rep_value,
+                coalesce(status = 'available', 0)
+         FROM m_quest"
     ))?;
     let rows = stmt.query_map([], |r| {
-        Ok(QuestRow {
-            id: r.get(0)?,
-            name: r.get(1)?,
-            level: r.get(2)?,
-            min_level: r.get(3)?,
-            xp: r.get(4)?,
-            sort: r.get(5)?,
-            races: r.get(6)?,
-            classes: r.get(7)?,
-            skill: r.get(9)?,
-            rep: r.get(10)?,
-            spell: r.get(11)?,
-            breadcrumb_for: r.get(12)?,
-            requirements: r.get(13)?,
-            source_item: r.get(14)?,
-            source_items: r.get(15)?,
-            xp_observed: r.get(16)?,
-            skill_value: r.get(17)?,
-            reputation: r.get(18)?,
-            sources: r.get(19)?,
-            flags: r.get(20)?,
-            time_limit: r.get(21)?,
-            numbered: r.get(22)?,
-            extra_objects: r
-                .get::<_, Option<String>>(23)?
-                .and_then(|j| serde_json::from_str(&j).ok())
-                .unwrap_or_default(),
-            reward_spell: r.get(24)?,
-            objectives_text: r.get(25)?,
-            start_wait: r.get(26)?,
-            rep_min: r.get(27)?,
-        })
+        Ok((
+            QuestRow {
+                id: r.get(0)?,
+                name: r.get(1)?,
+                level: r.get(2)?,
+                min_level: r.get(3)?,
+                xp: r.get(4)?,
+                sort: r.get(5)?,
+                races: r.get(6)?,
+                classes: r.get(7)?,
+                skill: r.get(9)?,
+                rep: r.get(10)?,
+                spell: r.get(11)?,
+                breadcrumb_for: r.get(12)?,
+                requirements: r.get(13)?,
+                source_item: r.get(14)?,
+                source_items: r.get(15)?,
+                xp_observed: r.get(16)?,
+                skill_value: r.get(17)?,
+                reputation: r.get(18)?,
+                sources: r.get(19)?,
+                flags: r.get(20)?,
+                time_limit: r.get(21)?,
+                numbered: r.get(22)?,
+                extra_objects: r
+                    .get::<_, Option<String>>(23)?
+                    .and_then(|j| serde_json::from_str(&j).ok())
+                    .unwrap_or_default(),
+                reward_spell: r.get(24)?,
+                objectives_text: r.get(25)?,
+                start_wait: r.get(26)?,
+                rep_min: r.get(27)?,
+            },
+            r.get::<_, bool>(28)?,
+        ))
     })?;
-    Ok(rows.collect::<rusqlite::Result<_>>()?)
+    let mut out = Vec::new();
+    for row in rows {
+        let (mut row, available) = row?;
+        if !super::quest_available(overrides, row.id, available) {
+            continue;
+        }
+        if let Some(minimum) = overrides
+            .iter()
+            .rev()
+            .filter(|q| q.id == row.id)
+            .find_map(|q| q.min_level)
+        {
+            row.min_level = Some(minimum);
+        }
+        out.push(row);
+    }
+    Ok(out)
 }
 
 /// Retain missing spell-unlock chains; known rewards do not require repeating their quests.
@@ -450,7 +471,7 @@ fn class_quest_ids(
     ids
 }
 
-fn relations(conn: &Connection) -> Result<Relations> {
+fn relations(conn: &Connection, overrides: &[QuestOverride]) -> Result<Relations> {
     let mut relations: Relations = HashMap::new();
     let mut stmt = conn.prepare("SELECT quest_id, role, entity_type, entity_id FROM m_quest_relation")?;
     for row in stmt.query_map([], |r| {
@@ -467,13 +488,22 @@ fn relations(conn: &Connection) -> Result<Relations> {
             relations.entry(q).or_default().push((role, kind, id));
         }
     }
+    for correction in overrides {
+        if let Some(item) = correction.start_item {
+            let start = (Role::Start, EntityKind::Item, item);
+            let entries = relations.entry(correction.id).or_default();
+            if !entries.contains(&start) {
+                entries.push(start);
+            }
+        }
+    }
     Ok(relations)
 }
 
 /// The corrected quest graph, shared by planning and data audits.
 pub(crate) fn quest_links(
     conn: &Connection,
-    corrected: &[super::QuestOverride],
+    corrected: &[QuestOverride],
 ) -> Result<HashMap<i64, Vec<(LinkKind, i64)>>> {
     let mut links: HashMap<i64, Vec<(LinkKind, i64)>> = HashMap::new();
     let mut stmt = conn.prepare("SELECT quest_id,kind,other_id FROM m_quest_link")?;
@@ -552,7 +582,7 @@ fn links(conn: &Connection, profile: &Profile) -> Result<HashMap<i64, Vec<(LinkK
     Ok(links)
 }
 
-fn objective_rows(conn: &Connection) -> Result<ObjectiveRows> {
+fn objective_rows(conn: &Connection, corrected: &[QuestOverride]) -> Result<ObjectiveRows> {
     let mut objectives: ObjectiveRows = HashMap::new();
     let mut stmt = conn.prepare(
         "SELECT quest_id, type, target_id, text, extra, amount FROM m_quest_objective ORDER BY quest_id, idx",
@@ -571,6 +601,46 @@ fn objective_rows(conn: &Connection) -> Result<ObjectiveRows> {
     })? {
         let (q, o) = row?;
         objectives.entry(q).or_default().push(o);
+    }
+    for correction in corrected {
+        let Some(rows) = &correction.objectives else { continue };
+        let rows = rows
+            .iter()
+            .map(|row| match row {
+                super::types::QuestObjective::Talk { id, amount, text } => {
+                    anyhow::ensure!(
+                        *id > 0 && *amount > 0,
+                        "quest {} has an invalid talk objective",
+                        correction.id
+                    );
+                    Ok((ObjectiveKind::Talk, Some(*id), Some(text.clone()), None, Some(*amount)))
+                }
+                super::types::QuestObjective::Trigger { text, at, seconds } => {
+                    anyhow::ensure!(
+                        at.zone > 0
+                            && (0.0..=100.0).contains(&at.x)
+                            && (0.0..=100.0).contains(&at.y)
+                            && at.z.is_none_or(f64::is_finite)
+                            && seconds.is_finite()
+                            && *seconds >= 0.0,
+                        "quest {} has an invalid area objective",
+                        correction.id
+                    );
+                    let mut extra = serde_json::json!({ "seconds": seconds });
+                    let mut point = vec![at.x, at.y];
+                    point.extend(at.z);
+                    extra[at.zone.to_string()] = serde_json::json!([point]);
+                    Ok((
+                        ObjectiveKind::Trigger,
+                        None,
+                        Some(text.clone()),
+                        Some(extra.to_string()),
+                        Some(1),
+                    ))
+                }
+            })
+            .collect::<Result<Vec<_>>>()?;
+        objectives.insert(correction.id, rows);
     }
     Ok(objectives)
 }

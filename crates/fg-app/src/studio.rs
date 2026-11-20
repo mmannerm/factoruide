@@ -386,7 +386,7 @@ impl Studio {
     /// [`CmdError`]: the game data could not be read.
     pub fn objective_counts<H: Host>(&self, host: &H, start: &StartState) -> Result<job::ObjectiveCounts> {
         let conn = host.open_db(host.edition())?;
-        Ok(job::objective_counts(&conn, start)?)
+        Ok(job::objective_counts(&conn, &*host.overrides(host.edition())?, start)?)
     }
 
     /// The quests a request's objectives plan for its character, and those they cannot

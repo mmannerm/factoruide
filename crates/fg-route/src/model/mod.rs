@@ -37,11 +37,12 @@ pub use guard::Guards;
 pub use loot::CommonLoot;
 pub use names::Names;
 pub(crate) use sources::{LinkKind, quest_links};
+pub(crate) use types::quest_available;
 pub use types::{
     ClassRequirement, CompletionWindow, Dungeon, DungeonDef, EntityKind, ExploreArea, FloorPoint, Guard,
-    GuideObjective, Initial, Loc, Mate, MateStart, Model, Objective, ObjectiveOrder, Pool, ProfessionPlan,
-    ProfessionTrainer, Profile, Quest, QuestOverride, QuestRequirement, SpellLevel, Spots, Teleport, TeleportDef,
-    Vendor, race_bit,
+    GuideObjective, Initial, Loc, Mate, MateStart, Model, ObjectLocations, Objective, ObjectiveOrder, Pool,
+    ProfessionPlan, ProfessionTrainer, Profile, Quest, QuestOverride, QuestRequirement, SpellLevel, Spots, Teleport,
+    TeleportDef, Vendor, race_bit,
 };
 
 use crate::params::Params;
