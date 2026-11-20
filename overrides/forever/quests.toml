@@ -114,7 +114,6 @@ start_item = 263930
 # https://www.wowhead.com/forever/item=271612/head-of-scaldaron
 [[quest]]
 id = 95935 # Alliance
-available = true
 start_item = 271612
 
 # https://www.wowhead.com/forever/item=271613/head-of-scaldaron

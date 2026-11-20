@@ -38,7 +38,7 @@ Riverglades corrections live in `overrides/forever/quests.toml` and
   is a conversation with NPC #257250, as recorded by
   [EG Link build 70959](https://github.com/JIVESCORP/eg-link-output-wowf/blob/c389a874888debc41eec9b0219af65ccceebac6d/data/wowf/1.60.1.70959/quests.enUS.json).
   [Something's in the Water](https://www.wowhead.com/forever/quest=96084/somethings-in-the-water)
-  uses the supplied Empty Phial at Riverglades 62.0, 56.2; its
+  uses the supplied Empty Phial near Riverglades 62.0, 56.2, an approximate player-reported point; its
   [fill spell](https://www.wowhead.com/forever/spell=1310594/filling-phial) takes three seconds.
   Both retain the first objective slot so imported progress can skip completed work.
 - Missing berry, riverweed, soil, memorial candle and three cannon ammunition object locations
