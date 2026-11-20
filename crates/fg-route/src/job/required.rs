@@ -55,7 +55,10 @@ pub(super) fn resolve(
             .collect::<rusqlite::Result<Vec<_>>>()?;
         let eligible: Vec<_> = matches
             .iter()
-            .filter(|(_, _, races, classes)| profile.members_of(Some(*races), Some(*classes)) != 0)
+            .filter(|(id, _, races, classes)| {
+                let races = crate::model::quest_races_mask(&profile.quest_overrides, *id, Some(*races));
+                profile.members_of(races, Some(*classes)) != 0
+            })
             .collect();
         let selected = match eligible.as_slice() {
             [quest] => quest.0,
@@ -116,18 +119,19 @@ pub fn quest_choices(
             |r| r.get(0),
         )
         .unwrap_or(0);
-    choices(conn, (race_bit, class_bit), query, locale)
+    choices(conn, &overrides.quest_overrides, (race_bit, class_bit), query, locale)
 }
 
 /// The quests of a race and class (as bits, 0: any) matching the query (see `quest_choices`).
 fn choices(
     conn: &Connection,
+    corrected: &[crate::model::QuestOverride],
     (race_bit, class_bit): (i64, i64),
     query: &str,
     locale: Option<&str>,
 ) -> Result<Vec<QuestChoice>> {
     use rusqlite::types::Value;
-    const SHOWN: i64 = 100;
+    const SHOWN: usize = 100;
     let words: Vec<&str> = query.split_whitespace().collect();
     if words.is_empty() {
         return Ok(Vec::new());
@@ -135,11 +139,9 @@ fn choices(
     let query = query.trim();
     let mut params: Vec<Value> = vec![
         Value::Text(locale.unwrap_or("").to_owned()),
-        Value::Integer(race_bit),
         Value::Integer(class_bit),
         Value::Integer(query.parse().unwrap_or(0)),
         Value::Text(query.to_owned()),
-        Value::Integer(SHOWN),
     ];
     let mut matches = Vec::new();
     for word in words {
@@ -158,29 +160,41 @@ fn choices(
         });
     }
     let sql = format!(
-        "SELECT q.id, coalesce(l.name, q.name), coalesce(q.level, 0), coalesce(z.name, a.AreaName_lang)
+        "SELECT q.id, coalesce(l.name, q.name), coalesce(q.level, 0), coalesce(z.name, a.AreaName_lang), q.races_mask
          FROM m_quest q
          LEFT JOIN l10n l ON l.entity_type = 'quest' AND l.id = q.id AND l.locale = ?1
          LEFT JOIN client_areatable a ON a.ID = q.zone_or_sort
          LEFT JOIN l10n z ON z.entity_type = 'zone' AND z.id = q.zone_or_sort AND z.locale = ?1
          WHERE q.status = 'available' AND q.name IS NOT NULL
-           AND (coalesce(q.races_mask, 0) = 0 OR ?2 = 0 OR q.races_mask & ?2 != 0)
-           AND (coalesce(q.classes_mask, 0) = 0 OR ?3 = 0 OR q.classes_mask & ?3 != 0)
+           AND (coalesce(q.classes_mask, 0) = 0 OR ?2 = 0 OR q.classes_mask & ?2 != 0)
            AND {}
-         ORDER BY q.id != ?4, lower(coalesce(l.name, q.name)) NOT LIKE lower(?5) || '%', q.level, q.id
-         LIMIT ?6",
+         ORDER BY q.id != ?3, lower(coalesce(l.name, q.name)) NOT LIKE lower(?4) || '%', q.level, q.id",
         matches.join(" AND ")
     );
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map(rusqlite::params_from_iter(params), |r| {
-        Ok(QuestChoice {
-            id: r.get(0)?,
-            name: r.get(1)?,
-            level: r.get(2)?,
-            zone: r.get(3)?,
-        })
+        Ok((
+            QuestChoice {
+                id: r.get(0)?,
+                name: r.get(1)?,
+                level: r.get(2)?,
+                zone: r.get(3)?,
+            },
+            r.get::<_, Option<i64>>(4)?,
+        ))
     })?;
-    Ok(rows.collect::<rusqlite::Result<_>>()?)
+    let mut out = Vec::new();
+    for row in rows {
+        let (quest, races) = row?;
+        let races = crate::model::quest_races_mask(corrected, quest.id, races).unwrap_or(0);
+        if races == 0 || race_bit == 0 || races & race_bit != 0 {
+            out.push(quest);
+            if out.len() == SHOWN {
+                break;
+            }
+        }
+    }
+    Ok(out)
 }
 
 /// Starting deadlines use the same participation and completion masks as the simulation.
@@ -376,7 +390,7 @@ mod tests {
         .unwrap();
         let human = (1 << (HUMAN - 1), 1 << (WARRIOR - 1));
         let find = |who, query: &str, locale| {
-            choices(&conn, who, query, locale)
+            choices(&conn, &[], who, query, locale)
                 .unwrap()
                 .into_iter()
                 .map(|q| (q.id, q.name))
@@ -391,9 +405,9 @@ mod tests {
             "Alliance only"
         );
         assert_eq!(find(human, "", None), []);
-        let level = choices(&conn, human, "45", None).unwrap();
+        let level = choices(&conn, &[], human, "45", None).unwrap();
         assert!(!level.is_empty() && level.iter().all(|q| q.level == 45 || q.id == 45));
-        let barrens = choices(&conn, orc, "barrens 20", None).unwrap();
+        let barrens = choices(&conn, &[], orc, "barrens 20", None).unwrap();
         assert!(!barrens.is_empty());
         assert!(
             barrens

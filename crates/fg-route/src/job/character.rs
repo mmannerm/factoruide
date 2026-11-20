@@ -96,6 +96,8 @@ pub(crate) fn character(conn: &Connection, overrides: &Overrides, req: &PlanRequ
                 .zip(std::iter::once(class_id).chain(mates.iter().map(|m| m.class_id)))
                 .any(|(mate, class)| {
                     let eligible = scope.is_none_or(|(races, classes)| {
+                        let races =
+                            crate::model::quest_races_mask(&overrides.quest_overrides, id, Some(races)).unwrap_or(0);
                         (races == 0 || races & crate::model::race_bit(mate.race) != 0)
                             && (classes == 0 || classes & (1 << (class - 1)) != 0)
                     });

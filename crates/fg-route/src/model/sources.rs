@@ -170,6 +170,9 @@ impl Sources {
         let (dungeons, dungeon_by_area, inside) =
             load_dungeons(conn, world, profile.faction, &profile.dungeons, &reachable)?;
         let mut rows = quest_rows(conn)?;
+        for row in &mut rows {
+            row.races = super::quest_races_mask(&profile.quest_overrides, row.id, row.races);
+        }
         let objectives = objective_rows(conn)?;
         // A standing to keep is the one the quest asks for, when the data gives none.
         for r in rows.iter_mut().filter(|r| r.rep.unwrap_or(0) == 0) {
@@ -532,6 +535,7 @@ fn links(conn: &Connection, profile: &Profile) -> Result<HashMap<i64, Vec<(LinkK
         .collect::<rusqlite::Result<HashMap<_, _>>>()?;
     let eligible = |id: &i64| {
         let (races, classes) = scopes.get(id).copied().unwrap_or_default();
+        let races = super::quest_races_mask(&profile.quest_overrides, *id, races);
         profile.members_of(races, classes) != 0
     };
     // A small database may omit quests an edition corrects. Audits check the complete list;

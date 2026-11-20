@@ -88,21 +88,28 @@ impl Abilities {
         }
 
         let mut stmt = conn.prepare(
-            "SELECT id, reward_spell, coalesce(min_level,1) FROM m_quest WHERE status = 'available' AND reward_spell > 0
+            "SELECT id, reward_spell, coalesce(min_level,1), races_mask FROM m_quest WHERE status = 'available' AND reward_spell > 0
              AND (coalesce(classes_mask,0) & ?1 != 0 OR zone_or_sort = ?2)
              AND (coalesce(classes_mask,0) = 0 OR classes_mask & ?1 != 0)
-             AND (coalesce(races_mask,0) = 0 OR races_mask & ?3 != 0) ORDER BY reward_spell, id",
+             ORDER BY reward_spell, id",
         )?;
         let rows = stmt.query_map(
-            rusqlite::params![
-                profile.class_bit(),
-                -crate::model::class_sort(profile.class_id),
-                profile.race_bit()
-            ],
-            |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?)),
+            rusqlite::params![profile.class_bit(), -crate::model::class_sort(profile.class_id)],
+            |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, i64>(2)?,
+                    r.get::<_, Option<i64>>(3)?,
+                ))
+            },
         )?;
         for row in rows {
-            let (quest, spell, level) = row?;
+            let (quest, spell, level, races) = row?;
+            let races = crate::model::quest_races_mask(&profile.quest_overrides, quest, races).unwrap_or(0);
+            if races != 0 && races & profile.race_bit() == 0 {
+                continue;
+            }
             let spells = profile
                 .quest_overrides
                 .iter()
@@ -123,12 +130,15 @@ impl Abilities {
         {
             let i = abilities.entry(conn, &trainer, def.spell)?;
             abilities.entries[i].on_accept = true;
-            let mut stmt = conn.prepare("SELECT id,coalesce(min_level,1) FROM m_quest WHERE status='available' AND name=?1 AND (coalesce(races_mask,0)=0 OR races_mask & ?2 != 0) AND (coalesce(classes_mask,0)=0 OR classes_mask & ?3 != 0)")?;
-            for row in stmt.query_map(
-                rusqlite::params![def.quest, profile.race_bit(), profile.class_bit()],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )? {
-                abilities.entries[i].quests.push(row?);
+            let mut stmt = conn.prepare("SELECT id,coalesce(min_level,1),races_mask FROM m_quest WHERE status='available' AND name=?1 AND (coalesce(classes_mask,0)=0 OR classes_mask & ?2 != 0)")?;
+            for row in stmt.query_map(rusqlite::params![def.quest, profile.class_bit()], |r| {
+                Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, Option<i64>>(2)?))
+            })? {
+                let (quest, level, races) = row?;
+                let races = crate::model::quest_races_mask(&profile.quest_overrides, quest, races).unwrap_or(0);
+                if races == 0 || races & profile.race_bit() != 0 {
+                    abilities.entries[i].quests.push((quest, level));
+                }
             }
         }
         // Quest spells and form-dependent ranks have their own learning state.

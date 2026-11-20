@@ -37,6 +37,7 @@ pub use guard::Guards;
 pub use loot::CommonLoot;
 pub use names::Names;
 pub(crate) use sources::{LinkKind, quest_links};
+pub(crate) use types::quest_races_mask;
 pub use types::{
     ClassRequirement, CompletionWindow, Dungeon, DungeonDef, EntityKind, ExploreArea, FloorPoint, Guard,
     GuideObjective, Initial, Loc, Mate, MateStart, Model, Objective, ObjectiveOrder, Pool, ProfessionPlan,

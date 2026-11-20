@@ -779,6 +779,8 @@ pub struct SpellLevel {
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct QuestOverride {
     pub id: i64,
+    /// Verified race eligibility replacing the bundled mask; 0 means all races.
+    pub races_mask: Option<i64>,
     pub pre_all: Option<Vec<i64>>,
     pub pre_any: Option<Vec<i64>>,
     /// How many of `pre_any` the quest needs done (default one).
@@ -789,6 +791,16 @@ pub struct QuestOverride {
     pub auction_start: Option<AuctionStart>,
     /// Creature credits completed by an interaction, with the quest's instructions.
     pub interactions: Option<Vec<QuestInteraction>>,
+}
+
+/// The last correction for this field wins, as edition overrides follow common overrides.
+pub(crate) fn quest_races_mask(corrected: &[QuestOverride], id: i64, original: Option<i64>) -> Option<i64> {
+    corrected
+        .iter()
+        .rev()
+        .filter(|q| q.id == id)
+        .find_map(|q| q.races_mask)
+        .or(original)
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]

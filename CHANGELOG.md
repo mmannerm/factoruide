@@ -14,6 +14,8 @@ An addon change also goes, in the same words, under Unreleased in that addon's o
 
 ### Guides
 
+- WoW Forever: Horde Skyborne hunters retain their Tame Beast and Beast Training quest chain.
+
 - WoW Forever: Horde guides finish Scooty's calibration in Booty Bay and can use the Gnomeregan teleporter after receiving the Goblin Transponder.
 - WoW Forever: What We Lost guides collect the mementos before sending you to bury them.
 - Guides from saved profiles no longer revisit quest givers to pick up quests already in the log, even before any objective progress.

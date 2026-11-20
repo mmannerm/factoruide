@@ -940,3 +940,49 @@ fn gnomeregan_group_unlock_waits_for_the_member_without_the_reward() {
     let editor = Editor::open(&conn, &ov, &req, None).unwrap();
     assert_eq!(editor.simulate(&result.plan, &Names::new("enUS")).errors, 0);
 }
+
+#[test]
+fn forever_skyborne_hunters_keep_their_pet_unlock_chain() {
+    let conn = database_of("forever");
+    let o = overrides(Edition::Forever);
+    for race in ["skyborne", "skyborne_horde"] {
+        let mut req = request(&json!([94978, 94979, 94013, 94050]));
+        req.race = race.into();
+        req.class = "hunter".into();
+        req.from_level = 10;
+        req.to_level = 20;
+        req.required_class_quests = None;
+        let prepared = job::prepare(&conn, &o, &req, &|_| {}).unwrap();
+        for id in [94978, 94979, 94013, 94050] {
+            let quest = &prepared.model.quests[prepared.model.index[&id]];
+            assert!(quest.required, "{race}: quest {id}");
+        }
+        for (quest, spell) in [(94013, 1515), (94050, 5149)] {
+            let bit = prepared.model.abilities.bit(spell).unwrap();
+            assert_ne!(prepared.model.abilities.quest(quest) & bit, 0, "{race}: spell {spell}");
+        }
+        let choices = job::quest_choices(&conn, &o, race, "hunter", "94050", None).unwrap();
+        assert_eq!(choices.iter().map(|q| q.id).collect::<Vec<_>>(), [94050]);
+    }
+}
+
+#[test]
+fn forever_pet_unlock_correction_keeps_other_races_and_classes_out() {
+    let conn = database_of("forever");
+    let o = overrides(Edition::Forever);
+    for (race, class) in [("orc", "hunter"), ("skyborne_horde", "warrior"), ("skyborne", "mage")] {
+        let mut req = request(&json!([94050]));
+        req.race = race.into();
+        req.class = class.into();
+        let error = job::prepare(&conn, &o, &req, &|_| {}).err().unwrap();
+        assert!(
+            format!("{error:#}").contains("race or class"),
+            "{race} {class}: {error:#}"
+        );
+        assert!(
+            job::quest_choices(&conn, &o, race, class, "94050", None)
+                .unwrap()
+                .is_empty()
+        );
+    }
+}

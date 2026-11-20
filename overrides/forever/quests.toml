@@ -85,3 +85,21 @@ interactions = [
 [[quest]]
 id = 2843
 interactions = [{ npc = 7853, text = "Wait for Scooty to calibrate the Goblin Transponder, then turn in the quest and keep the transponder for the teleporter", conversation = true }]
+
+# Client quest-cache records allow both Skyborne factions for the hunter pet unlock chain.
+# https://github.com/JIVESCORP/eg-link-output-wowf/blob/c389a874888debc41eec9b0219af65ccceebac6d/data/wowf/1.60.1.70959/quests.enUS.json
+[[quest]]
+id = 94978
+races_mask = 12884901888
+
+[[quest]]
+id = 94979
+races_mask = 12884901888
+
+[[quest]]
+id = 94013
+races_mask = 12884901888
+
+[[quest]]
+id = 94050
+races_mask = 12884901888
