@@ -463,7 +463,7 @@ mod tests {
     fn location_fixture() -> (Connection, World) {
         let conn = crate::fixture::Fixture::new(crate::xp::Edition::Forever)
             .toml(
-                r#"
+                r"
 [[object]]
 id = 620424
 [[object]]
@@ -472,7 +472,7 @@ at = [{ zone = 16591, x = 10.0, y = 20.0 }]
 [[object]]
 id = 621767
 at = [{ zone = 16591, x = 150.0, y = 20.0 }]
-"#,
+",
             )
             .open();
         let world = crate::job::game_world(

@@ -136,7 +136,7 @@ fn smugglers_paradise_uses_only_the_characters_faction_introduction() {
                 .iter()
                 .position(|s| s.quest == Some(95288) && s.kind == StepKind::Accept)
                 .expect("Smuggler's Paradise can be accepted");
-            assert!(steps[accept].pre.is_empty());
+            assert_eq!(steps[accept].pre, [] as [i64; 0]);
             assert_eq!(steps[accept].pre_any, [own_intro]);
             let introduction = steps
                 .iter()
