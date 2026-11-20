@@ -30,11 +30,11 @@ fn riverglades_object_locations_restore_gathering_and_item_use_routes() {
                 .is_empty()
         );
     }
-    for (quest, race, race_id, targets) in [
-        (94734, "orc", 2, vec![620424, 620422]),
-        (94843, "human", 1, vec![621767]),
-        (95615, "human", 1, vec![642517]),
-        (95165, "human", 1, vec![629425, 629426, 629427]),
+    for (quest, previous, race, race_id, targets) in [
+        (94734, 94733, "orc", 2, vec![265808, 265806]),
+        (94843, 94842, "human", 1, vec![621767]),
+        (95615, 95613, "human", 1, vec![642517]),
+        (95165, 95123, "human", 1, vec![629425, 629426, 629427]),
     ] {
         let mut req: PlanRequest = serde_json::from_value(json!({
             "race": race, "class": "warrior", "from_level": 44, "to_level": 60,
@@ -52,20 +52,21 @@ fn riverglades_object_locations_restore_gathering_and_item_use_routes() {
                 x: 60.0,
                 y: 60.0,
             }),
+            completed: vec![QuestId(previous)],
             log: vec![LogQuest {
                 id: QuestId(quest),
                 ..Default::default()
             }],
             ..StartState::default()
         });
-        let outcome = job::plan(&conn, &overrides, &req, &|_| {}).unwrap();
+        let outcome = job::plan(&conn, &overrides, &req, &|_| {}).unwrap_or_else(|e| panic!("quest {quest}: {e}"));
         for target in targets {
             assert!(
                 outcome.route.steps.iter().any(|s| s.quest == Some(quest)
                     && s.kind == StepKind::Objective
                     && s.target.as_ref().is_some_and(|t| t.id == target)
                     && s.zone_id == Some(16591)),
-                "quest {quest} must visit object {target} in Riverglades"
+                "quest {quest} must complete target {target} in Riverglades"
             );
         }
         assert!(
