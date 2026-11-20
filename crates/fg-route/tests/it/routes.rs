@@ -591,7 +591,7 @@ fn an_objective_preview_counts_the_zone_and_tells_what_is_left_out() {
         ..StartState::default()
     };
     let conn = database();
-    let counts = job::objective_counts(&conn, &start).unwrap();
+    let counts = job::objective_counts(&conn, &overrides(), &start).unwrap();
     assert!(
         counts.zones.get(&141).is_some_and(|&n| n >= 5),
         "{:?}",

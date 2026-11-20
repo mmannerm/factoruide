@@ -46,7 +46,7 @@ struct Candidate {
 }
 
 /// The quests of the database the character could take and has not done: of its race and class.
-fn candidates(conn: &Connection, start: &StartState) -> Result<Vec<Candidate>> {
+fn candidates(conn: &Connection, corrected: &[model::QuestOverride], start: &StartState) -> Result<Vec<Candidate>> {
     let race_bit = model::race_bit(start.race);
     let classes: Vec<(i64, String)> = conn
         .prepare("SELECT ID, coalesce(Filename, '') FROM client_chrclasses")?
@@ -75,6 +75,7 @@ fn candidates(conn: &Connection, start: &StartState) -> Result<Vec<Candidate>> {
     let mut out = Vec::new();
     for row in rows {
         let (id, name, sort, races, classes, skill) = row?;
+        let races = model::quest_races_mask(corrected, id, Some(races)).unwrap_or(0);
         let for_race = races == 0 || race_bit == 0 || races & race_bit != 0;
         let for_class = classes == 0 || class_bit == 0 || classes & class_bit != 0;
         if !for_race || !for_class || done.contains(&id) {
@@ -109,14 +110,14 @@ fn areas_up(parents: &HashMap<i64, i64>, area: i64) -> impl Iterator<Item = i64>
 /// # Errors
 ///
 /// The game data could not be read.
-pub fn objective_counts(conn: &Connection, start: &StartState) -> Result<ObjectiveCounts> {
+pub fn objective_counts(conn: &Connection, overrides: &Overrides, start: &StartState) -> Result<ObjectiveCounts> {
     let parents = area_parents(conn)?;
     let dungeons: HashSet<i64> = conn
         .prepare("SELECT area FROM dungeon")?
         .query_map([], |r| r.get(0))?
         .collect::<rusqlite::Result<_>>()?;
     let mut counts = ObjectiveCounts::default();
-    for c in candidates(conn, start)? {
+    for c in candidates(conn, &overrides.quest_overrides, start)? {
         let Some(sort) = c.sort.filter(|s| *s > 0) else {
             continue;
         };
@@ -164,7 +165,7 @@ pub fn objective_preview(conn: &Connection, overrides: &Overrides, req: &PlanReq
     let skipped: HashMap<i64, &str> = (model.skipped.iter())
         .map(|(id, _, reason)| (*id, reason.as_str()))
         .collect();
-    let excluded = (candidates(conn, start)?.into_iter())
+    let excluded = (candidates(conn, &overrides.quest_overrides, start)?.into_iter())
         .filter(|c| asked(c) && !planned.contains(&c.id))
         .map(|c| {
             let reason = match (skipped.get(&c.id), model.index.contains_key(&c.id)) {

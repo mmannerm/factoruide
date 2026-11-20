@@ -945,7 +945,7 @@ fn gnomeregan_group_unlock_waits_for_the_member_without_the_reward() {
 fn forever_skyborne_hunters_keep_their_pet_unlock_chain() {
     let conn = database_of("forever");
     let o = overrides(Edition::Forever);
-    for race in ["skyborne", "skyborne_horde"] {
+    for (race, race_id) in [("skyborne", 95), ("skyborne_horde", 96)] {
         let mut req = request(&json!([94978, 94979, 94013, 94050]));
         req.race = race.into();
         req.class = "hunter".into();
@@ -963,6 +963,29 @@ fn forever_skyborne_hunters_keep_their_pet_unlock_chain() {
         }
         let choices = job::quest_choices(&conn, &o, race, "hunter", "94050", None).unwrap();
         assert_eq!(choices.iter().map(|q| q.id).collect::<Vec<_>>(), [94050]);
+
+        let mut excluded = o.clone();
+        excluded.params.excluded_quests.push(94013);
+        req.required_quests.clear();
+        req.objectives = vec![
+            fg_route::model::GuideObjective::Quest(94978),
+            fg_route::model::GuideObjective::Quest(94050),
+        ];
+        req.start = Some(StartState {
+            race: race_id,
+            class: "hunter".into(),
+            level: 10,
+            ..StartState::default()
+        });
+        let preview = job::objective_preview(&conn, &excluded, &req).unwrap();
+        assert!(
+            preview
+                .excluded
+                .iter()
+                .any(|q| q.id == 94050 && q.reason.contains("94013")),
+            "{race}: {:?}",
+            preview.excluded
+        );
     }
 }
 
