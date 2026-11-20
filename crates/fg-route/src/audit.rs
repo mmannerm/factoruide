@@ -252,7 +252,7 @@ pub fn audit(
         HashSet::new()
     };
     let starter_drops = if on("starter-drops") {
-        starter_drops(conn)?
+        starter_drops(conn, overrides)?
     } else {
         Vec::new()
     };
@@ -1062,23 +1062,32 @@ struct StarterDrop {
     droppers: Vec<(i64, String, crate::model::Dropper)>,
 }
 
-fn starter_drops(conn: &Connection) -> Result<Vec<StarterDrop>> {
+fn starter_drops(conn: &Connection, overrides: &Overrides) -> Result<Vec<StarterDrop>> {
+    let corrected: Vec<_> = overrides
+        .quest_overrides
+        .iter()
+        .filter_map(|q| q.start_item.map(|item| (q.id, item)))
+        .collect();
     let mut stmt = conn.prepare(
-        "SELECT r.quest_id, coalesce(q.name, ''), s.item_id, coalesce(i.name, ''), s.from_id,
+        "WITH starters(quest_id, item_id) AS (
+             SELECT quest_id, entity_id FROM m_quest_relation WHERE role = 'start' AND entity_type = 'item'
+             UNION
+             SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]') FROM json_each(?1)
+         )
+         SELECT r.quest_id, coalesce(q.name, ''), s.item_id, coalesce(i.name, ''), s.from_id,
                 coalesce(n.name, ''), coalesce(n.rank, 0),
                 (SELECT count(*) FROM m_spawn p WHERE p.entity_type = 'npc' AND p.entity_id = s.from_id AND p.x >= 0)
-         FROM m_quest_relation r
+         FROM starters r
          JOIN m_quest q ON q.id = r.quest_id
-         JOIN m_item_source s ON s.item_id = r.entity_id AND s.from_type = 'npc'
+         JOIN m_item_source s ON s.item_id = r.item_id AND s.from_type = 'npc'
          LEFT JOIN m_item i ON i.id = s.item_id
          LEFT JOIN m_npc n ON n.id = s.from_id
-         WHERE r.role = 'start' AND r.entity_type = 'item'
-           AND NOT EXISTS (SELECT 1 FROM m_item_source k WHERE k.item_id = s.item_id
+         WHERE NOT EXISTS (SELECT 1 FROM m_item_source k WHERE k.item_id = s.item_id
                              AND (k.chance IS NOT NULL OR k.from_type = 'object'))
          GROUP BY r.quest_id, s.item_id, s.from_id
          ORDER BY r.quest_id, s.item_id, s.from_id",
     )?;
-    let rows = stmt.query_map([], |r| {
+    let rows = stmt.query_map([serde_json::to_string(&corrected)?], |r| {
         Ok((
             r.get::<_, i64>(0)?,
             r.get::<_, String>(1)?,
@@ -1613,8 +1622,8 @@ fn exclusive_prerequisites(conn: &Connection, corrected: &[crate::model::QuestOv
 fn prerequisite_races(conn: &Connection, overrides: &Overrides) -> Result<Vec<Finding>> {
     let mut quests: HashMap<i64, (String, i64, i64)> = HashMap::new();
     let mut stmt = conn.prepare(
-        "SELECT id, name, coalesce(races_mask, 0), coalesce(classes_mask, 0) FROM m_quest
-         WHERE status = 'available'",
+        "SELECT id, name, coalesce(races_mask, 0), coalesce(classes_mask, 0),
+                coalesce(status = 'available', 0) FROM m_quest",
     )?;
     for row in stmt.query_map([], |r| {
         Ok((
@@ -1622,10 +1631,13 @@ fn prerequisite_races(conn: &Connection, overrides: &Overrides) -> Result<Vec<Fi
             r.get::<_, Option<String>>(1)?,
             r.get::<_, i64>(2)?,
             r.get::<_, i64>(3)?,
+            r.get::<_, bool>(4)?,
         ))
     })? {
-        let (id, name, races, classes) = row?;
-        quests.insert(id, (name.unwrap_or_default(), races, classes));
+        let (id, name, races, classes, available) = row?;
+        if crate::model::quest_available(&overrides.quest_overrides, id, available) {
+            quests.insert(id, (name.unwrap_or_default(), races, classes));
+        }
     }
     // The races, with the classes each can play (none known: any).
     let pairs: Option<HashSet<(i64, i64)>> = conn

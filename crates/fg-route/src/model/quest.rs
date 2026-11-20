@@ -30,7 +30,9 @@ impl QuestBuilder<'_> {
                 // among its townsfolk; an item is found where it lies, among the camps of the
                 // other side too.
                 .map(|l| {
-                    if l.kind == EntityKind::Item && givers.starter != Some(l.id) {
+                    if l.kind == EntityKind::Item
+                        && (givers.starter != Some(l.id) || givers.start_work.0 > 0.0 || givers.start_work.2 > 0.0)
+                    {
                         self.sources.guards.around_hostile(&l.pos, level)
                     } else {
                         self.sources.guards.around_giver(&l.pos)

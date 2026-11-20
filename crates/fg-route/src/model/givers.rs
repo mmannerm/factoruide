@@ -20,7 +20,7 @@ pub(super) struct Givers {
     pub(super) item_pre: Vec<i64>,
     /// The item an NPC offers the quest for: looting it is the accept.
     pub(super) held: Option<i64>,
-    /// The item already obtained when accepting an auction-made starter quest.
+    /// The verified starter item already obtained before accepting the quest.
     pub(super) starter: Option<i64>,
     pub(super) auction_start: Option<super::types::AuctionStart>,
 }
@@ -174,6 +174,16 @@ impl QuestBuilder<'_> {
                 givers.starter = Some(item);
                 givers.auction_start = (!ready).then(|| purchase.clone());
             }
+        }
+        if !givers.starts.is_empty() {
+            givers.starter = givers.starter.or_else(|| {
+                self.profile
+                    .quest_overrides
+                    .iter()
+                    .rev()
+                    .filter(|q| q.id == r.id)
+                    .find_map(|q| q.start_item)
+            });
         }
         givers.starts.retain(|l| !self.params.excluded_zones.contains(&l.zone));
         givers.ends.retain(|l| !self.params.excluded_zones.contains(&l.zone));

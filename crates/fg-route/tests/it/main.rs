@@ -14,5 +14,8 @@ mod draft;
 mod edit;
 mod profession_trips;
 mod required;
+mod riverglades_locations;
+mod riverglades_objectives;
+mod riverglades_starters;
 mod routes;
 mod timeline;

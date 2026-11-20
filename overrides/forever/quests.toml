@@ -85,3 +85,48 @@ interactions = [
 [[quest]]
 id = 2843
 interactions = [{ npc = 7853, text = "Wait for Scooty to calibrate the Goblin Transponder, then turn in the quest and keep the transponder for the teleporter", conversation = true }]
+
+# Riverglades: the client cache records one interaction with Marshal Ryan, not an escort.
+# https://github.com/JIVESCORP/eg-link-output-wowf/blob/c389a874888debc41eec9b0219af65ccceebac6d/data/wowf/1.60.1.70959/quests.enUS.json
+# https://www.wowhead.com/forever/quest=94887/saving-marshal-ryan
+[[quest]]
+id = 94887
+objectives = [{ type = "talk", id = 257250, amount = 1, text = "Talk to Marshal Ryan" }]
+interactions = [{ npc = 257250, text = "Talk to Marshal Ryan", conversation = true }]
+
+# Use the quest's provided Empty Phial at the freshwater spout to create the requested item.
+# The coordinate is a player report; the item spell supplies the three-second cast.
+# https://www.wowhead.com/forever/quest=96084/somethings-in-the-water
+# https://www.wowhead.com/forever/spell=1310594/filling-phial
+[[quest]]
+id = 96084
+objectives = [{ type = "trigger", text = "Use the Empty Phial at the freshwater spout to collect a Filled Freshwater Phial", at = { zone = 16591, x = 62.0, y = 56.2 }, seconds = 3.0 }]
+
+# Live item-started Riverglades quests whose giver relation is missing from the archive.
+# Their existing drop sources, faction restrictions and combat requirements still apply.
+# https://www.wowhead.com/forever/item=263930/farholde-scouting-report
+[[quest]]
+id = 93971
+available = true
+min_level = 38 # The starting report requires 38, despite the quest row's minimum of 36.
+start_item = 263930
+
+# https://www.wowhead.com/forever/item=271612/head-of-scaldaron
+[[quest]]
+id = 95935 # Alliance
+start_item = 271612
+
+# https://www.wowhead.com/forever/item=271613/head-of-scaldaron
+[[quest]]
+id = 95936 # Horde
+available = true
+start_item = 271613
+
+# Smuggler's Paradise follows either faction's introduction, not both.
+# The source lists the Horde and Alliance branches together; each character can do only its own.
+# https://www.wowhead.com/forever/quest=95288/smugglers-paradise
+# https://github.com/ATTWoWAddon/AllTheThings/blob/7802557491fffdaaf893a389dc31b2f82b0b7fb1/.contrib/.db/forever/zones/eastern%20kingdoms/riverglades.lua#L1532
+[[quest]]
+id = 95288
+pre_all = []
+pre_any = [93976, 94928]

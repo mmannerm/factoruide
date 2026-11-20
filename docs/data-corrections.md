@@ -23,6 +23,36 @@ necessary for behavior or facts the bundled data does not yet supply:
 | Shipping Label | Requiring #98247 (Alliance) or #98248 (Horde), or choosing it as a quest objective, adds an Auction House stop for one Apprentice Herbs crate and 20 Peacebloom per character needing a label. Fill the crate before accepting the quest. Sources are linked in `overrides/forever/quests.toml`. |
 | What We Lost | Quest #94829's burial objective must follow looting the Farmers' Mementos from a Twilight Raider (#256952). `overrides/objectives.toml` supplies this ordering; the bundled objective rows alone do not enforce it. |
 
+Riverglades corrections live in `overrides/forever/quests.toml` and
+`overrides/forever/locations.toml`:
+
+- [Farholde Scouting Report](https://www.wowhead.com/forever/item=263930/farholde-scouting-report)
+  starts from item #263930 and requires level 38. The Alliance and Horde
+  [heads of Scaldaron](https://www.wowhead.com/forever/item=271612/head-of-scaldaron)
+  ([Horde item](https://www.wowhead.com/forever/item=271613/head-of-scaldaron)) start
+  #95935 and #95936. Existing creature drops, faction restrictions and combat estimates apply;
+  the pickup supplies the head needed for turn-in. Their drop chances remain unverified.
+- [Smuggler's Paradise](https://www.wowhead.com/forever/quest=95288/smugglers-paradise)
+  follows either faction's introduction, #93976 or #94928, rather than requiring both.
+- [Saving Marshal Ryan](https://www.wowhead.com/forever/quest=94887/saving-marshal-ryan)
+  is a conversation with NPC #257250, as recorded by
+  [EG Link build 70959](https://github.com/JIVESCORP/eg-link-output-wowf/blob/c389a874888debc41eec9b0219af65ccceebac6d/data/wowf/1.60.1.70959/quests.enUS.json).
+  [Something's in the Water](https://www.wowhead.com/forever/quest=96084/somethings-in-the-water)
+  uses the supplied Empty Phial near Riverglades 62.0, 56.2, an approximate player-reported point; its
+  [fill spell](https://www.wowhead.com/forever/spell=1310594/filling-phial) takes three seconds.
+  Both retain the first objective slot so imported progress can skip completed work.
+- Missing berry, riverweed, soil, memorial candle and three cannon ammunition object locations
+  come from the linked Wowhead maps in `locations.toml`, retrieved November 20, 2026 UTC.
+  These fill missing usable positions; existing database locations take precedence.
+  The cannon ammunition is beside the cannons on the ships' second floor; the map points
+  do not establish floor heights. Gathering quantities and drop chances are unchanged.
+
+This does not complete Riverglades coverage. Arena, escort and other scripted events still
+need verified completion data. Fetch'n'Fletch lacks a verified woodpile object ID and conversion
+yield. The recovered Bloodsail Trunk position is not enabled because its reported ambush is
+not modeled. Updating the planner does not rewrite saved guides; regenerate them to use these
+corrections.
+
 Shipping Label estimates assume auction stock and affordability, using the ordinary purchase-time
 estimate. Use owned inputs when possible. Random crate drops, other bundles and repeat deliveries
 are not modeled. Already-ready imported quests do not buy their inputs again.
