@@ -1570,7 +1570,7 @@ fn exclusive_prerequisites(conn: &Connection, corrected: &[crate::model::QuestOv
         ))
     })? {
         let (id, name, races, classes) = row?;
-        masks.insert(id, (races, classes));
+        masks.insert(id, (crate::model::quest_races_mask(corrected, id, races), classes));
         names.insert(id, name.unwrap_or_default());
     }
     let needs = crate::model::quest_links(conn, corrected)?;
@@ -1636,6 +1636,7 @@ fn prerequisite_races(conn: &Connection, overrides: &Overrides) -> Result<Vec<Fi
     })? {
         let (id, name, races, classes, available) = row?;
         if crate::model::quest_available(&overrides.quest_overrides, id, available) {
+            let races = crate::model::quest_races_mask(&overrides.quest_overrides, id, Some(races)).unwrap_or(0);
             quests.insert(id, (name.unwrap_or_default(), races, classes));
         }
     }

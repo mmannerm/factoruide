@@ -787,6 +787,8 @@ pub struct SpellLevel {
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct QuestOverride {
     pub id: i64,
+    /// Verified race eligibility replacing the bundled mask; 0 means all races.
+    pub races_mask: Option<i64>,
     /// Verified availability when the bundled catalog lacks part of a live quest.
     pub available: Option<bool>,
     /// Minimum pickup level, including a quest-starting item's requirement.
@@ -815,6 +817,16 @@ pub(crate) fn quest_available(overrides: &[QuestOverride], id: i64, available: b
         .filter(|q| q.id == id)
         .find_map(|q| q.available)
         .unwrap_or(available)
+}
+
+/// The last correction for this field wins, as edition overrides follow common overrides.
+pub(crate) fn quest_races_mask(corrected: &[QuestOverride], id: i64, original: Option<i64>) -> Option<i64> {
+    corrected
+        .iter()
+        .rev()
+        .filter(|q| q.id == id)
+        .find_map(|q| q.races_mask)
+        .or(original)
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]

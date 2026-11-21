@@ -59,7 +59,10 @@ pub(super) fn resolve(
             .collect::<Vec<_>>();
         let eligible: Vec<_> = matches
             .iter()
-            .filter(|(_, _, races, classes, _)| profile.members_of(Some(*races), Some(*classes)) != 0)
+            .filter(|(id, _, races, classes, _)| {
+                let races = crate::model::quest_races_mask(&profile.quest_overrides, *id, Some(*races));
+                profile.members_of(races, Some(*classes)) != 0
+            })
             .collect();
         let selected = match eligible.as_slice() {
             [quest] => quest.0,
@@ -140,7 +143,6 @@ fn choices(
     let query = query.trim();
     let mut params: Vec<Value> = vec![
         Value::Text(locale.unwrap_or("").to_owned()),
-        Value::Integer(race_bit),
         Value::Integer(class_bit),
         Value::Integer(query.parse().unwrap_or(0)),
         Value::Text(query.to_owned()),
@@ -163,16 +165,15 @@ fn choices(
     }
     let sql = format!(
         "SELECT q.id, coalesce(l.name, q.name), coalesce(q.level, 0), coalesce(z.name, a.AreaName_lang),
-                coalesce(q.status = 'available', 0)
+                q.races_mask, coalesce(q.status = 'available', 0)
          FROM m_quest q
          LEFT JOIN l10n l ON l.entity_type = 'quest' AND l.id = q.id AND l.locale = ?1
          LEFT JOIN client_areatable a ON a.ID = q.zone_or_sort
          LEFT JOIN l10n z ON z.entity_type = 'zone' AND z.id = q.zone_or_sort AND z.locale = ?1
          WHERE q.name IS NOT NULL
-           AND (coalesce(q.races_mask, 0) = 0 OR ?2 = 0 OR q.races_mask & ?2 != 0)
-           AND (coalesce(q.classes_mask, 0) = 0 OR ?3 = 0 OR q.classes_mask & ?3 != 0)
+           AND (coalesce(q.classes_mask, 0) = 0 OR ?2 = 0 OR q.classes_mask & ?2 != 0)
            AND {}
-         ORDER BY q.id != ?4, lower(coalesce(l.name, q.name)) NOT LIKE lower(?5) || '%', q.level, q.id",
+         ORDER BY q.id != ?3, lower(coalesce(l.name, q.name)) NOT LIKE lower(?4) || '%', q.level, q.id",
         matches.join(" AND ")
     );
     let mut stmt = conn.prepare(&sql)?;
@@ -184,13 +185,17 @@ fn choices(
                 level: r.get(2)?,
                 zone: r.get(3)?,
             },
-            r.get::<_, bool>(4)?,
+            r.get::<_, Option<i64>>(4)?,
+            r.get::<_, bool>(5)?,
         ))
     })?;
     let mut out = Vec::new();
     for row in rows {
-        let (choice, available) = row?;
-        if crate::model::quest_available(overrides, choice.id, available) {
+        let (choice, races, available) = row?;
+        let races = crate::model::quest_races_mask(overrides, choice.id, races).unwrap_or(0);
+        if crate::model::quest_available(overrides, choice.id, available)
+            && (races == 0 || race_bit == 0 || races & race_bit != 0)
+        {
             out.push(choice);
             if out.len() == SHOWN {
                 break;

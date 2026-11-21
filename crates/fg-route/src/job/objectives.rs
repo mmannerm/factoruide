@@ -79,6 +79,7 @@ fn candidates(conn: &Connection, overrides: &Overrides, start: &StartState) -> R
         if !model::quest_available(&overrides.quest_overrides, id, available) {
             continue;
         }
+        let races = model::quest_races_mask(&overrides.quest_overrides, id, Some(races)).unwrap_or(0);
         let for_race = races == 0 || race_bit == 0 || races & race_bit != 0;
         let for_class = classes == 0 || class_bit == 0 || classes & class_bit != 0;
         if !for_race || !for_class || done.contains(&id) {
