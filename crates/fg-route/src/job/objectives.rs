@@ -46,7 +46,7 @@ struct Candidate {
 }
 
 /// The quests of the database the character could take and has not done: of its race and class.
-fn candidates(conn: &Connection, corrected: &[model::QuestOverride], start: &StartState) -> Result<Vec<Candidate>> {
+fn candidates(conn: &Connection, overrides: &Overrides, start: &StartState) -> Result<Vec<Candidate>> {
     let race_bit = model::race_bit(start.race);
     let classes: Vec<(i64, String)> = conn
         .prepare("SELECT ID, coalesce(Filename, '') FROM client_chrclasses")?
@@ -59,8 +59,8 @@ fn candidates(conn: &Connection, corrected: &[model::QuestOverride], start: &Sta
     let done: HashSet<i64> = start.completed.iter().map(|q| q.0).collect();
     let mut stmt = conn.prepare(
         "SELECT id, name, zone_or_sort, coalesce(races_mask, 0), coalesce(classes_mask, 0),
-                coalesce(required_skill_id, 0)
-         FROM m_quest WHERE status = 'available' AND name IS NOT NULL",
+                coalesce(required_skill_id, 0), coalesce(status = 'available', 0)
+         FROM m_quest WHERE name IS NOT NULL",
     )?;
     let rows = stmt.query_map([], |r| {
         Ok((
@@ -70,12 +70,16 @@ fn candidates(conn: &Connection, corrected: &[model::QuestOverride], start: &Sta
             r.get::<_, i64>(3)?,
             r.get::<_, i64>(4)?,
             r.get::<_, i64>(5)?,
+            r.get::<_, bool>(6)?,
         ))
     })?;
     let mut out = Vec::new();
     for row in rows {
-        let (id, name, sort, races, classes, skill) = row?;
-        let races = model::quest_races_mask(corrected, id, Some(races)).unwrap_or(0);
+        let (id, name, sort, races, classes, skill, available) = row?;
+        if !model::quest_available(&overrides.quest_overrides, id, available) {
+            continue;
+        }
+        let races = model::quest_races_mask(&overrides.quest_overrides, id, Some(races)).unwrap_or(0);
         let for_race = races == 0 || race_bit == 0 || races & race_bit != 0;
         let for_class = classes == 0 || class_bit == 0 || classes & class_bit != 0;
         if !for_race || !for_class || done.contains(&id) {
@@ -117,7 +121,7 @@ pub fn objective_counts(conn: &Connection, overrides: &Overrides, start: &StartS
         .query_map([], |r| r.get(0))?
         .collect::<rusqlite::Result<_>>()?;
     let mut counts = ObjectiveCounts::default();
-    for c in candidates(conn, &overrides.quest_overrides, start)? {
+    for c in candidates(conn, overrides, start)? {
         let Some(sort) = c.sort.filter(|s| *s > 0) else {
             continue;
         };
@@ -165,7 +169,7 @@ pub fn objective_preview(conn: &Connection, overrides: &Overrides, req: &PlanReq
     let skipped: HashMap<i64, &str> = (model.skipped.iter())
         .map(|(id, _, reason)| (*id, reason.as_str()))
         .collect();
-    let excluded = (candidates(conn, &overrides.quest_overrides, start)?.into_iter())
+    let excluded = (candidates(conn, overrides, start)?.into_iter())
         .filter(|c| asked(c) && !planned.contains(&c.id))
         .map(|c| {
             let reason = match (skipped.get(&c.id), model.index.contains_key(&c.id)) {

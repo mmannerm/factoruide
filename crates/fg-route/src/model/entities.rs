@@ -1,6 +1,6 @@
 //! NPCs, objects and items of the database with their spawn points, and the camps of elites.
 
-use super::types::EntityKind;
+use super::types::{EntityKind, ObjectLocations};
 use crate::world::{Pos, World};
 use anyhow::Result;
 use rusqlite::Connection;
@@ -59,6 +59,48 @@ impl Entities {
             auctioneers: Arc::clone(&read.auctioneers),
             not_sold: Arc::clone(&read.not_sold),
         })
+    }
+
+    /// Fill gaps on this load's spawn copy; future database positions take precedence.
+    pub(super) fn fill_object_locations(&mut self, world: &World, locations: &[ObjectLocations]) -> Result<()> {
+        let valid_xy =
+            |x: f64, y: f64| x.is_finite() && y.is_finite() && (0.0..=100.0).contains(&x) && (0.0..=100.0).contains(&y);
+        let mut seen = HashSet::new();
+        for object in locations {
+            // An edition override can also be loaded with a partial fixture database.
+            if !self.object.contains_key(&object.id) {
+                continue;
+            }
+            anyhow::ensure!(seen.insert(object.id), "Duplicate object locations for {}", object.id);
+            anyhow::ensure!(!object.at.is_empty(), "No locations supplied for object {}", object.id);
+            for point in &object.at {
+                anyhow::ensure!(
+                    valid_xy(point.x, point.y) && (point.z.is_none() || crate::world::height(point.z).is_some()),
+                    "Invalid coordinates for object {} in zone {}",
+                    object.id,
+                    point.zone
+                );
+                anyhow::ensure!(
+                    world.to_world(point.zone, point.x, point.y).is_some(),
+                    "Unknown zone {} for object {}",
+                    point.zone,
+                    object.id
+                );
+            }
+            let points = self.spawns.entry((EntityKind::Object, object.id)).or_default();
+            if points
+                .iter()
+                .any(|&(zone, x, y, _)| valid_xy(x, y) && world.to_world(zone, x, y).is_some())
+            {
+                continue;
+            }
+            *points = object
+                .at
+                .iter()
+                .map(|p| (p.zone, p.x, p.y, crate::world::height(p.z)))
+                .collect();
+        }
+        Ok(())
     }
 
     fn read(conn: &Connection, faction: crate::faction::Faction) -> Result<Self> {
@@ -417,6 +459,80 @@ pub(super) fn alternatives(points: &[(Pos, i64)], first: &Pos, near: &Pos, work:
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn location_fixture() -> (Connection, World) {
+        let conn = crate::fixture::Fixture::new(crate::xp::Edition::Forever)
+            .toml(
+                r"
+[[object]]
+id = 620424
+[[object]]
+id = 620422
+at = [{ zone = 16591, x = 10.0, y = 20.0 }]
+[[object]]
+id = 621767
+at = [{ zone = 16591, x = 150.0, y = 20.0 }]
+",
+            )
+            .open();
+        let world = crate::job::game_world(
+            &conn,
+            &crate::job::Overrides::default(),
+            crate::faction::Faction::Horde,
+            0,
+        )
+        .unwrap();
+        (conn, world)
+    }
+
+    #[test]
+    fn object_locations_fill_gaps_without_replacing_upstream_or_cached_spawns() {
+        let (conn, world) = location_fixture();
+        let point = crate::world::ZonePoint {
+            zone: 16591,
+            x: 78.4,
+            y: 37.0,
+            z: None,
+        };
+        let locations: Vec<_> = [620424, 620422, 621767]
+            .into_iter()
+            .map(|id| ObjectLocations { id, at: vec![point] })
+            .collect();
+        let mut entities = Entities::load(&conn, crate::faction::Faction::Horde).unwrap();
+        entities.fill_object_locations(&world, &locations).unwrap();
+        for id in [620424, 621767] {
+            assert_eq!(entities.spawns[&(EntityKind::Object, id)], [(16591, 78.4, 37.0, None)]);
+        }
+        assert_eq!(
+            entities.spawns[&(EntityKind::Object, 620422)],
+            [(16591, 10.0, 20.0, None)]
+        );
+        let unmodified = Entities::load(&conn, crate::faction::Faction::Horde).unwrap();
+        assert!(!unmodified.spawns.contains_key(&(EntityKind::Object, 620424)));
+        assert_eq!(
+            unmodified.spawns[&(EntityKind::Object, 621767)],
+            [(16591, 150.0, 20.0, None)]
+        );
+    }
+
+    #[test]
+    fn object_locations_reject_bad_coordinates_and_unknown_zones() {
+        let (conn, world) = location_fixture();
+        let mut entities = Entities::load(&conn, crate::faction::Faction::Horde).unwrap();
+        for (zone, x, y, z) in [
+            (0, 50.0, 50.0, None),
+            (16591, f64::NAN, 50.0, None),
+            (16591, 50.0, 101.0, None),
+            (16591, 50.0, 50.0, Some(f64::INFINITY)),
+        ] {
+            let correction = ObjectLocations {
+                id: 620424,
+                at: vec![crate::world::ZonePoint { zone, x, y, z }],
+            };
+            let error = entities.fill_object_locations(&world, &[correction]).unwrap_err();
+            assert!(error.to_string().contains("620424"), "{error}");
+        }
+    }
 
     fn at(x: f64) -> Pos {
         Pos {

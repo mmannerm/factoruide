@@ -1,0 +1,139 @@
+# Published map positions, used only while the database has no usable object locations.
+# Sources checked 2026-11-20; coordinates copied from each map, with no inferred heights.
+
+# https://www.wowhead.com/forever/object=620424/freshly-picked-berries
+[[object]]
+id = 620424
+at = [
+    { zone = 16591, x = 78.4, y = 37.0 },
+    { zone = 16591, x = 78.6, y = 37.1 },
+    { zone = 16591, x = 78.7, y = 31.0 },
+    { zone = 16591, x = 78.9, y = 36.4 },
+    { zone = 16591, x = 79.1, y = 38.1 },
+    { zone = 16591, x = 80.0, y = 37.3 },
+    { zone = 16591, x = 80.0, y = 37.5 },
+]
+
+# https://www.wowhead.com/forever/object=620422/riverweed
+[[object]]
+id = 620422
+at = [
+    { zone = 16591, x = 41.8, y = 65.3 },
+    { zone = 16591, x = 42.3, y = 67.0 },
+    { zone = 16591, x = 42.6, y = 59.7 },
+    { zone = 16591, x = 42.9, y = 63.5 },
+    { zone = 16591, x = 43.3, y = 56.4 },
+    { zone = 16591, x = 43.5, y = 61.4 },
+    { zone = 16591, x = 43.5, y = 61.5 },
+    { zone = 16591, x = 43.7, y = 57.7 },
+    { zone = 16591, x = 43.9, y = 67.1 },
+    { zone = 16591, x = 45.6, y = 69.4 },
+    { zone = 16591, x = 45.6, y = 69.5 },
+    { zone = 16591, x = 46.4, y = 68.2 },
+    { zone = 16591, x = 48.1, y = 68.1 },
+    { zone = 16591, x = 49.0, y = 79.3 },
+    { zone = 16591, x = 49.7, y = 68.4 },
+    { zone = 16591, x = 49.9, y = 81.3 },
+    { zone = 16591, x = 50.0, y = 73.7 },
+    { zone = 16591, x = 50.0, y = 76.8 },
+    { zone = 16591, x = 50.0, y = 79.4 },
+    { zone = 16591, x = 50.6, y = 80.8 },
+    { zone = 16591, x = 51.4, y = 52.8 },
+    { zone = 16591, x = 51.4, y = 67.3 },
+    { zone = 16591, x = 51.5, y = 67.2 },
+    { zone = 16591, x = 51.7, y = 74.2 },
+    { zone = 16591, x = 51.9, y = 52.8 },
+    { zone = 16591, x = 52.1, y = 66.3 },
+    { zone = 16591, x = 52.6, y = 80.4 },
+    { zone = 16591, x = 52.7, y = 71.9 },
+    { zone = 16591, x = 52.9, y = 68.1 },
+    { zone = 16591, x = 53.1, y = 51.4 },
+    { zone = 16591, x = 53.2, y = 51.6 },
+    { zone = 16591, x = 53.4, y = 67.2 },
+    { zone = 16591, x = 53.5, y = 67.1 },
+    { zone = 16591, x = 53.8, y = 81.8 },
+    { zone = 16591, x = 54.0, y = 51.6 },
+    { zone = 16591, x = 54.1, y = 51.4 },
+    { zone = 16591, x = 54.1, y = 69.8 },
+    { zone = 16591, x = 54.4, y = 49.2 },
+    { zone = 16591, x = 54.4, y = 49.5 },
+    { zone = 16591, x = 54.8, y = 50.4 },
+    { zone = 16591, x = 54.8, y = 50.5 },
+    { zone = 16591, x = 55.0, y = 48.0 },
+    { zone = 16591, x = 55.1, y = 48.6 },
+    { zone = 16591, x = 55.4, y = 45.2 },
+    { zone = 16591, x = 55.5, y = 45.2 },
+    { zone = 16591, x = 55.7, y = 46.6 },
+    { zone = 16591, x = 56.4, y = 44.2 },
+    { zone = 16591, x = 56.5, y = 44.1 },
+    { zone = 16591, x = 56.9, y = 42.6 },
+    { zone = 16591, x = 57.6, y = 34.8 },
+    { zone = 16591, x = 57.6, y = 42.1 },
+    { zone = 16591, x = 57.9, y = 42.7 },
+    { zone = 16591, x = 58.4, y = 34.3 },
+    { zone = 16591, x = 58.4, y = 35.9 },
+    { zone = 16591, x = 58.5, y = 35.8 },
+    { zone = 16591, x = 58.5, y = 42.7 },
+    { zone = 16591, x = 58.9, y = 36.5 },
+    { zone = 16591, x = 59.2, y = 41.7 },
+    { zone = 16591, x = 59.5, y = 36.1 },
+    { zone = 16591, x = 60.4, y = 37.0 },
+    { zone = 16591, x = 60.5, y = 37.0 },
+    { zone = 16591, x = 60.8, y = 42.4 },
+    { zone = 16591, x = 60.8, y = 42.5 },
+    { zone = 16591, x = 61.8, y = 40.5 },
+    { zone = 16591, x = 62.5, y = 40.8 },
+    { zone = 16591, x = 62.7, y = 38.9 },
+    { zone = 16591, x = 63.0, y = 37.4 },
+    { zone = 16591, x = 63.0, y = 37.5 },
+    { zone = 16591, x = 63.7, y = 36.6 },
+    { zone = 16591, x = 63.8, y = 36.4 },
+    { zone = 16591, x = 64.8, y = 35.9 },
+]
+
+# https://www.wowhead.com/forever/object=621767/loamy-soil
+[[object]]
+id = 621767
+at = [
+    { zone = 16591, x = 37.3, y = 65.3 },
+    { zone = 16591, x = 37.7, y = 61.4 },
+    { zone = 16591, x = 38.2, y = 63.3 },
+    { zone = 16591, x = 38.4, y = 58.7 },
+    { zone = 16591, x = 38.7, y = 62.3 },
+    { zone = 16591, x = 38.8, y = 62.7 },
+    { zone = 16591, x = 39.1, y = 64.3 },
+    { zone = 16591, x = 39.5, y = 60.6 },
+    { zone = 16591, x = 39.7, y = 62.9 },
+]
+
+# https://www.wowhead.com/forever/object=642517/burned-memorial-candle
+[[object]]
+id = 642517
+at = [
+    { zone = 16591, x = 61.6, y = 83.5 },
+    { zone = 16591, x = 61.7, y = 83.4 },
+]
+
+# https://www.wowhead.com/forever/object=629425/cannon-ammunition
+[[object]]
+id = 629425
+at = [
+    { zone = 16591, x = 88.4, y = 25.8 },
+    { zone = 16591, x = 88.6, y = 25.7 },
+]
+
+# https://www.wowhead.com/forever/object=629426/cannon-ammunition
+[[object]]
+id = 629426
+at = [
+    { zone = 16591, x = 90.5, y = 29.3 },
+    { zone = 16591, x = 90.6, y = 29.6 },
+]
+
+# https://www.wowhead.com/forever/object=629427/cannon-ammunition
+[[object]]
+id = 629427
+at = [
+    { zone = 16591, x = 90.6, y = 39.3 },
+    { zone = 16591, x = 90.9, y = 39.5 },
+]

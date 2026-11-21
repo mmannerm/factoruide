@@ -148,6 +148,7 @@ pub(crate) fn character(conn: &Connection, overrides: &Overrides, req: &PlanRequ
             .collect(),
         dungeons: overrides.dungeons.clone(),
         quest_overrides: overrides.quest_overrides.clone(),
+        object_locations: overrides.object_locations.clone(),
         objective_orders: overrides.objective_orders.clone(),
         quest_teleports: overrides.teleports.clone(),
         professions,

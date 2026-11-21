@@ -22,6 +22,7 @@ pub struct Profile {
     /// `required_class_quests` are `selected`.
     pub class_requirements: Vec<ClassRequirement>,
     pub quest_overrides: Vec<QuestOverride>,
+    pub object_locations: Vec<ObjectLocations>,
     /// Exact quests selected by the player.
     pub required_quests: Vec<QuestRequirement>,
     /// Confirmed completions from the starting profile, never inferred from character level.
@@ -58,6 +59,13 @@ impl Profile {
     pub fn objective_guide(&self) -> bool {
         !self.objectives.is_empty()
     }
+}
+
+/// Published object locations used when the database has no usable spawn positions.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct ObjectLocations {
+    pub id: i64,
+    pub at: Vec<crate::world::ZonePoint>,
 }
 
 /// What an objective guide completes.
@@ -781,6 +789,12 @@ pub struct QuestOverride {
     pub id: i64,
     /// Verified race eligibility replacing the bundled mask; 0 means all races.
     pub races_mask: Option<i64>,
+    /// Verified availability when the bundled catalog lacks part of a live quest.
+    pub available: Option<bool>,
+    /// Minimum pickup level, including a quest-starting item's requirement.
+    pub min_level: Option<i64>,
+    /// An item that starts the quest; its existing loot sources still apply.
+    pub start_item: Option<i64>,
     pub pre_all: Option<Vec<i64>>,
     pub pre_any: Option<Vec<i64>>,
     /// How many of `pre_any` the quest needs done (default one).
@@ -791,6 +805,18 @@ pub struct QuestOverride {
     pub auction_start: Option<AuctionStart>,
     /// Creature credits completed by an interaction, with the quest's instructions.
     pub interactions: Option<Vec<QuestInteraction>>,
+    /// Complete objective rows when the bundled source omits or misclassifies them.
+    pub objectives: Option<Vec<QuestObjective>>,
+}
+
+/// The last explicit availability correction wins; other corrections do not revive a quest.
+pub(crate) fn quest_available(overrides: &[QuestOverride], id: i64, available: bool) -> bool {
+    overrides
+        .iter()
+        .rev()
+        .filter(|q| q.id == id)
+        .find_map(|q| q.available)
+        .unwrap_or(available)
 }
 
 /// The last correction for this field wins, as edition overrides follow common overrides.
@@ -811,6 +837,22 @@ pub struct QuestInteraction {
     /// Nearby enemies still guard the NPC; existing ritual/spell interactions stay actions.
     #[serde(default)]
     pub conversation: bool,
+}
+
+/// Source-backed objective corrections using the planner's existing interaction and area steps.
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum QuestObjective {
+    Talk {
+        id: i64,
+        amount: i64,
+        text: String,
+    },
+    Trigger {
+        text: String,
+        at: crate::world::ZonePoint,
+        seconds: f64,
+    },
 }
 
 /// A quest starter made from bought inputs. Stock and affordability are assumed, as for

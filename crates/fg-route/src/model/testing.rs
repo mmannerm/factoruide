@@ -1015,6 +1015,7 @@ pub fn profile(faction: Faction, from: i64, to: i64) -> Profile {
         to_level: to,
         required_class_quests: Vec::new(),
         quest_overrides: Vec::new(),
+        object_locations: Vec::new(),
         required_quests: Vec::new(),
         completed_quests: HashSet::new(),
         class_powers: Vec::new(),

@@ -15,8 +15,8 @@ pub(super) fn resolve(
     let mut out: Vec<QuestRequirement> = Vec::new();
     for choice in &request.required_quests {
         let mut stmt = conn.prepare(
-            "SELECT id, coalesce(name, ''), coalesce(races_mask, 0), coalesce(classes_mask, 0)
-             FROM m_quest WHERE (?1 > 0 AND id = ?1) OR (?2 != '' AND lower(name) = lower(?2) AND status = 'available') ORDER BY id",
+            "SELECT id, coalesce(name, ''), coalesce(races_mask, 0), coalesce(classes_mask, 0), coalesce(status = 'available', 0)
+             FROM m_quest WHERE (?1 > 0 AND id = ?1) OR (?2 != '' AND lower(name) = lower(?2)) ORDER BY id",
         )?;
         let (id, name, window) = match choice {
             RequiredQuest::Id(id) => (*id, "", CompletionWindow::default()),
@@ -50,12 +50,16 @@ pub(super) fn resolve(
                     r.get::<_, String>(1)?,
                     r.get::<_, i64>(2)?,
                     r.get::<_, i64>(3)?,
+                    r.get::<_, bool>(4)?,
                 ))
             })?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
+            .collect::<rusqlite::Result<Vec<_>>>()?
+            .into_iter()
+            .filter(|q| id != 0 || crate::model::quest_available(&profile.quest_overrides, q.0, q.4))
+            .collect::<Vec<_>>();
         let eligible: Vec<_> = matches
             .iter()
-            .filter(|(id, _, races, classes)| {
+            .filter(|(id, _, races, classes, _)| {
                 let races = crate::model::quest_races_mask(&profile.quest_overrides, *id, Some(*races));
                 profile.members_of(races, Some(*classes)) != 0
             })
@@ -125,7 +129,7 @@ pub fn quest_choices(
 /// The quests of a race and class (as bits, 0: any) matching the query (see `quest_choices`).
 fn choices(
     conn: &Connection,
-    corrected: &[crate::model::QuestOverride],
+    overrides: &[crate::model::QuestOverride],
     (race_bit, class_bit): (i64, i64),
     query: &str,
     locale: Option<&str>,
@@ -160,12 +164,13 @@ fn choices(
         });
     }
     let sql = format!(
-        "SELECT q.id, coalesce(l.name, q.name), coalesce(q.level, 0), coalesce(z.name, a.AreaName_lang), q.races_mask
+        "SELECT q.id, coalesce(l.name, q.name), coalesce(q.level, 0), coalesce(z.name, a.AreaName_lang),
+                q.races_mask, coalesce(q.status = 'available', 0)
          FROM m_quest q
          LEFT JOIN l10n l ON l.entity_type = 'quest' AND l.id = q.id AND l.locale = ?1
          LEFT JOIN client_areatable a ON a.ID = q.zone_or_sort
          LEFT JOIN l10n z ON z.entity_type = 'zone' AND z.id = q.zone_or_sort AND z.locale = ?1
-         WHERE q.status = 'available' AND q.name IS NOT NULL
+         WHERE q.name IS NOT NULL
            AND (coalesce(q.classes_mask, 0) = 0 OR ?2 = 0 OR q.classes_mask & ?2 != 0)
            AND {}
          ORDER BY q.id != ?3, lower(coalesce(l.name, q.name)) NOT LIKE lower(?4) || '%', q.level, q.id",
@@ -181,14 +186,17 @@ fn choices(
                 zone: r.get(3)?,
             },
             r.get::<_, Option<i64>>(4)?,
+            r.get::<_, bool>(5)?,
         ))
     })?;
     let mut out = Vec::new();
     for row in rows {
-        let (quest, races) = row?;
-        let races = crate::model::quest_races_mask(corrected, quest.id, races).unwrap_or(0);
-        if races == 0 || race_bit == 0 || races & race_bit != 0 {
-            out.push(quest);
+        let (choice, races, available) = row?;
+        let races = crate::model::quest_races_mask(overrides, choice.id, races).unwrap_or(0);
+        if crate::model::quest_available(overrides, choice.id, available)
+            && (races == 0 || race_bit == 0 || races & race_bit != 0)
+        {
+            out.push(choice);
             if out.len() == SHOWN {
                 break;
             }
