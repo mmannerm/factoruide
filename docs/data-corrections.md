@@ -1,8 +1,8 @@
 # Data corrections
 
 The fork uses upstream's bundled databases without editing their archives. The current Forever
-import records identify QuestieDB `0388969651`, Questie `4117288aed`, AllTheThings `147f216485`,
-EG Link `c389a87488`, and client cache builds `70790` and `70959` in the [upstream snapshot](https://github.com/brouznouf/factoruide/blob/7f10367ffb8cd02206f53d791164c886e30fdbc5/data/forever.sqlite.zst).
+import records identify QuestieDB `9cf27d6491`, Questie `1e74ea4bd7`, AllTheThings `12f36e1db9`,
+EG Link `4e98f1f073`, and client cache builds `70790` and `70959` in the [upstream snapshot](https://github.com/brouznouf/factoruide/blob/4e88b398e17f3a59001d35fd5af2e45c53b37504/data/forever.sqlite.zst).
 The archive's `import_run` table and [NOTICE](../NOTICE.md) record the complete source provenance.
 
 Source-data corrections live in `overrides/database/`; upstream's database builder reapplies them
@@ -17,7 +17,7 @@ necessary for behavior or facts the bundled data does not yet supply:
 | Secondary profession trainer titles | Recognized Cook, Superior Cook, Cooking Trainer, First Aid Trainer, Physician and Fishing Trainer titles teach through cap 150; a trailing ` & Supplies` does not change that. A trainer flag alone does not establish rank training: recipe vendors such as TBC Naka (#18993, Cooking Supplies) are excluded. |
 | The Glowing Shard (all editions) | The bundled quest text sends the player to Ratchet, but its objective row classifies Sputtervalve (#3442) as a creature credit under Wailing Caverns. The common `overrides/quests.toml` entry treats that credit as an outdoor conversation, using ordinary talk timing and translation without requiring the quest's level; nearby enemies still guard the NPC. Item #10441 still comes from Mutanus (#3654); the dungeon is needed until each eligible party member has accepted the quest. Save a fresh addon profile and regenerate existing guides. |
 | Call of Fire | The Skyborne Horde [ritual and torch delivery](https://www.wowhead.com/forever/quest=97257/call-of-fire) uses two NPC credits as interactions. The guide follows the quest's instructions and retains its six-minute limit. |
-| Skyborne hunter pet quests | QuestieDB `0388969651` narrows #94978, #94979, #94013 and #94050 to Alliance, but the [pinned client cache](https://github.com/JIVESCORP/eg-link-output-wowf/blob/c389a874888debc41eec9b0219af65ccceebac6d/data/wowf/1.60.1.70959/quests.enUS.json) permits both Skyborne factions. Runtime race corrections retain that pet unlock chain without changing its hunter restriction. In-game acceptance is unverified; revisit this correction when the sources agree. |
+| Skyborne hunter pet quests | The bundled quest rows narrow #94978, #94979, #94013 and #94050 to Alliance, but the [pinned client cache](https://github.com/JIVESCORP/eg-link-output-wowf/blob/c389a874888debc41eec9b0219af65ccceebac6d/data/wowf/1.60.1.70959/quests.enUS.json) permits both Skyborne factions. Runtime race corrections retain that pet unlock chain without changing its hunter restriction. In-game acceptance is unverified; revisit this correction when the sources agree. |
 | Cat relic trials | The [Skyborne](https://www.wowhead.com/forever/quest=98404/the-great-windborne-cat-spirit), [Tauren](https://www.wowhead.com/forever/quest=98342/the-great-cat-spirit) and [Night elf](https://www.wowhead.com/forever/quest=98396/the-great-cat-spirit) trials use the entrance statue's temporary stealth to collect relics. Guards keep their actual levels. The guide asks the player to renew the blessing; expiry and detection failures are not simulated. |
 | Druid training | [Blizzard's October 1](https://us.forums.blizzard.com/en/wow/t/2360696/4) and [October 15](https://us.forums.blizzard.com/en/wow/t/2360696/6) updates and [client spell levels](https://wago.tools/db2/SpellLevels?build=1.60.1.70532&useHotfixes=1): Shred rank 1 at level 20, Tiger's Fury omitted from training estimates. |
 | Wind bridge | [Path 12018](https://wago.tools/db2/TaxiPathNode?build=1.60.1.70532&useHotfixes=1) is one way and available while the faction's Confront Lorthuna is held. The bundled client path now contains the same geometry, but its node is not a faction flight node, so ordinary flight routing does not expose it. |
@@ -42,8 +42,9 @@ Riverglades corrections live in `overrides/forever/quests.toml` and
   uses the supplied Empty Phial near Riverglades 62.0, 56.2, an approximate player-reported point; its
   [fill spell](https://www.wowhead.com/forever/spell=1310594/filling-phial) takes three seconds.
   Both retain the first objective slot so imported progress can skip completed work.
-- Missing berry, riverweed, soil, memorial candle and three cannon ammunition object locations
-  come from the linked Wowhead maps in `locations.toml`, retrieved November 20, 2026 UTC.
+- Upstream now supplies berry and riverweed positions, so their fallback entries are removed.
+  The remaining 17 soil, memorial candle and three cannon ammunition object locations come
+  from the linked Wowhead maps in `locations.toml`, retrieved November 20, 2026 UTC.
   These fill missing usable positions; existing database locations take precedence.
   The cannon ammunition is beside the cannons on the ships' second floor; the map points
   do not establish floor heights. Gathering quantities and drop chances are unchanged.

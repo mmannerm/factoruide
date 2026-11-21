@@ -13,7 +13,7 @@ fn riverglades_object_locations_restore_gathering_and_item_use_routes() {
     let overrides = Overrides::load_edition(&repo().join("overrides"), Edition::Forever).unwrap();
     let mut ids: Vec<_> = overrides.object_locations.iter().map(|o| o.id).collect();
     ids.sort_unstable();
-    assert_eq!(ids, [620422, 620424, 621767, 629425, 629426, 629427, 642517]);
+    assert_eq!(ids, [621767, 629425, 629426, 629427, 642517]);
     for id in &ids {
         let exists: bool = conn
             .query_row("SELECT EXISTS(SELECT 1 FROM m_object WHERE id = ?1)", [id], |r| {
@@ -30,6 +30,7 @@ fn riverglades_object_locations_restore_gathering_and_item_use_routes() {
                 .is_empty()
         );
     }
+    // Berry and riverweed locations now come from the archive; their guide still needs both items.
     for (quest, previous, race, race_id, targets) in [
         (94734, 94733, "orc", 2, vec![265808, 265806]),
         (94843, 94842, "human", 1, vec![621767]),
