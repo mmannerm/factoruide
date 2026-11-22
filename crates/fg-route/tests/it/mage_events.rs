@@ -209,7 +209,7 @@ fn mana_surges_keeps_combat_and_finishes_before_timer_through_editor() {
             matches!(
                 step,
                 job::RouteStep::Objective { quest: 1957, .. } | job::RouteStep::TurnIn { quest: 1957 }
-            ) && report.reason.as_deref() == Some("quest time limit passed")
+            ) && report.reason == Some("quest time limit passed")
         }),
         "the timer must still reject a late event"
     );
