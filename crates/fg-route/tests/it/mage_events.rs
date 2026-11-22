@@ -152,7 +152,7 @@ fn mana_surges_keeps_combat_and_finishes_before_timer_through_editor() {
     let event = &quest.objectives[0];
     assert_eq!((event.kills, event.count), (12.0, 12.0));
     assert!(event.mob_level >= 35.0);
-    assert!(!event.mobs.is_empty());
+    assert_eq!(event.mobs, vec![(6550, "Mana Surge".into())]);
     assert_eq!(event.pool.wait, 0.0);
     let mut ordinary = ov.clone();
     ordinary.quest_overrides.retain(|q| q.id != 1957);
