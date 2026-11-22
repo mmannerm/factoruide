@@ -163,6 +163,7 @@ impl QuestBuilder<'_> {
                 objs.push(o);
             }
         }
+        self.events(r.id, &mut objs)?;
         self.order(r.id, &mut objs);
         self.measure(r, &mut objs);
         for o in &mut objs {
@@ -210,6 +211,49 @@ impl QuestBuilder<'_> {
         }
         mark_beside_givers(&givers.starts, &givers.ends, &mut objs);
         Ok(objs)
+    }
+
+    fn events(&self, id: i64, objs: &mut [Objective]) -> Result<(), Skip> {
+        for event in self
+            .profile
+            .quest_overrides
+            .iter()
+            .filter(|q| q.id == id)
+            .flat_map(|q| q.events.iter().flatten())
+        {
+            let o = objs
+                .iter_mut()
+                .find(|o| o.slot == Some(event.objective))
+                .ok_or("event objective slot missing")?;
+            if !event.seconds.is_finite() || event.seconds < 0.0 {
+                return Err("invalid event duration");
+            }
+            if let Some(at) = &event.at {
+                if !(0.0..=100.0).contains(&at.x)
+                    || !(0.0..=100.0).contains(&at.y)
+                    || at.z.is_some_and(|z| !z.is_finite())
+                    || !on_reachable(self.world, &self.sources.reachable, at.zone)
+                {
+                    return Err("invalid event location");
+                }
+                let mut pos = self.world.to_world(at.zone, at.x, at.y).ok_or("event zone unknown")?;
+                pos.z = crate::world::height(at.z);
+                o.loc.pos = pos;
+                o.loc.zone = at.zone;
+                o.loc.inside = None;
+                o.loc.floor = None;
+                o.dungeon = None;
+                o.spots = None;
+                o.alts.clear();
+            }
+            o.text.clone_from(&event.text);
+            o.extra += event.seconds;
+            for objective in &mut o.alts {
+                objective.text.clone_from(&event.text);
+                objective.extra += event.seconds;
+            }
+        }
+        Ok(())
     }
 
     /// The objectives of quest `id` the game lets be done only once others are (`[[order]]` of

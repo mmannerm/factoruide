@@ -12,6 +12,7 @@ mod cooking;
 mod data_corrections;
 mod draft;
 mod edit;
+mod mage_events;
 mod profession_trips;
 mod required;
 mod riverglades_locations;

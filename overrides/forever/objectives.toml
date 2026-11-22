@@ -1,0 +1,6 @@
+# Investigate the Alchemist Shop: the capture needs BOTH tools from Anastasia.
+# Keep the source slots (filled coffers, chest, cantation) for saved-log progress.
+[[order]]
+quest = 1960
+objective = 1
+after = [2, 3]

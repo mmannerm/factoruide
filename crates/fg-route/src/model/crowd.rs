@@ -35,6 +35,18 @@ impl QuestBuilder<'_> {
             } else {
                 continue;
             };
+            // The quest event supplies these targets. Keep combat counts, levels and
+            // observed pull size, but do not treat its spawn point as a respawn camp.
+            if self
+                .profile
+                .quest_overrides
+                .iter()
+                .filter(|q| q.id == r.id)
+                .flat_map(|q| q.events.iter().flatten())
+                .any(|e| o.slot == Some(e.objective))
+            {
+                continue;
+            }
             let crowd = Crowd {
                 others: crowd * p.crowd_players,
                 dynamic: p.dynamic_respawn,
