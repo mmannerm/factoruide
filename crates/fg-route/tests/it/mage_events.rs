@@ -47,6 +47,40 @@ fn horde_coffers_stay_in_undercity_after_both_tools_and_editor_save() {
     let editor = Editor::open(&conn, &ov, &req, None).unwrap();
     let plan = editor.steps(&out).0;
     assert_eq!(editor.simulate(&plan, &Names::new("enUS")).errors, 0);
+    let mut wrong_order = plan.clone();
+    let capture = wrong_order
+        .iter()
+        .position(|s| {
+            matches!(
+                s,
+                job::RouteStep::Objective {
+                    quest: 1960,
+                    objective: 0,
+                    ..
+                }
+            )
+        })
+        .unwrap();
+    let first_tool = wrong_order
+        .iter()
+        .position(|s| {
+            matches!(
+                s,
+                job::RouteStep::Objective {
+                    quest: 1960,
+                    objective: 1 | 2,
+                    ..
+                }
+            )
+        })
+        .unwrap();
+    let capture_step = wrong_order.remove(capture);
+    wrong_order.insert(first_tool, capture_step);
+    let rejected = editor.simulate(&wrong_order, &Names::new("enUS"));
+    assert_eq!(
+        rejected.steps[first_tool].status, "error",
+        "capture requires both tools"
+    );
     let saved = editor.save(&plan, out.notes.clone()).unwrap();
     for route in [&out.route, &saved.route] {
         let steps: Vec<_> = route
@@ -169,8 +203,14 @@ fn mana_surges_keeps_combat_and_finishes_before_timer_through_editor() {
         .position(|s| matches!(s, job::RouteStep::Accept { quest: 1957 }))
         .unwrap();
     delayed.insert(start + 1, job::RouteStep::Grind { mobs: 100 });
+    let late = editor.simulate(&delayed, &Names::new("enUS"));
     assert!(
-        editor.simulate(&delayed, &Names::new("enUS")).errors > 0,
+        delayed.iter().zip(&late.steps).any(|(step, report)| {
+            matches!(
+                step,
+                job::RouteStep::Objective { quest: 1957, .. } | job::RouteStep::TurnIn { quest: 1957 }
+            ) && report.reason.as_deref() == Some("quest time limit passed")
+        }),
         "the timer must still reject a late event"
     );
     let saved = editor.save(&plan, out.notes.clone()).unwrap();
