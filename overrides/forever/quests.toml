@@ -148,3 +148,20 @@ start_item = 271613
 id = 95288
 pre_all = []
 pre_any = [93976, 94928]
+
+
+# Quest-local events: the shared coffer item also belongs to the Alliance's
+# Investigate the Blue Recluse (#1920); do not relocate its world sources.
+# https://www.wowhead.com/forever/quest=1960/investigate-the-alchemist-shop
+# Quest text: take both tools behind Anastasia, reveal and subdue rifts at Algernon.
+# The 120 seconds is a capture/setup estimate, not a measured spawn interval.
+[[quest]]
+id = 1960
+events = [{ objective = 1, at = { zone = 1497, x = 53.0, y = 73.0 }, seconds = 120, text = "At Algernon's alchemist shop, use the Cantation of Manifestation, subdue the revealed rifts, use the Chest of Containment Coffers and loot 3 Filled Containment Coffers" }]
+
+# https://www.wowhead.com/forever/quest=1957/mana-surges
+# Tabetha summons the twelve targets during this ten-minute event. Preserve
+# their combat and the quest timer; a normal camp respawn wait is not applicable.
+[[quest]]
+id = 1957
+events = [{ objective = 1, text = "Defeat 12 summoned Mana Surges, then return to Tabetha before the ten-minute timer expires" }]

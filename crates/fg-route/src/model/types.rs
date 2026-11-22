@@ -807,6 +807,21 @@ pub struct QuestOverride {
     pub interactions: Option<Vec<QuestInteraction>>,
     /// Complete objective rows when the bundled source omits or misclassifies them.
     pub objectives: Option<Vec<QuestObjective>>,
+    /// Quest-local summoned events, retaining source objective slots and credit.
+    pub events: Option<Vec<QuestEvent>>,
+}
+
+/// An event supplies its targets instead of waiting for ordinary world respawns.
+/// Location corrections apply only to this quest, never to a shared item source.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct QuestEvent {
+    /// One-based source objective slot.
+    pub objective: u8,
+    pub at: Option<crate::world::ZonePoint>,
+    pub text: String,
+    /// Estimated event setup/capture time, in addition to retained combat and uses.
+    #[serde(default)]
+    pub seconds: f64,
 }
 
 /// The last explicit availability correction wins; other corrections do not revive a quest.
