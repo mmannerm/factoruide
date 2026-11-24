@@ -278,6 +278,27 @@ the text to paste on Polestar's Import page (`/polestar import`), for guides of 
 - Collector: records what you see (givers, positions, XP received) for the next guides; its
   events, debug messages and clearing are in the window's Advanced section.
 
+### Character-specific talent suggestions
+
+The default talent advice is per class. The optional `Factoruide_CharacterTalents` addon
+can override it for one full character identity without editing generated class plans,
+saved settings, or guides. Copy that addon to your AddOns directory and edit its local
+`Builds.lua` before starting WoW. Set
+`Factoruide.CharacterTalentBuilds[edition][characterKey]` to
+`{ class = "WARRIOR", locale = "enUS", picks = { { 3, "Shield Specialization" }, ... } }`.
+Use the exact key returned by `Factoruide:CharacterKey()` (full name and region on Forever).
+Each pick is one point, in leveling order; its first value is the talent tab (1-based)
+and its second is the talent name in the declared client locale.
+
+The override resolves names against the live talent tree. It pauses with a chat message
+if a planned talent is missing, exceeds its live rank cap, has an unmet prerequisite,
+or the character has learned points outside the target allocation. It does not respec,
+change the talent-advisor/auto-learning switches, or fall back to another build on an
+invalid plan. Other identities, editions and classes keep their normal class plan.
+The override is local executable addon configuration, not an importable guide field.
+The separate addon survives updates to Factoruide_Guide and generated guides. Preserve your
+local Builds.lua when updating Factoruide_CharacterTalents itself.
+
 ## How it works
 
 How the optimized route is computed: [ARCHITECTURE.md](ARCHITECTURE.md).

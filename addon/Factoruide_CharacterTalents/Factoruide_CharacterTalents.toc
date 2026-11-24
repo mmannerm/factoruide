@@ -1,0 +1,7 @@
+## Interface: 11508, 11509, 16001, 20505, 20506
+## Title: Factoruide - Character Talents
+## Notes: Optional character-specific talent advice; preserves stock class plans.
+## Version: 2026.11.23
+## RequiredDeps: Factoruide_Guide
+Builds.lua
+Runtime.lua

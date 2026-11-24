@@ -1969,6 +1969,7 @@ assert(FG.Talents:Next().name == "Improved Frostbolt", "next talent: Improved Fr
 frostbolt = 5
 assert(FG.Talents:Next().name == "Elemental Precision", "next talent after 5/5: Elemental Precision")
 print("talents ok")
+dofile("addon/tests/character-talents.lua")
 
 -- Leveling time against the plan.
 playerLevel = 3
