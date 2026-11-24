@@ -2,7 +2,8 @@
 -- independently supplies Forever rank caps, row gates and prerequisite relationships.
 local name, class, locale = "Example Shield-US", "WARRIOR", "enUS"
 local points, combat, forcedPrereq, noTree = 1, false, false, false
-local errors, learned = {}, {}
+local errors, learned, handlers = {}, {}, {}
+local deferred, queued = false, nil
 local settings = { talentAdvisor = true, autoLearnTalents = false }
 local tree = {
     { "Improved Heroic Strike", 1, 1, 3 },
@@ -56,7 +57,7 @@ local FG = {
     CharacterKey = function() return name end,
     Get = function(_, k) return settings[k] end,
     Print = function(_, text, message) table.insert(errors, message or text) end,
-    On = function() end,
+    On = function(_, event, callback) handlers[event] = callback end,
     CharacterTalentBuilds = { forever = { ["Example Shield-US"] = plan } },
     TalentBuilds = { forever = { WARRIOR = { picks = { { 1, 1, 1 } } } } },
 }
@@ -85,7 +86,12 @@ local env = setmetatable({
         assert(points > 0 and not combat)
         assert(t.rank < t[4] and spent(tab) >= (t[3] - 1) * 5, "illegal row/rank: " .. t[1])
         assert(not t[5] or byName[t[5]].rank >= t[6], "illegal prerequisite: " .. t[1])
-        t.rank = t.rank + 1
+        if deferred then
+            assert(not queued, "queued a second talent before client rank update")
+            queued = t
+        else
+            t.rank = t.rank + 1
+        end
         points = points - 1
         table.insert(learned, t[1])
     end,
@@ -97,6 +103,13 @@ local override = assert(loadfile("addon/Factoruide_CharacterTalents/Runtime.lua"
 setfenv(override, env)
 override()
 
+handlers.PLAYER_LOGIN()
+assert(errors[#errors] == "Fury/Protection 0/31/20")
+local messageCount = #errors
+name = "Other Character-US"
+handlers.PLAYER_LOGIN()
+assert(#errors == messageCount)
+name = "Example Shield-US"
 assert(FG.Talents:Next().name == "Shield Specialization")
 settings.talentAdvisor = false
 assert(FG.Talents:Pending() == nil)
@@ -139,6 +152,21 @@ for _, t in ipairs(tree) do
     assert(t.rank == (expected[t[1]] or 0), t[1])
 end
 assert(FG.Talents:Next() == nil and learned[51] == "Bloodthirst")
+
+-- Two points saved up before a partial-rank target: a delayed server response must not
+-- spend the second point as Booming Voice 4/5 instead of Bloodthirst.
+byName["Booming Voice"].rank = 2
+byName["Bloodthirst"].rank = 0
+learned, points, deferred, settings.autoLearnTalents = {}, 2, true, true
+FG.Talents:Refresh()
+assert(#learned == 1 and queued == byName["Booming Voice"] and points == 1)
+queued.rank = queued.rank + 1
+queued = nil
+FG.Talents:Refresh()
+assert(#learned == 2 and queued == byName["Bloodthirst"] and points == 0)
+queued.rank = queued.rank + 1
+queued, deferred, settings.autoLearnTalents = nil, false, false
+assert(FG.Talents:Next() == nil and byName["Booming Voice"].rank == 3)
 reset()
 points, settings.autoLearnTalents = 5, true
 FG.Talents:Refresh()

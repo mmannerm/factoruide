@@ -292,7 +292,8 @@ and its second is the talent name in the declared client locale.
 
 The override resolves names against the live talent tree. It pauses with a chat message
 if a planned talent is missing, exceeds its live rank cap, has an unmet prerequisite,
-or the character has learned points outside the target allocation. It does not respec,
+or the character has learned points outside the target allocation. Automatic learning waits
+for the client to report each learned rank before queuing another point. It does not respec,
 change the talent-advisor/auto-learning switches, or fall back to another build on an
 invalid plan. Other identities, editions and classes keep their normal class plan.
 The override is local executable addon configuration, not an importable guide field.

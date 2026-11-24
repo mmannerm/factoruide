@@ -2,6 +2,14 @@
 local FG = Factoruide
 local Talents = assert(FG.Talents, "Factoruide_Guide talent advisor is required")
 local ClassNext = assert(Talents.Next, "Factoruide_Guide talent advisor API changed")
+local ClassLearnNext = assert(Talents.LearnNext, "Factoruide_Guide talent learning API changed")
+local pendingPoint
+
+local function CharacterBuild()
+    local overrides = FG.CharacterTalentBuilds and FG.CharacterTalentBuilds[FG.Edition]
+    local character = overrides and overrides[FG:CharacterKey()]
+    if character and character.class == select(2, UnitClass("player")) then return character end
+end
 
 --- Talents of the character: "tab:tier:column" -> { tab, index, name, icon, rank, maxRank }.
 local function Known()
@@ -34,10 +42,12 @@ local function CharacterNext(build, known)
     if build.locale ~= GetLocale() then return PlanError("client locale does not match the plan") end
     if not next(known) then return nil end -- the talent tree has not loaded yet
     local talents, spent, wanted = {}, {}, {}
+    local totalSpent = 0
     for _, talent in pairs(known) do
         local key = talent.tab .. ":" .. talent.name
         talents[key] = talent
         spent[talent.tab] = (spent[talent.tab] or 0) + talent.rank
+        totalSpent = totalSpent + talent.rank
     end
     -- Check the entire plan before suggesting or spending even its first point. A client
     -- update may remove a talent or change its rank cap; never fall back to the class plan.
@@ -53,6 +63,13 @@ local function CharacterNext(build, known)
             return PlanError("learned talents differ from the plan; review them before spending more points")
         end
     end
+    -- LearnTalent can return before GetTalentInfo reflects the server response. Do not
+    -- let the stock auto-learning loop queue the same partial-rank pick twice.
+    if pendingPoint and pendingPoint.character == FG:CharacterKey() and pendingPoint.build == build then
+        local talent = talents[pendingPoint.key]
+        if totalSpent >= pendingPoint.spent and talent and talent.rank < pendingPoint.rank then return nil end
+    end
+    pendingPoint = nil
     local ranks = {}
     for _, pick in ipairs(build.picks) do
         local key = pick[1] .. ":" .. pick[2]
@@ -70,6 +87,7 @@ local function CharacterNext(build, known)
                 end
             end
             lastPlanError = nil
+            talent.totalSpent = totalSpent
             return talent
         end
     end
@@ -78,8 +96,31 @@ local function CharacterNext(build, known)
 end
 
 function Talents:Next()
-    local overrides = FG.CharacterTalentBuilds and FG.CharacterTalentBuilds[FG.Edition]
-    local character = overrides and overrides[FG:CharacterKey()]
-    if character and character.class == select(2, UnitClass("player")) then return CharacterNext(character, Known()) end
+    local character = CharacterBuild()
+    if character then return CharacterNext(character, Known()) end
     return ClassNext(self)
 end
+
+function Talents:LearnNext()
+    local character = CharacterBuild()
+    if not character then return ClassLearnNext(self) end
+    local talent = self:Next()
+    if not talent then return false end
+    local learned = ClassLearnNext(self)
+    if learned then
+        pendingPoint = {
+            character = FG:CharacterKey(),
+            build = character,
+            key = talent.tab .. ":" .. talent.name,
+            rank = talent.rank + 1,
+            spent = talent.totalSpent,
+        }
+    end
+    return learned
+end
+
+-- Only announce after the override has been installed successfully.
+FG:On("PLAYER_LOGIN", function()
+    local character = CharacterBuild()
+    if character then FG:Print("Character talent plan selected: %s", character.spec or "custom") end
+end)
