@@ -8,7 +8,14 @@ local pendingPoint
 local function CharacterBuild()
     local overrides = FG.CharacterTalentBuilds and FG.CharacterTalentBuilds[FG.Edition]
     local character = overrides and overrides[FG:CharacterKey()]
-    if character and character.class == select(2, UnitClass("player")) then return character end
+    if character and character.class == select(2, UnitClass("player")) then
+        if not character.phases then return character, character end
+        local selected
+        for _, phase in ipairs(character.phases) do
+            if UnitLevel("player") >= phase.from_level then selected = phase end
+        end
+        return character, selected
+    end
 end
 
 --- Talents of the character: "tab:tier:column" -> { tab, index, name, icon, rank, maxRank }.
@@ -38,8 +45,9 @@ local function PlanError(message)
     return nil
 end
 
-local function CharacterNext(build, known)
-    if build.locale ~= GetLocale() then return PlanError("client locale does not match the plan") end
+local function CharacterNext(character, build, known)
+    if not build then return PlanError("no talent phase for this level") end
+    if character.locale ~= GetLocale() then return PlanError("client locale does not match the plan") end
     if not next(known) then return nil end -- the talent tree has not loaded yet
     local talents, spent, wanted = {}, {}, {}
     local totalSpent = 0
@@ -60,7 +68,9 @@ local function CharacterNext(build, known)
     end
     for key, talent in pairs(talents) do
         if talent.rank > (wanted[key] or 0) then
-            return PlanError("learned talents differ from the plan; review them before spending more points")
+            return PlanError(
+                build.respec_message or "learned talents differ from the plan; review them before spending more points"
+            )
         end
     end
     -- LearnTalent can return before GetTalentInfo reflects the server response. Do not
@@ -96,13 +106,13 @@ local function CharacterNext(build, known)
 end
 
 function Talents:Next()
-    local character = CharacterBuild()
-    if character then return CharacterNext(character, Known()) end
+    local character, plan = CharacterBuild()
+    if character then return CharacterNext(character, plan, Known()) end
     return ClassNext(self)
 end
 
 function Talents:LearnNext()
-    local character = CharacterBuild()
+    local character, plan = CharacterBuild()
     if not character then return ClassLearnNext(self) end
     local talent = self:Next()
     if not talent then return false end
@@ -110,7 +120,7 @@ function Talents:LearnNext()
     if learned then
         pendingPoint = {
             character = FG:CharacterKey(),
-            build = character,
+            build = plan,
             key = talent.tab .. ":" .. talent.name,
             rank = talent.rank + 1,
             spent = talent.totalSpent,
@@ -121,6 +131,8 @@ end
 
 -- Only announce after the override has been installed successfully.
 FG:On("PLAYER_LOGIN", function()
-    local character = CharacterBuild()
-    if character then FG:Print("Character talent plan selected: %s", character.spec or "custom") end
+    local character, plan = CharacterBuild()
+    if character then
+        FG:Print("Character talent plan selected: %s", (plan and plan.spec) or character.spec or "custom")
+    end
 end)
