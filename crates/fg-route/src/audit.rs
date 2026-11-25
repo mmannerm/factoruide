@@ -175,7 +175,88 @@ pub const CHECKS: &[Check] = &[
                the text (timed-quests) miss them. Rebuild the data with the English text first",
         error: true,
     },
+    Check {
+        name: "darkmoon-quests",
+        what: "quests given or taken back by a Darkmoon Faire NPC (its title) that the data files \
+               elsewhere than under the Faire (-364): the guides leave the Faire's quests out, as \
+               it is there one week a month, but not these. File them under the Faire in the \
+               quest data (`zone_or_sort = -364`)",
+        error: true,
+    },
+    Check {
+        name: "assumed-vendors",
+        what: "vendors with no title that no source saw in the game (server data, game cache, \
+               players): their vendor flag can be a guess from what a page lists as sold (WoW \
+               Forever: guards that would sell a Season of Discovery set). The guides prefer a \
+               vendor seen in the game nearby. Check the NPC on Wowhead or in game: drop its \
+               places in the quest data when no one stands there for players, or accept a real \
+               vendor",
+        error: false,
+    },
 ];
+
+/// Quests a Darkmoon Faire NPC gives or takes back, filed elsewhere than under the Faire.
+fn darkmoon_quests(conn: &Connection) -> Result<Vec<Finding>> {
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT q.id, q.name, n.name FROM m_quest q
+         JOIN m_quest_relation r ON r.quest_id = q.id AND r.entity_type = 'npc'
+         JOIN m_npc n ON n.id = r.entity_id
+         WHERE q.status = 'available' AND coalesce(q.zone_or_sort, 0) != -364
+           AND n.subname LIKE 'Darkmoon Faire%'
+         ORDER BY q.id",
+    )?;
+    let rows: Vec<(i64, String, String)> = stmt
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+        .collect::<rusqlite::Result<_>>()?;
+    let mut out: Vec<Finding> = Vec::new();
+    for (id, name, npc) in rows {
+        // One finding per quest, naming the first of its Faire NPCs.
+        if out.last().is_some_and(|f| f.key == format!("quest {id}")) {
+            continue;
+        }
+        out.push(Finding {
+            check: "darkmoon-quests",
+            key: format!("quest {id}"),
+            detail: format!("{name} ({id}), with {npc}"),
+            races: Vec::new(),
+            npcs: Vec::new(),
+        });
+    }
+    Ok(out)
+}
+
+/// Vendors (vendor flag) with no title that no source seen in the game knows
+/// (`model::SEEN_IN_GAME`), and that stand somewhere.
+fn assumed_vendors(conn: &Connection) -> Result<Vec<Finding>> {
+    let has_sources: bool = conn.query_row(
+        "SELECT count(*) > 0 FROM pragma_table_info('m_npc') WHERE name = 'sources'",
+        [],
+        |r| r.get(0),
+    )?;
+    if !has_sources {
+        return Ok(Vec::new());
+    }
+    let mut stmt = conn.prepare(
+        "SELECT n.id, n.name, coalesce(n.sources, '') FROM m_npc n
+         WHERE coalesce(n.npc_flags, 0) & 4 != 0 AND coalesce(n.subname, '') = ''
+           AND EXISTS (SELECT 1 FROM m_spawn s WHERE s.entity_type = 'npc' AND s.entity_id = n.id)
+         ORDER BY n.id",
+    )?;
+    let rows: Vec<(i64, String, String)> = stmt
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+        .collect::<rusqlite::Result<_>>()?;
+    Ok(rows
+        .into_iter()
+        .filter(|(_, _, sources)| !sources.split(',').any(|s| crate::model::SEEN_IN_GAME.contains(&s)))
+        .map(|(id, name, sources)| Finding {
+            check: "assumed-vendors",
+            key: format!("npc {id}"),
+            detail: format!("{name} ({id}), vendor by {sources} only"),
+            races: Vec::new(),
+            npcs: Vec::new(),
+        })
+        .collect())
+}
 
 /// Why a quest is left out when its objectives or their places are unknown to the data (the
 /// reasons of the quest builder that say "unknown").
@@ -311,6 +392,16 @@ pub fn audit(
             found.insert((f.check, f.key.clone()), f);
         }
     }
+    if on("darkmoon-quests") {
+        for f in darkmoon_quests(conn)? {
+            found.insert((f.check, f.key.clone()), f);
+        }
+    }
+    if on("assumed-vendors") {
+        for f in assumed_vendors(conn)? {
+            found.insert((f.check, f.key.clone()), f);
+        }
+    }
     let trainer_quests = if on("other-class-quests") {
         trainer_quests(conn)?
     } else {
@@ -338,6 +429,7 @@ pub fn audit(
             objectives: Vec::new(),
             dungeon: None,
             start: None,
+            start_inn: None,
         };
         let prepared = match job::prepare(conn, overrides, &request, &|_| {}) {
             Ok(p) => p,
@@ -1899,6 +1991,59 @@ mod tests {
         assert!(!reads_foreign(
             "Bring Le Fishe's head to Stormwind and talk to the guard."
         ));
+    }
+
+    /// The Darkmoon Faire's case (GitHub #184): a quest the Faire's barker gives, filed under
+    /// Ironforge, is found; filed under the Faire, or given by someone else, it is not.
+    #[test]
+    fn a_darkmoon_faire_quest_filed_elsewhere_is_found() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE m_quest (id, name, zone_or_sort, status);
+             CREATE TABLE m_quest_relation (quest_id, role, entity_type, entity_id);
+             CREATE TABLE m_npc (id, name, subname);
+             INSERT INTO m_npc VALUES
+               (14842, 'Melnan Darkstone', 'Darkmoon Faire Barker'),
+               (14828, 'Gelvas Grimegate', 'Darkmoon Faire Ticket Redemption'),
+               (1365, 'Goli Krumn', NULL);
+             INSERT INTO m_quest VALUES
+               (7905, 'The Darkmoon Faire', 1537, 'available'),
+               (7907, 'Darkmoon Beast Deck', -364, 'available'),
+               (7926, 'The Darkmoon Faire', 1637, 'removed'),
+               (1, 'An Ironforge quest', 1537, 'available');
+             INSERT INTO m_quest_relation VALUES
+               (7905, 'start', 'npc', 14842), (7905, 'end', 'npc', 14828),
+               (7907, 'end', 'npc', 14828), (7926, 'end', 'npc', 14828),
+               (1, 'start', 'npc', 1365);",
+        )
+        .unwrap();
+        let keys: Vec<String> = darkmoon_quests(&conn).unwrap().into_iter().map(|f| f.key).collect();
+        assert_eq!(keys, ["quest 7905"]);
+    }
+
+    /// The Kor'kron Elite's case (GitHub #191): a guard with no title the quest data alone says
+    /// sells is found; a titled vendor, one seen in the game, or one standing nowhere is not.
+    #[test]
+    fn a_vendor_only_assumed_with_no_title_is_found() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE m_npc (id, name, subname, npc_flags, sources);
+             CREATE TABLE m_spawn (entity_type, entity_id, zone_id, x, y);
+             INSERT INTO m_npc VALUES
+               (230566, 'Kor''kron Elite', NULL, 4, 'questie'),
+               (3313, 'Trak''gen', 'General Supplies', 4, 'questie,vmangos'),
+               (214096, 'Dokimi', 'Supply Officer', 4, 'questie'),
+               (5611, 'Barkeep Morag', NULL, 4, 'client_cache,questie'),
+               (14304, 'Kor''kron Elite', NULL, 0, 'questie,vmangos'),
+               (222685, 'Quartermaster Kyleen', NULL, 4, 'wowhead,questie');
+             INSERT INTO m_spawn VALUES
+               ('npc', 230566, 1637, 34.8, 38.4), ('npc', 3313, 1637, 45.0, 55.0),
+               ('npc', 214096, 1638, 40.0, 40.0), ('npc', 5611, 1637, 54.0, 68.0),
+               ('npc', 14304, 1637, 34.8, 38.6);",
+        )
+        .unwrap();
+        let keys: Vec<String> = assumed_vendors(&conn).unwrap().into_iter().map(|f| f.key).collect();
+        assert_eq!(keys, ["npc 230566"]);
     }
 
     /// Heed My Call's case: a Horde shaman quest needing first a quest the Skyborne of the Horde

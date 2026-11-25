@@ -119,7 +119,7 @@ export function ConfigForm({ options, initial, startCharacter, defaultLocale, on
   const [players, setPlayers] = useState<PlayerSetup[]>(() => {
     const own = initial?.start
       ? fromStart(0, initial.start, options, initial.professions ?? [])
-      : { ...newPlayer(0, options, initial?.race), ...(initial ? { klass: initial.class, level: initial.from_level, professions: initial.professions ?? [] } : {}) };
+      : { ...newPlayer(0, options, initial?.race), ...(initial ? { klass: initial.class, level: initial.from_level, professions: initial.professions ?? [], inn: initial.start_inn ?? null } : {}) };
     const mates = (initial?.mates ?? []).map((m, k) => fromStart(k + 1, m, options, initial?.mate_professions?.[k] ?? []));
     return [own, ...mates];
   });
@@ -250,6 +250,7 @@ export function ConfigForm({ options, initial, startCharacter, defaultLocale, on
     professions: own.professions,
     locale,
     start: group ? asStart(own, 0, options) : own.start,
+    start_inn: !group && !own.start ? (own.inn ?? null) : null,
     mates: group ? players.slice(1).map((p, k) => asStart(p, k + 1, options)) : [],
     mate_professions: group ? players.slice(1).map((p) => p.professions) : [],
   });

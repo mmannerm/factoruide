@@ -265,9 +265,12 @@ end
 --- Saved identity, or the identity of an addon-message sender. Forever's second name is a
 --- surname, not a realm; the full name is unique within a region, across connection realms.
 --- The second result is the old, ambiguous local key on regional-name clients.
+-- Keep the last readable normalized realm through loading screens, including for legacy keys.
+local characterRealm
 function FG:CharacterKey(sender)
     local name, surname = UnitName("player")
-    local realm = GetNormalizedRealmName() or GetRealmName() or ""
+    characterRealm = GetNormalizedRealmName() or characterRealm
+    local realm = characterRealm or GetRealmName() or ""
     local legacy = name .. "-" .. realm
     if RegionalUniqueNamesEnabled and RegionalUniqueNamesEnabled() then
         name, surname = (UnitNameUnmodified or UnitName)("player")
@@ -282,6 +285,12 @@ function FG:CharacterKey(sender)
     if sender then return sender:find("-", 1, true) and sender or sender .. "-" .. realm end
     return legacy
 end
+
+-- During a loading screen the game can answer empty lists (done quests, professions...) without
+-- an error: the profile is not read then.
+FG.loading = false
+FG:On("LOADING_SCREEN_ENABLED", function() FG.loading = true end)
+FG:On("LOADING_SCREEN_DISABLED", function() FG.loading = false end)
 
 --- Regional identities of the current party, read from unit tokens instead of display-name
 --- lookups. Both sync features operate in parties, not raids.
