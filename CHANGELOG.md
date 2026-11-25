@@ -10,10 +10,16 @@ An addon change also goes, in the same words, under Unreleased in that addon's o
 
 ### App
 
+- Saved guides for app-created characters keep the selected starting inn when their settings reopen.
+- A character made in the app above level 10 starts at its capital's inn, its hearthstone bound there, instead of its starting zone; Start from chooses another inn.
+- A character the addon could not fully read in game says which parts (done quests, professions...) and how to read them again.
 - Saved objective guides show their must-have quests and completion bounds, and let you remove them.
 
 ### Guides
 
+- WoW Forever: loot is sold to merchants players have seen in the game rather than to NPCs the data only guesses sell, such as a Kor'kron Elite guard in Orgrimmar.
+- WoW Forever: The Darkmoon Faire quest, offered by the Faire's barker, is no longer in the guides, like the Faire's other quests: the Faire is only there one week a month.
+- Cloth donations to the cities (A Donation of Wool and the others) are no longer in the guides: the cloth is better used by professions. A new advanced setting, Cloth donations to the cities, brings them back.
 - WoW Forever: Mage guides capture the Alchemist Shop rifts in Undercity after collecting both tools, and complete Mana Surges without waiting for ordinary respawns.
 
 - WoW Forever: Horde Skyborne hunters retain their Tame Beast and Beast Training quest chain.
@@ -35,6 +41,8 @@ An addon change also goes, in the same words, under Unreleased in that addon's o
 
 ### Addon
 
+- The target macro names the monsters and NPCs in the game's language, whatever the guide's language.
+- Your profile no longer loses its done quests, professions or quest log after a loading screen.
 - WoW Forever characters sharing a first name now keep separate guides, progress and profiles by surname.
 - The original Horde Call of Air, Fire and Water deliveries now recognize equivalent trainer pickups and keep their turn-in.
 - Candle of Beckoning and The Rescue's keys are recognized in your bags and stay done after use; right-click a pickup to retry.
@@ -51,6 +59,7 @@ An addon change also goes, in the same words, under Unreleased in that addon's o
 
 ### WoW data
 
+- WoW Forever: the latest quest data and client, more Just Compensation, Anthion's Parting Words and epic riding quests available, and thousands more names translated, in French, Spanish, German and Korean above all.
 - WoW Forever: more Riverglades quests can be planned, with corrected item starters, faction introductions, interactions and gathering locations.
 - WoW Forever: the latest quest data, with named monsters and quest givers at the places they really stand instead of dozens of sightings, and more quests seen in game by players.
 - WoW Forever: more quest and creature names right in Spanish and French, and drop rates measured in game by players.

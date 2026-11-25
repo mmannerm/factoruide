@@ -6,6 +6,7 @@ under Unreleased; `scripts/release.sh` gives them the release's version.
 
 ## Unreleased
 
+- The target macro names the monsters and NPCs in the game's language, whatever the guide's language.
 - WoW Forever characters sharing a first name now keep separate guides, progress and profiles by surname.
 - The original Horde Call of Air, Fire and Water deliveries now recognize equivalent trainer pickups and keep their turn-in.
 - Candle of Beckoning and The Rescue's keys are recognized in your bags and stay done after use; right-click a pickup to retry.

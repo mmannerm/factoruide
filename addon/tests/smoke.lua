@@ -426,7 +426,7 @@ do
     local unitName, unmodified = UnitName, UnitNameUnmodified
     local regional, realm, region, regionName =
         RegionalUniqueNamesEnabled, GetNormalizedRealmName, GetCurrentRegion, GetCurrentRegionName
-    local constants = Constants
+    local constants, realmName = Constants, GetRealmName
     local surname, shard, regionID = "Storm", "Connection1", 1
     UnitName = function() return "Shared", surname end
     UnitNameUnmodified = UnitName
@@ -449,10 +449,19 @@ do
     RegionalUniqueNamesEnabled = function() return false end
     assert(FG:CharacterKey() == "Shared-Connection2", "ordinary realm identity unchanged")
     assert(FG:CharacterKey("Other-OtherRealm") == "Other-OtherRealm", "ordinary cross-realm sender unchanged")
+    shard = nil
+    GetRealmName = function() return "Connection 2" end
+    assert(FG:CharacterKey("Other") == "Other-Connection2", "local sender keeps the normalized realm")
+    RegionalUniqueNamesEnabled = function() return true end
+    local loadingKey, loadingLegacy = FG:CharacterKey()
+    assert(
+        loadingKey == "Shared Storm-EU" and loadingLegacy == "Shared-Connection2",
+        "loading screen keeps regional identity and the legacy migration key"
+    )
     UnitName, UnitNameUnmodified = unitName, unmodified
     RegionalUniqueNamesEnabled, GetNormalizedRealmName, GetCurrentRegion, GetCurrentRegionName =
         regional, realm, region, regionName
-    Constants = constants
+    Constants, GetRealmName = constants, realmName
 end
 
 local Press, Key, Click, Option
@@ -1956,6 +1965,57 @@ assert(macros[index].body:find("SetRaidTarget", 1, true), "skull on Classic")
 FG.Edition = "forever"
 print("target macro ok")
 
+-- The macro targets by the names of the game's language (a Spanish client, an English guide):
+-- read from the game by ID; a name the client does not know yet comes a moment later, the
+-- guide's name until then (GitHub #189).
+do
+    local known = { [6] = "Alimaña kóbold", [197] = "Alguacil McBride" }
+    local asked = {}
+    C_TooltipInfo = {
+        GetHyperlink = function(link)
+            local id = tonumber(link:match("^unit:Creature%-0%-0%-0%-0%-(%d+)%-"))
+            asked[id] = (asked[id] or 0) + 1
+            if not known[id] then return { lines = {} } end -- not in the client's cache yet
+            return { lines = { { leftText = known[id] } } }
+        end,
+    }
+    FG.Routes["macro-es"] = {
+        race = 7,
+        class = 8,
+        faction = "Alliance",
+        fromLevel = 1,
+        toLevel = 60,
+        time = 1,
+        steps = {
+            {
+                k = "objective",
+                t = "Kill Kobold Vermin x8 and Kobold Workers",
+                q = 7101,
+                o = 1,
+                e = "npc",
+                id = 6,
+                n = "Kobold Vermin",
+                mobs = { "Kobold Vermin", "Kobold Worker" },
+                mi = { 6, 257 },
+                lvl = 5,
+            },
+        },
+    }
+    useRoute("macro-es")
+    local body = macros[index].body
+    assert(body:find("/targetexact Alimaña kóbold", 1, true), "the game's name: " .. body)
+    assert(not body:find("Kobold Vermin", 1, true), "not the guide's: " .. body)
+    assert(body:find("/targetexact Kobold Worker", 1, true), "the guide's name until the game knows it: " .. body)
+    -- The game learns the name (its answer to the server): the macro takes it.
+    known[257] = "Obrero kóbold"
+    runTimers()
+    body = macros[index].body
+    assert(body:find("/targetexact Obrero kóbold", 1, true), "the name once known: " .. body)
+    assert(asked[6] == 1, "a name known is not asked again")
+    C_TooltipInfo = nil
+end
+print("target macro language ok")
+
 -- Talent plan: the next talent follows the class plan (mage: Improved Frostbolt x5, then
 -- Elemental Precision).
 local frostbolt = 2
@@ -2471,6 +2531,31 @@ GetInventoryItemID = inventory
 FG.Profile:Snapshot()
 assert(not profile.errors, "no error left")
 print("profile parts ok")
+
+-- A loading screen (a portal, a dungeon, a boat): the game's lists can come back empty and the
+-- realm without its name. Nothing is read then, and the profile stays whole.
+do
+    local professions, realm = GetProfessions, GetNormalizedRealmName
+    fire("LOADING_SCREEN_ENABLED")
+    GetProfessions = function() return nil end
+    GetNormalizedRealmName = function() return nil end
+    GetRealmName = function() return "The Realm" end
+    C_QuestLog.GetAllCompletedQuestIDs = function() return {} end
+    fire("PLAYER_LEAVING_WORLD")
+    FG.Profile:Snapshot(false)
+    assert(#profile.completed == 2 and #profile.professions == 1, "not read during a loading screen")
+    assert(FG:CharacterKey() == "Brouz-Realm" and profile.name == "Brouz-Realm", "the character keeps its key")
+    fire("LOADING_SCREEN_DISABLED")
+    -- After it, the game can still answer an empty list of done quests: done quests are never
+    -- forgotten, the empty answer is kept as an error.
+    GetProfessions, GetNormalizedRealmName = professions, realm
+    FG.Profile:Snapshot()
+    assert(#profile.completed == 2 and profile.errors.completed, "done quests kept on an empty answer")
+    C_QuestLog.GetAllCompletedQuestIDs = function() return { 179, 233 } end
+    FG.Profile:Snapshot()
+    assert(not profile.errors, "no error left")
+end
+print("loading screen ok")
 
 -- Reputations: every faction of the panel, those under a collapsed header too (opened for the
 -- reading, closed again), headers without points of their own left out.
