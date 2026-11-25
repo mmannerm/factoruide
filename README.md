@@ -278,6 +278,56 @@ the text to paste on Polestar's Import page (`/polestar import`), for guides of 
 - Collector: records what you see (givers, positions, XP received) for the next guides; its
   events, debug messages and clearing are in the window's Advanced section.
 
+### Character-specific talent suggestions
+
+The default talent advice is per class. The optional `Factoruide_CharacterTalents` addon
+can override it for one full character identity without editing generated class plans,
+saved settings, or guides. Copy that addon to your AddOns directory and edit its local
+`Builds.lua` before starting WoW. Set
+`Factoruide.CharacterTalentBuilds[edition][characterKey]` to
+`{ class = "WARRIOR", locale = "enUS", picks = { { 3, "Shield Specialization" }, ... } }`.
+Use the exact key returned by `Factoruide:CharacterKey()` (full name and region on Forever).
+Each pick is one point, in leveling order; its first value is the talent tab (1-based)
+and its second is the talent name in the declared client locale.
+
+The override resolves names against the live talent tree. It pauses with a chat message
+if a planned talent is missing, exceeds its live rank cap, has an unmet prerequisite,
+or the character has learned points outside the target allocation. Automatic learning waits
+for the client to report each learned rank before queuing another point. If a server rejects
+or loses that request, reload the interface to resume advice. It does not respec,
+change the talent-advisor/auto-learning switches, or fall back to another build on an
+invalid plan. Other identities, editions and classes keep their normal class plan.
+The override is local executable addon configuration, not an importable guide field.
+The separate addon survives updates to Factoruide_Guide and generated guides. Preserve your
+local Builds.lua when updating Factoruide_CharacterTalents itself. The development installer
+updates this optional addon if it is already installed, preserving Builds.lua; use
+FG_INSTALL_CHARACTER_TALENTS=1 with scripts/install-addon.sh for its first installation.
+Restart WoW after adding addon files or changing the .toc.
+
+Two English Forever presets are available in Factoruide.CharacterTalentPresets.forever.
+Assign rogue_combat or mage_frost_arcane to a character key in local Builds.lua:
+```lua
+local FG = Factoruide
+FG.CharacterTalentBuilds = FG.CharacterTalentBuilds or {}
+FG.CharacterTalentBuilds.forever = FG.CharacterTalentBuilds.forever or {}
+FG.CharacterTalentBuilds.forever["Example Name-US"] = FG.CharacterTalentPresets.forever.rogue_combat
+```
+
+- Combat Rogue: 16/35/0, with Riposte at 20, Blade Flurry at 30, Adrenaline Rush at 40
+  and Cold Blood at 60. Uses Forever's Efficient Strikes and Hack and Slash names.
+- Frost/Arcane Mage: 7/0/23 at 39, then a **manual reset at 40** to 0/0/31 for Ice Barrier,
+  ending 18/0/33 at 60. At 40, advice pauses while old Wand Specialization/Frostbite
+  points remain. The addon never performs or pays for a reset. Existing compatible
+  post-reset allocations can continue; points outside the selected phase require review.
+
+These are leveling choices, not simulated best-in-slot builds. Rank caps and prerequisites
+were checked on November 24, 2026 against the published [Forever Rogue tree](https://wowforeverclasses.com/classes/rogue/combat/talents)
+and [Forever Mage tree](https://wowforevertalents.com/mage/); Rogue milestones also follow
+the [Combat leveling guide](https://www.icy-veins.com/wow-forever/combat-rogue-leveling/).
+The addon checks the actual client tree before suggesting a point.
+Custom plans may use phases (ordered by ascending from_level) in place of picks;
+each phase supplies its own picks, optional spec and respec_message.
+
 ## How it works
 
 How the optimized route is computed: [ARCHITECTURE.md](ARCHITECTURE.md).

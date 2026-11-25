@@ -33,4 +33,5 @@ if [ $# -gt 0 ]; then
 else
     show
     show profile
+    sh scripts/test-install-addon.sh
 fi

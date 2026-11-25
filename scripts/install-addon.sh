@@ -35,20 +35,24 @@ for old in "$wow_dir/$client"/WTF/Account/*/SavedVariables/Factoruide.lua; do
         cp "$old" "$new" && mv "$old" "$old.migrated"
     fi
 done
-for addon in Factoruide_Profile Factoruide_Guide; do
+install_addons="Factoruide_Profile Factoruide_Guide"
+if [ -d "$addons/Factoruide_CharacterTalents" ] || [ "${FG_INSTALL_CHARACTER_TALENTS:-}" = 1 ]; then
+    install_addons="$install_addons Factoruide_CharacterTalents"
+fi
+for addon in $install_addons; do
     dest="$addons/$addon"
     src="$repo/$addon"
     mkdir -p "$dest"
     for f in "$dest"/*.lua "$dest"/*.toc "$dest"/*.xml; do
         [ -e "$f" ] || continue
-        case "$(basename "$f")" in Config.lua | Routes.lua | Services.lua | Sent.lua) continue ;; esac
+        case "$(basename "$f")" in Config.lua | Routes.lua | Services.lua | Sent.lua | Builds.lua) continue ;; esac
         rm -f "$f"
     done
     for f in "$src"/*.lua "$src"/*.toc "$src"/*.xml; do
         [ -e "$f" ] || continue
         name=$(basename "$f")
         case "$name" in Sent.lua) continue ;; esac
-        if { [ "$name" = "Config.lua" ] || [ "$name" = "Routes.lua" ] || [ "$name" = "Services.lua" ]; } \
+        if { [ "$name" = "Config.lua" ] || [ "$name" = "Routes.lua" ] || [ "$name" = "Services.lua" ] || [ "$name" = "Builds.lua" ]; } \
             && [ -e "$dest/$name" ]; then
             continue
         fi

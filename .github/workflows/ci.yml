@@ -112,8 +112,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y luajit
-          luajit addon/tests/smoke.lua
-          luajit addon/tests/smoke.lua profile
+          sh scripts/addon-test.sh
 
   scripts:
     name: Shell scripts (shellcheck)
