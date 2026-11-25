@@ -1,0 +1,2 @@
+-- Local character plans belong here. See README: Character-specific talent suggestions.
+-- This optional addon is inactive until a full character identity is configured.
