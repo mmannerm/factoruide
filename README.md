@@ -293,7 +293,8 @@ and its second is the talent name in the declared client locale.
 The override resolves names against the live talent tree. It pauses with a chat message
 if a planned talent is missing, exceeds its live rank cap, has an unmet prerequisite,
 or the character has learned points outside the target allocation. Automatic learning waits
-for the client to report each learned rank before queuing another point. It does not respec,
+for the client to report each learned rank before queuing another point. If a server rejects
+or loses that request, reload the interface to resume advice. It does not respec,
 change the talent-advisor/auto-learning switches, or fall back to another build on an
 invalid plan. Other identities, editions and classes keep their normal class plan.
 The override is local executable addon configuration, not an importable guide field.
@@ -320,7 +321,7 @@ FG.CharacterTalentBuilds.forever["Example Name-US"] = FG.CharacterTalentPresets.
   post-reset allocations can continue; points outside the selected phase require review.
 
 These are leveling choices, not simulated best-in-slot builds. Rank caps and prerequisites
-were checked against the published [Forever Rogue tree](https://wowforeverclasses.com/classes/rogue/combat/talents)
+were checked on November 24, 2026 against the published [Forever Rogue tree](https://wowforeverclasses.com/classes/rogue/combat/talents)
 and [Forever Mage tree](https://wowforevertalents.com/mage/); Rogue milestones also follow
 the [Combat leveling guide](https://www.icy-veins.com/wow-forever/combat-rogue-leveling/).
 The addon checks the actual client tree before suggesting a point.
