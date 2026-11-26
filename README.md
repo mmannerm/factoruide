@@ -45,6 +45,11 @@ zones to do, the level to reach before moving on from each, and where the XP is.
   a required quest missing. Each selected quest can have an inclusive minimum and/or maximum
   turn-in level, before reward XP; its prerequisites may be done earlier. Tight deadlines can
   displace optional quests.
+- **Reputation-repair quests**: Forever's Traitor to the Bloodsail (#9259) is considered only
+  for a saved solo character recorded below Neutral with Booty Bay. Unknown standing does not
+  establish eligibility; modeled reputation gains can close the pickup before you reach it.
+  Already accepted quests retain their objectives and turn-ins. New group pickups are omitted
+  because the planner does not track each member's reputation separately.
 - **Your XP buffs** (Forever): food adds 5% kill XP. Sleeping Bag adds 3% kill and quest XP
   after its quest chain is completed; enabling it includes the chain. Both buffs stay active,
   with no upkeep time; the addon warns when a buff the guide counts on is missing. Both are off by

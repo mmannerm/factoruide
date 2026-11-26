@@ -382,7 +382,11 @@ fn reputation_factions(
     let goals: Vec<i64> = params.reputation_goals.iter().map(|g| g.faction).collect();
     let mut factions: Vec<i64> = Vec::new();
     let mut camps = HashMap::new();
-    for (faction, _) in quests.iter().filter_map(|q| q.required_reputation) {
+    for (faction, _) in quests.iter().flat_map(|q| {
+        q.required_reputation
+            .into_iter()
+            .chain(q.reputation_below.map(|limit| (limit.faction, limit.value as f64)))
+    }) {
         if camps.contains_key(&faction) {
             continue;
         }
