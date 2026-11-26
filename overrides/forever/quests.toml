@@ -165,3 +165,10 @@ events = [{ objective = 1, at = { zone = 1497, x = 53.0, y = 73.0 }, seconds = 1
 [[quest]]
 id = 1957
 events = [{ objective = 1, text = "Defeat 12 summoned Mana Surges, then return to Tabetha before the ten-minute timer expires" }]
+
+# Reputation repair only: below Neutral with Booty Bay (not Bloodsail reputation).
+# https://www.wowhead.com/forever/quest=9259/traitor-to-the-bloodsail
+# Requires a saved standing; do not infer eligibility or grind reputation down.
+[[quest]]
+id = 9259
+reputation_below = { faction = 21, value = 0 }

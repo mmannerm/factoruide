@@ -112,6 +112,11 @@ impl Availability<'_> {
             && s.log < self.params.quest_log_size
             && self.prereqs_met(s, i)
             && !self.blocked(s, q)
+            && q.reputation_below.is_none_or(|limit| {
+                self.model
+                    .followed_index(self.params, limit.faction)
+                    .is_some_and(|k| f64::from(s.reputation[k]) < limit.value as f64)
+            })
             && !self.breadcrumb_first(s, i)
             && q.skill
                 .is_none_or(|(p, value)| self.model.professions[p].skill_at(s.level) >= value)

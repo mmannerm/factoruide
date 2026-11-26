@@ -5487,3 +5487,145 @@ at = [{ zone = 12, x = 43.8, y = 65.8 }]
     // Its starting place chosen (its start NPC, Deputy Willem): there, even at level 41.
     assert_eq!(start(41, Some(823)), (None, None), "the starting valley chosen");
 }
+
+/// Booty Bay's repair quest is available strictly below Neutral, not based on Bloodsail
+/// standing. Missing saves must not make it an ordinary leveling quest.
+#[test]
+fn bloodsail_traitor_requires_recorded_reputation_below_neutral() {
+    use fg_route::job::{Editor, RouteStep, Standing};
+    use fg_route::model::Names;
+    let conn = Fixture::new(Edition::Forever)
+        .toml(
+            r#"
+[[npc]]
+id = 16399
+name = "Bloodsail Traitor"
+level = 40
+friendly_to = "AH"
+at = [{ zone = 14, x = 52.0, y = 43.0 }]
+
+[[quest]]
+id = 9259
+name = "Traitor to the Bloodsail"
+level = 40
+min_level = 30
+xp = 100
+giver = 16399
+
+[[quest]]
+id = 90001
+name = "Ordinary Booty Bay work"
+level = 40
+min_level = 30
+xp = 100
+giver = 16399
+"#,
+        )
+        .open();
+    conn.execute(
+        "UPDATE m_quest SET reputation_reward = ?1 WHERE id IN (9259, 90001)",
+        [r#"[[21,500]]"#],
+    )
+    .unwrap();
+    let overrides = Overrides::load_edition(&repo().join("overrides"), Edition::Forever).unwrap();
+    let request = |standing: Option<i64>| {
+        let mut start = player("Test", 2, "shaman", 40);
+        // Bloodsail's standing does not establish eligibility for Booty Bay's repair quest.
+        start.reputation.push(Standing { id: 87, value: -42000 });
+        if let Some(value) = standing {
+            start.reputation.push(Standing { id: 21, value });
+        }
+        PlanRequest {
+            start: Some(start),
+            ..serde_json::from_value(serde_json::json!({
+                "race": "orc", "class": "shaman", "from_level": 40, "to_level": 41,
+                "params": overrides.params
+            }))
+            .unwrap()
+        }
+    };
+    for (standing, allowed) in [
+        (None, false),
+        (Some(-42000), true),
+        (Some(-1), true),
+        (Some(0), false),
+        (Some(3000), false),
+    ] {
+        let req = request(standing);
+        let p = job::prepare(&conn, &overrides, &req, &|_| {}).unwrap();
+        assert_eq!(p.model.index.contains_key(&9259), allowed, "{standing:?}");
+        assert!(p.model.index.contains_key(&90001), "ordinary quest retained");
+    }
+    let mut no_save = request(None);
+    no_save.start = None;
+    assert!(
+        !job::prepare(&conn, &overrides, &no_save, &|_| {})
+            .unwrap()
+            .model
+            .index
+            .contains_key(&9259)
+    );
+
+    let mut forced = request(Some(0));
+    forced.required_quests = vec![RequiredQuest::Id(9259)];
+    let error = format!("{:#}", job::prepare(&conn, &overrides, &forced, &|_| {}).err().unwrap());
+    assert!(
+        error.contains("9259") && error.contains("reputation is too high"),
+        "{error}"
+    );
+
+    // Recheck at pickup: another quest may have already raised Booty Bay to Neutral.
+    let req = request(Some(-500));
+    let editor = Editor::open(&conn, &overrides, &req, None).unwrap();
+    let accept = RouteStep::Accept { quest: 9259 };
+    assert_eq!(editor.simulate(&[accept.clone()], &Names::new("enUS")).errors, 0);
+    let late = editor.simulate(
+        &[
+            RouteStep::Accept { quest: 90001 },
+            RouteStep::TurnIn { quest: 90001 },
+            accept,
+        ],
+        &Names::new("enUS"),
+    );
+    assert!(
+        late.errors > 0,
+        "reaching Neutral before pickup closes the repair quest"
+    );
+
+    // Raising reputation after acceptance must not lose an already accepted turn-in.
+    let held = editor.simulate(
+        &[
+            RouteStep::Accept { quest: 9259 },
+            RouteStep::Accept { quest: 90001 },
+            RouteStep::TurnIn { quest: 90001 },
+            RouteStep::TurnIn { quest: 9259 },
+        ],
+        &Names::new("enUS"),
+    );
+    assert_eq!(held.errors, 0);
+    let mut logged = request(Some(3000));
+    logged.start.as_mut().unwrap().log.push(LogQuest {
+        id: job::QuestId(9259),
+        complete: true,
+        ..LogQuest::default()
+    });
+    assert_eq!(
+        Editor::open(&conn, &overrides, &logged, None)
+            .unwrap()
+            .simulate(&[RouteStep::TurnIn { quest: 9259 }], &Names::new("enUS"))
+            .errors,
+        0
+    );
+
+    // Group reputation is leader-only today: do not invent eligibility for a companion.
+    let mut group = request(Some(-500));
+    group.mates = vec![request(Some(0)).start.unwrap()];
+    group.mates[0].name = "Companion".into();
+    assert!(
+        !job::prepare(&conn, &overrides, &group, &|_| {})
+            .unwrap()
+            .model
+            .index
+            .contains_key(&9259)
+    );
+}

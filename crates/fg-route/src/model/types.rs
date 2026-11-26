@@ -642,6 +642,8 @@ pub struct Quest {
     /// The standing it asks for before it is offered: Faction ID and points from Neutral's
     /// bottom (Friendly 3000).
     pub required_reputation: Option<(i64, f64)>,
+    /// Strict reputation ceiling at pickup; never gates an already accepted quest.
+    pub reputation_below: Option<ReputationCeiling>,
     /// The members of the group it is for (race and class), a bit each: the character's 1.
     pub members: u8,
 }
@@ -793,6 +795,8 @@ pub struct QuestOverride {
     pub available: Option<bool>,
     /// Minimum pickup level, including a quest-starting item's requirement.
     pub min_level: Option<i64>,
+    /// Strict reputation ceiling at pickup, counted from the bottom of Neutral.
+    pub reputation_below: Option<ReputationCeiling>,
     /// An item that starts the quest; its existing loot sources still apply.
     pub start_item: Option<i64>,
     pub pre_all: Option<Vec<i64>>,
@@ -809,6 +813,13 @@ pub struct QuestOverride {
     pub objectives: Option<Vec<QuestObjective>>,
     /// Quest-local summoned events, retaining source objective slots and credit.
     pub events: Option<Vec<QuestEvent>>,
+}
+
+/// A quest available only while a faction's standing is strictly below the given value.
+#[derive(Debug, Clone, Copy, serde::Deserialize)]
+pub struct ReputationCeiling {
+    pub faction: i64,
+    pub value: i64,
 }
 
 /// An event supplies its targets instead of waiting for ordinary world respawns.

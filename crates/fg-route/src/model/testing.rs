@@ -206,6 +206,7 @@ impl Q {
             end_guard: Guard::default(),
             reputation: Vec::new(),
             required_reputation: None,
+            reputation_below: None,
             members: 0xFF,
         };
         Self {

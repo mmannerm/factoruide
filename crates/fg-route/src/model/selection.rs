@@ -33,10 +33,50 @@ impl QuestBuilder<'_> {
         })
     }
 
+    pub(super) fn reputation_ceiling(&self, id: i64) -> Option<super::types::ReputationCeiling> {
+        self.profile
+            .quest_overrides
+            .iter()
+            .rev()
+            .filter(|q| q.id == id)
+            .find_map(|q| q.reputation_below)
+    }
+
+    /// Do not invent eligibility from an absent save, or grind reputation down to unlock a
+    /// repair quest. An accepted quest keeps its objectives and turn-in even above the ceiling.
+    fn check_reputation_ceiling(&self, r: &QuestRow) -> Result<(), Skip> {
+        let Some(limit) = self.reputation_ceiling(r.id) else {
+            return Ok(());
+        };
+        if self.starts.len() == self.profile.members().count()
+            && self
+                .starts
+                .iter()
+                .all(|s| s.completed.iter().any(|q| q.0 == r.id) || s.log.iter().any(|q| q.id.0 == r.id))
+        {
+            return Ok(());
+        }
+        // Runtime reputation tracks the leader only; a shared route cannot yet prove each
+        // member remains below the ceiling after different racial reputation bonuses.
+        if self.profile.members().count() > 1 {
+            return Err("reputation ceiling needs individual character routes");
+        }
+        let standing = self
+            .starts
+            .first()
+            .and_then(|s| s.reputation.iter().find(|rep| rep.id == limit.faction));
+        match standing {
+            Some(rep) if rep.value < limit.value => Ok(()),
+            Some(_) => Err("reputation is too high to accept this quest"),
+            None => Err("reputation below the pickup ceiling is not recorded"),
+        }
+    }
+
     pub(super) fn check_rules(&self, r: &QuestRow, skill: QuestSkill) -> Result<(), Skip> {
         if self.excluded.contains(&r.id) {
             return Err("excluded by configuration");
         }
+        self.check_reputation_ceiling(r)?;
         let excluded_sort = r.sort.is_some_and(|s| s < 0 && self.excluded_sorts.contains(&-s));
         if excluded_sort && !matches!(skill, Some(Some(_))) {
             return Err("holiday/profession/event category");
