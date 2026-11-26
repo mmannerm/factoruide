@@ -5524,7 +5524,7 @@ giver = 16399
         .open();
     conn.execute(
         "UPDATE m_quest SET reputation_reward = ?1 WHERE id IN (9259, 90001)",
-        [r#"[[21,500]]"#],
+        ["[[21,500]]"],
     )
     .unwrap();
     let overrides = Overrides::load_edition(&repo().join("overrides"), Edition::Forever).unwrap();
@@ -5578,7 +5578,12 @@ giver = 16399
     let req = request(Some(-500));
     let editor = Editor::open(&conn, &overrides, &req, None).unwrap();
     let accept = RouteStep::Accept { quest: 9259 };
-    assert_eq!(editor.simulate(&[accept.clone()], &Names::new("enUS")).errors, 0);
+    assert_eq!(
+        editor
+            .simulate(std::slice::from_ref(&accept), &Names::new("enUS"))
+            .errors,
+        0
+    );
     let late = editor.simulate(
         &[
             RouteStep::Accept { quest: 90001 },
