@@ -1,3 +1,7 @@
+## Unreleased
+
+- Save active class talents and Forever Legacy ranks in character profiles. Keep the last successful observation and report unavailable or unconfirmed talent data.
+
 # Factoruide Profile
 
 What changes for players in each version of this addon, shown on its CurseForge and Wago pages.

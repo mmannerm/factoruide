@@ -7,14 +7,19 @@ set -eu
 cd "$(dirname "$0")/.."
 
 run() {
+    test_file=addon/tests/smoke.lua
+    if [ "${1:-}" = "talents-profile" ]; then
+        test_file=addon/tests/profile-talents.lua
+        shift
+    fi
     if command -v luajit >/dev/null 2>&1; then
-        luajit addon/tests/smoke.lua "$@"
+        luajit "$test_file" "$@"
     else
         if ! docker image inspect factoruide-luajit >/dev/null 2>&1; then
             printf 'FROM ubuntu:22.04\nRUN apt-get update -qq && apt-get install -y -qq luajit && rm -rf /var/lib/apt/lists/*\n' |
                 docker build -q -t factoruide-luajit - >/dev/null
         fi
-        docker run --rm -v "$PWD":/w -w /w factoruide-luajit luajit addon/tests/smoke.lua "$@"
+        docker run --rm -v "$PWD":/w -w /w factoruide-luajit luajit "$test_file" "$@"
     fi
 }
 
@@ -33,5 +38,6 @@ if [ $# -gt 0 ]; then
 else
     show
     show profile
+    show talents-profile
     sh scripts/test-install-addon.sh
 fi

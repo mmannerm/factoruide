@@ -5,6 +5,12 @@
 type Entry = Partial<Record<"en" | "de" | "es" | "esMX" | "pt" | "ru" | "ko" | "zhCN" | "zhTW", string>>;
 
 export const CATALOG: Record<string, Entry> = {
+  "Talents et héritage": { en: "Talents and Legacy" },
+  "Talents de classe": { en: "Class talents" },
+  "Héritage": { en: "Legacy" },
+  "{n} points disponibles": { en: "{n} unspent points" },
+  "Répartition enregistrée pour examiner le build. Les effets des talents et de l’héritage ne sont pas automatiquement appliqués au temps du parcours.": { en: "Saved allocations for build review. Talent and Legacy effects are not automatically applied to route timing." },
+
   "Objectifs": { en: "Objectives", de: "Ziele", es: "Objetivos", pt: "Objetivos", ru: "Цели", ko: "목표", zhCN: "目标", zhTW: "目標" },
   "Guide d'objectifs": { en: "Objective guide", de: "Ziel-Guide", es: "Guía de objetivos", pt: "Guia de objetivos", ru: "Гайд по целям", ko: "목표 가이드", zhCN: "目标指南", zhTW: "目標指南" },
   "Les quêtes de donjons, de zones ou des quêtes choisies, avec celles qui y mènent, dans le meilleur ordre depuis là où en est votre personnage : rien d'autre, quel que soit leur niveau. Le guide finit une fois les quêtes rendues.": { en: "The quests of dungeons, zones or quests you pick, with those leading to them, in the best order from where your character stands: nothing else, whatever their level. The guide ends once the quests are turned in.", de: "Die Quests von Dungeons, Zonen oder gewählten Quests samt denen, die dorthin führen, in der besten Reihenfolge ab dem Stand deines Charakters: sonst nichts, egal welche Stufe. Der Guide endet, sobald die Quests abgegeben sind.", es: "Las misiones de mazmorras, zonas o misiones elegidas, con las que llevan a ellas, en el mejor orden desde donde está tu personaje: nada más, sea cual sea su nivel. La guía termina cuando se entregan las misiones.", pt: "As missões de masmorras, zonas ou missões escolhidas, com as que levam a elas, na melhor ordem a partir de onde seu personagem está: nada mais, qualquer que seja o nível. O guia termina quando as missões são entregues.", ru: "Задания подземелий, зон или выбранные задания, вместе с ведущими к ним, в лучшем порядке с того места, где сейчас ваш персонаж: ничего больше, независимо от их уровня. Гайд заканчивается, когда задания сданы.", ko: "던전, 지역 또는 선택한 퀘스트와 그로 이어지는 퀘스트를, 캐릭터의 현재 위치에서 가장 좋은 순서로: 레벨과 상관없이 그 외에는 없습니다. 퀘스트를 모두 완료하면 가이드가 끝납니다.", zhCN: "地下城、区域或所选任务及其前置任务，从角色当前所在位置按最佳顺序完成：不论等级，别无其他。任务全部交付后指南结束。", zhTW: "地城、區域或所選任務及其前置任務，從角色目前所在位置依最佳順序完成：不論等級，別無其他。任務全部交付後指南結束。" },

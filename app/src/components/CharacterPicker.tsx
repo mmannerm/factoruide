@@ -93,6 +93,26 @@ export function CharacterPicker({ characters, start, onPick, options, recorded, 
           <span className="muted">{t("Enregistré le {date}", { date: date(start.time) })}</span>
         </div>
       )}
+      {start && (start.talents || start.legacy) && (
+        <details>
+          <summary>{t("Talents et héritage")}</summary>
+          {start.talents && (
+            <div>
+              <p>{t("Talents de classe")} · {date(start.talents.observed_at)}
+                {start.talents.unspent != null && <> · {t("{n} points disponibles", { n: start.talents.unspent })}</>}
+              </p>
+              <ul>{start.talents.ranks.map((rank) => <li key={rank.tree + ":" + rank.node}>{rank.name || rank.spell || rank.node}: {rank.rank}/{rank.max_rank}</li>)}</ul>
+            </div>
+          )}
+          {start.legacy && (
+            <div>
+              <p>{t("Héritage")} · {date(start.legacy.observed_at)} · Talented {start.legacy.talented_rank}/5</p>
+              <ul>{start.legacy.ranks.map((rank) => <li key={rank.tree + ":" + rank.node}>{rank.name || rank.spell || rank.node}: {rank.rank}/{rank.max_rank}</li>)}</ul>
+            </div>
+          )}
+          <small>{t("Répartition enregistrée pour examiner le build. Les effets des talents et de l’héritage ne sont pas automatiquement appliqués au temps du parcours.")}</small>
+        </details>
+      )}
       {start && unread.length > 0 && (
         <small className="field-error">
           {t("En jeu, l'addon n'a pas pu lire : {parts}. Ce sont les valeurs d'un enregistrement précédent ; tapez /reload en jeu, puis enregistrez ou exportez de nouveau.", {

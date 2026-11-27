@@ -342,3 +342,26 @@ How the optimized route is computed: [ARCHITECTURE.md](ARCHITECTURE.md).
 The code is under the MIT license ([LICENSE](LICENSE)). The quest databases (`data/`) are under
 GPL-3.0, the license of the server data they include ([data/LICENSE](data/LICENSE));
 their sources and the terms of each are listed in [NOTICE.md](NOTICE.md).
+
+
+### Saved talent and Legacy allocations
+
+Character profiles now include the active class talent ranks (names, tree/node IDs,
+rank spell IDs when available, unspent class points), all three Forever Legacy trees,
+and the observed **Talented** rank. Each section keeps its own observation timestamp.
+Save the profile while fully loaded, after applying or undoing talent-panel changes.
+Unavailable or staged data keeps the previous successful section and records an error;
+an old profile without these fields means **unknown**, not an empty build.
+
+The desktop profile details, route request and exported .fgguide retain these
+allocations for build review and future reruns. The optimizer reports their presence
+but does **not** yet simulate every talent or Legacy perk, project future point
+spending, change the selected talent advice, or override the movement-talent setting.
+A projected end-of-route profile retains the original observation timestamps: it is
+not evidence that the character learned a projected build.
+
+Capture uses Blizzard's Forever C_Traits / C_SpecializationInfo APIs and
+Constants.LegacyConsts; Classic/TBC use the existing talent APIs. No UI panel
+needs to be opened and no talents or Legacy points are spent.
+
+API reference: [Blizzard trait documentation](https://github.com/Gethe/wow-ui-source/blob/d9c22e32cb240afb82bb2ecefbb78ef935333f59/Interface/AddOns/Blizzard_APIDocumentationGenerated/SharedTraitsDocumentation.lua) and [Legacy constants](https://github.com/Gethe/wow-ui-source/blob/d9c22e32cb240afb82bb2ecefbb78ef935333f59/Interface/AddOns/Blizzard_APIDocumentationGenerated/LegacyConstantsDocumentation.lua).

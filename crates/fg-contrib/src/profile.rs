@@ -92,7 +92,10 @@ mod tests {
                 } } },
                 ["profiles"] = {
                     ["Brouz-Realm"] = { ["level"] = 12, ["xp"] = 3400, ["time"] = 200,
-                        ["completed"] = { 4641, 788 }, ["log"] = {}, ["flights"] = { [23] = true } },
+                        ["completed"] = { 4641, 788 }, ["log"] = {}, ["flights"] = { [23] = true },
+                        ["talents"] = { ["source"] = "traits", ["observed_at"] = 199, ["unspent"] = 1,
+                            ["ranks"] = { { ["tree"] = 100, ["node"] = 10, ["rank"] = 2, ["max_rank"] = 2, ["name"] = "Efficient Strikes", ["spell"] = 111010 } } },
+                        ["legacy"] = { ["observed_at"] = 198, ["talented_rank"] = 5, ["ranks"] = {} } },
                     ["Old-Realm"] = { ["level"] = 5, ["time"] = 300 },
                     ["Empty-Realm"] = {},
                 },
@@ -115,5 +118,10 @@ mod tests {
         assert_eq!(brouz["flights"], serde_json::json!([23, 25]));
         assert_eq!(brouz["completed"], serde_json::json!([4641, 788]));
         assert_eq!(brouz["log"], serde_json::json!([]));
+        assert_eq!(brouz["talents"]["ranks"][0]["spell"], 111010);
+        assert_eq!(brouz["talents"]["unspent"], 1);
+        assert_eq!(brouz["legacy"]["talented_rank"], 5);
+        assert_eq!(brouz["legacy"]["ranks"], serde_json::json!([]));
+        assert!(profiles[0].get("talents").is_none());
     }
 }
