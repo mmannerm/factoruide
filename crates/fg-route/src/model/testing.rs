@@ -926,6 +926,7 @@ impl Scenario {
             .filter_map(|id| world.taxi_nodes.iter().position(|n| n.id == *id))
             .fold(0u128, |bits, i| bits | 1u128 << i);
         crate::job::check_dungeon_levels(&model, &self.params, &self.profile)?;
+        model.abilities.observe_talents(first, self.params.edition);
         let mut notes = Vec::new();
         crate::job::check_exclusive_choices(&model, &members)?;
         let mates: Vec<StartState> = members.iter().skip(1).copied().cloned().collect();

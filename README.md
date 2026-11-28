@@ -31,7 +31,7 @@ zones to do, the level to reach before moving on from each, and where the XP is.
   the game's options: **Save the profile now**): pick it in the list of the new guide and the guide goes on from where it
   stands: its quests done are left out, those in its log continue from their recorded progress
   without another pickup (even at zero progress), and unused quests are abandoned first, from its position, with its
-  hearthstone, flight paths, rested XP, gear, spells and professions.
+  hearthstone, flight paths, rested XP, gear, spells, professions, talents and Legacy ranks.
 - **Your professions**: two primary professions and the secondary ones, with the skill to have
   at each level from the level you take them (curves from classic guides, editable). They add no
   time to the route: the addon shows whether you are ahead or behind, and their quests are
@@ -57,7 +57,9 @@ zones to do, the level to reach before moving on from each, and where the XP is.
   with a group in any supported edition.
 - **Your travel spells**: learned Cat Form, Travel Form, Ghost Wolf and Aspect of the Cheetah
   affect walking estimates only for walks entirely outdoors without swimming; few walks currently
-  qualify. In Advanced, **Assume movement talents are learned** is on by default. Cheetah needs
+  qualify. In Advanced, **Assume movement talents are learned** is on by default.
+  A recognized Forever talent rank in the saved profile replaces that assumption; an unknown
+  talent keeps it. Cheetah needs
   no talent. Forms become available through the quests or trainers of your game version.
 - **Your class spells**: quest rewards and trainer visits determine which spells are known.
   Form attacks need both the form and its learned attack rank. Imported characters use their
@@ -277,7 +279,8 @@ the text to paste on Polestar's Import page (`/polestar import`), for guides of 
 - Group and safety: party members' progress in the quest panel, alerts on elite or high-level
   targets and low health, elite objectives flagged in the guide.
 - Profile: what the app needs to start a guide from your character (level, XP, quests done and in
-  the log, position, hearthstone, flight paths seen on flight maps, professions, gear, spells),
+  the log, position, hearthstone, flight paths seen on flight maps, professions, gear, spells,
+  active class talents and Forever Legacy ranks),
   kept up to date every minute and at logout; **Save the profile now** writes it to disk at once
   (the interface reloads).
 - Collector: records what you see (givers, positions, XP received) for the next guides; its
@@ -332,6 +335,30 @@ the [Combat leveling guide](https://www.icy-veins.com/wow-forever/combat-rogue-l
 The addon checks the actual client tree before suggesting a point.
 Custom plans may use phases (ordered by ascending from_level) in place of picks;
 each phase supplies its own picks, optional spec and respec_message.
+
+### Saved talent and Legacy allocations
+
+Character profiles now include the active class talent ranks (names, tree/node IDs,
+spell IDs when available, unspent class points), all three Forever Legacy trees,
+and the observed **Talented** rank. Each section keeps its own observation timestamp.
+Save the profile while fully loaded, after applying or undoing talent-panel changes.
+Unavailable or staged data keeps the previous successful section and records an error;
+an old profile without these fields means **unknown**, not an empty build.
+
+The desktop profile details, route request and exported .fgguide retain these
+allocations for build review and future reruns. The optimizer reports their presence
+and uses known Forever movement-talent ranks in place of generic movement assumptions
+without changing saved settings. Other talents and Legacy perks remain available for
+build review; the optimizer does **not** yet simulate all their effects, project future
+point spending, or change the selected talent advice.
+A projected end-of-route profile retains the original observation timestamps: it is
+not evidence that the character learned a projected build.
+
+Capture uses Blizzard's Forever C_Traits / C_SpecializationInfo APIs and
+Constants.LegacyConsts; Classic/TBC use the existing talent APIs. No UI panel
+needs to be opened and no talents or Legacy points are spent.
+
+API reference: [Blizzard trait documentation](https://github.com/Gethe/wow-ui-source/blob/d9c22e32cb240afb82bb2ecefbb78ef935333f59/Interface/AddOns/Blizzard_APIDocumentationGenerated/SharedTraitsDocumentation.lua) and [Legacy constants](https://github.com/Gethe/wow-ui-source/blob/d9c22e32cb240afb82bb2ecefbb78ef935333f59/Interface/AddOns/Blizzard_APIDocumentationGenerated/LegacyConstantsDocumentation.lua).
 
 ## How it works
 

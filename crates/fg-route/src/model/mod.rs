@@ -62,7 +62,8 @@ pub fn load(
     params: &Params,
     starts: &[&crate::job::StartState],
 ) -> Result<Model> {
-    let abilities = crate::abilities::Abilities::load(conn, profile)?;
+    let mut abilities = crate::abilities::Abilities::load(conn, profile)?;
+    abilities.observe_talents(starts.first().copied(), params.edition);
     let mut mate_abilities = Vec::new();
     for m in &profile.mates {
         mate_abilities.push(crate::abilities::Abilities::load(

@@ -272,6 +272,28 @@ export interface MapPos {
   y: number;
 }
 
+export interface TalentRank {
+  tree: number;
+  node: number;
+  entry?: number;
+  spell?: number;
+  name: string;
+  rank: number;
+  max_rank: number;
+}
+export interface TalentSnapshot {
+  source: string;
+  observed_at: number;
+  active_group?: number;
+  unspent?: number;
+  ranks: TalentRank[];
+}
+export interface LegacySnapshot {
+  observed_at: number;
+  talented_rank: number;
+  ranks: TalentRank[];
+}
+
 /** A character as the addon recorded it ("Save the profile now", or at each logout); mirror of `fg_route::job::StartState`. */
 export interface StartState {
   /** "Name-Realm". */
@@ -298,6 +320,8 @@ export interface StartState {
   riding: number;
   gear: number[];
   spells: number[];
+  talents?: TalentSnapshot;
+  legacy?: LegacySnapshot;
   /** Points with each faction the game lists (none: recorded by an older addon). */
   reputation?: { id: number; value: number }[];
   /** Copper. */

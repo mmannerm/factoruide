@@ -70,6 +70,11 @@ pub struct StartState {
     /// Items worn and spells learned (IDs).
     pub gear: Vec<i64>,
     pub spells: Vec<i64>,
+    /// Observed allocations, not an assumed leveling build. None means not recorded.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub talents: Option<TalentSnapshot>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub legacy: Option<LegacySnapshot>,
     /// Copper.
     pub money: i64,
     /// Points with each faction the game lists for the character (none: recorded by an older
@@ -81,6 +86,41 @@ pub struct StartState {
     /// what an earlier save saw.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub errors: BTreeMap<String, String>,
+}
+
+/// A learned rank. Trait API IDs on Forever; tab/index on Classic clients.
+/// Names are localized labels; IDs, not translated labels, identify the talent.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TalentRank {
+    pub tree: i64,
+    pub node: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub entry: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub spell: Option<i64>,
+    pub name: String,
+    pub rank: i64,
+    pub max_rank: i64,
+}
+
+/// Last successful read of the active class talent configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TalentSnapshot {
+    pub source: String,
+    pub observed_at: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_group: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unspent: Option<i64>,
+    pub ranks: Vec<TalentRank>,
+}
+
+/// Last successful read of all three Forever Legacy trees, including a known zero Talented rank.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LegacySnapshot {
+    pub observed_at: i64,
+    pub talented_rank: i64,
+    pub ranks: Vec<TalentRank>,
 }
 
 /// Points with a faction (Faction ID), counted from the bottom of Neutral.
@@ -177,6 +217,14 @@ impl StartState {
     /// The planner's initial state (its log: see `Initial::log`); `notes` says what could not
     /// be placed.
     pub fn initial(&self, model: &Model, world: &World, params: &mut Params, notes: &mut Vec<String>) -> Initial {
+        if let Some(talents) = &self.talents {
+            let spent: i64 = talents.ranks.iter().map(|r| r.rank).sum();
+            notes.push(format!("saved class talents: {spent} ranks recorded (observed at {}); allocations retained for build review, not a talent-by-talent combat simulation", talents.observed_at));
+        }
+        notes.extend(model.abilities.talent_notes());
+        if let Some(legacy) = &self.legacy {
+            notes.push(format!("saved Legacy Talented rank: {} (observed at {}); Legacy effects are recorded, not automatically applied to route timing", legacy.talented_rank, legacy.observed_at));
+        }
         let mut init = Initial {
             xp: self.xp.max(0),
             rested: self.rested.max(0),
@@ -429,6 +477,28 @@ mod tests {
     use super::*;
     use crate::model::ProfessionPlan;
     use crate::profession::ProfessionGoal;
+
+    #[test]
+    fn talent_observations_survive_request_serialization_and_old_profiles_stay_unknown() {
+        let legacy = r#"{"observed_at":100,"talented_rank":0,"ranks":[]}"#;
+        let start: StartState = serde_json::from_value(serde_json::json!({
+            "level":13,
+            "talents":{"source":"traits","observed_at":99,"active_group":2,"unspent":1,
+                "ranks":[{"tree":100,"node":10,"entry":1010,"spell":111010,"name":"Efficient Strikes","rank":2,"max_rank":2}]},
+            "legacy":serde_json::from_str::<serde_json::Value>(legacy).unwrap()
+        })).unwrap();
+        let value = serde_json::to_value(&start).unwrap();
+        assert_eq!(value["talents"]["ranks"][0]["spell"], 111010);
+        assert_eq!(value["talents"]["active_group"], 2);
+        assert_eq!(value["legacy"]["talented_rank"], 0);
+        let mut request = serde_json::json!({"race":"human","class":"rogue","from_level":13,"to_level":60});
+        request["start"] = value.clone();
+        let request: super::super::PlanRequest = serde_json::from_value(request).unwrap();
+        assert_eq!(serde_json::to_value(request.start).unwrap(), value);
+        let old: StartState = serde_json::from_str(r#"{"level":13}"#).unwrap();
+        assert!(old.talents.is_none() && old.legacy.is_none());
+        assert!(serde_json::to_value(old).unwrap().get("legacy").is_none());
+    }
 
     /// A new character knows its capital's flight path; a character met in game keeps those it
     /// has on top, unless its list was settled by hand.

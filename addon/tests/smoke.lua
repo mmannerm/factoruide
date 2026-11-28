@@ -1,3 +1,28 @@
+-- A loaded, unspent Classic talent tree for profile snapshots.
+GetNumTalentTabs = function() return 1 end
+GetNumTalents = function() return 1 end
+GetTalentInfo = function() return "Test talent", nil, 1, 1, 0, 5 end
+C_SpecializationInfo = {
+    IsInitialized = function() return true end,
+    GetActiveSpecGroup = function() return 1 end,
+    GetCombatConfigIDForSpecGroup = function() return 1 end,
+}
+Constants = {
+    LegacyConsts = {
+        LEGACY_TREE_PROFESSIONS_ID = 1187,
+        LEGACY_TREE_ADVENTURE_ID = 1188,
+        LEGACY_TREE_PROGRESSION_ID = 1189,
+        LEGACY_TREE_ADVENTURE_TALENTED_NODE_ID = 110298,
+    },
+}
+C_Traits = {
+    ConfigHasStagedChanges = function() return false end,
+    GetConfigInfo = function() return { treeIDs = { 1 } } end,
+    GetTreeNodes = function() return { 110298 } end,
+    GetNodeInfo = function(_, id) return { ID = id, activeRank = 0 } end,
+    GetTreeCurrencyInfo = function() return { { traitCurrencyID = 1, quantity = 0 } } end,
+    GetConfigIDByTreeID = function() return 2 end,
+}
 -- Smoke test of the addon outside the game: minimal WoW API stubs, load files in TOC
 -- order, fire login and quest events, check the guide advances.
 -- Run from the repository root: luajit addon/tests/smoke.lua

@@ -40,6 +40,8 @@ export function CharacterPicker({ characters, start, onPick, options, recorded, 
     riding: t("monte"),
     gear: t("équipement"),
     spells: t("sorts"),
+    talents: t("Talents de classe"),
+    legacy: t("Héritage"),
     reputation: t("réputations"),
     bind: t("pierre de foyer"),
   };
@@ -93,12 +95,35 @@ export function CharacterPicker({ characters, start, onPick, options, recorded, 
           <span className="muted">{t("Enregistré le {date}", { date: date(start.time) })}</span>
         </div>
       )}
+      {start && (start.talents || start.legacy) && (
+        <details>
+          <summary>{t("Talents et héritage")}</summary>
+          {start.talents && (
+            <div>
+              <p>{t("Talents de classe")} · {date(start.talents.observed_at)}
+                {start.talents.unspent != null && <> · {t("{n} points disponibles", { n: start.talents.unspent })}</>}
+              </p>
+              <ul>{start.talents.ranks.map((rank) => <li key={rank.tree + ":" + rank.node}>{rank.name || rank.spell || rank.node}: {rank.rank}/{rank.max_rank}</li>)}</ul>
+            </div>
+          )}
+          {start.legacy && (
+            <div>
+              <p>{t("Héritage")} · {date(start.legacy.observed_at)} · {t("Talentueux : rang {rank}", { rank: start.legacy.talented_rank })}</p>
+              <ul>{start.legacy.ranks.map((rank) => <li key={rank.tree + ":" + rank.node}>{rank.name || rank.spell || rank.node}: {rank.rank}/{rank.max_rank}</li>)}</ul>
+            </div>
+          )}
+          <small>{t("Les talents de déplacement connus remplacent les hypothèses génériques sur Forever. Les autres talents et l’héritage sont conservés pour examiner le build, sans simulation complète de leurs effets.")}</small>
+        </details>
+      )}
       {start && unread.length > 0 && (
         <small className="field-error">
           {t("En jeu, l'addon n'a pas pu lire : {parts}. Ce sont les valeurs d'un enregistrement précédent ; tapez /reload en jeu, puis enregistrez ou exportez de nouveau.", {
             parts: unread.join(", "),
           })}
         </small>
+      )}
+      {start && [start.errors?.talents, start.errors?.legacy].some((error) => error?.includes("staged talent changes")) && (
+        <small className="field-error">{t("Appliquez ou annulez les changements dans les panneaux de talents et d’héritage avant d’enregistrer à nouveau.")}</small>
       )}
       {start && latest && latest.profile.time > start.time && (
         <small>
