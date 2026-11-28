@@ -567,7 +567,7 @@ fn forever_saved_movement_ranks_override_assumptions_without_projecting_points()
         let files: &[&str] = if class == "druid" { &["forever_druid"] } else { &[] };
         let conn = fixture_of("forever", files);
         let overrides = Overrides::load_edition(&repo().join("overrides"), Edition::Forever).unwrap();
-        for rank in 0..=2 {
+        for (rank, expected_seconds) in expected.iter().enumerate() {
             for assumption in [false, true] {
                 let ranks = if rank == 0 {
                     serde_json::json!([])
@@ -603,7 +603,7 @@ fn forever_saved_movement_ranks_override_assumptions_without_projecting_points()
                 q.starts[0].pos = crate::world::Pos { x: -400.0, ..a };
                 q.ends[0].pos = a;
                 let route = [Stop::quest(0, Kind::Accept), Stop::quest(0, Kind::TurnIn)];
-                for (ground, seconds) in [(Dry, expected[rank]), (Indoor, 85.71429)] {
+                for (ground, seconds) in [(Dry, *expected_seconds), (Indoor, 85.71429)] {
                     p.world.terrain = crate::terrain::movement_test_ground(ground);
                     let plan = planner(&p).explicit();
                     let guide = crate::export::build(&plan, &p.profile, &route);
@@ -620,7 +620,7 @@ fn forever_saved_movement_ranks_override_assumptions_without_projecting_points()
                         .abilities
                         .walk_time(300.0, p.model.initial.abilities, 40, &p.params);
                 assert!(
-                    (future - expected[rank]).abs() < 0.01,
+                    (future - *expected_seconds).abs() < 0.01,
                     "{class} rank {rank} future travel {future}"
                 );
             }
