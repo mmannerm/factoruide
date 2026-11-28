@@ -40,6 +40,8 @@ export function CharacterPicker({ characters, start, onPick, options, recorded, 
     riding: t("monte"),
     gear: t("équipement"),
     spells: t("sorts"),
+    talents: t("Talents de classe"),
+    legacy: t("Héritage"),
     reputation: t("réputations"),
     bind: t("pierre de foyer"),
   };
@@ -106,11 +108,11 @@ export function CharacterPicker({ characters, start, onPick, options, recorded, 
           )}
           {start.legacy && (
             <div>
-              <p>{t("Héritage")} · {date(start.legacy.observed_at)} · Talented {start.legacy.talented_rank}/5</p>
+              <p>{t("Héritage")} · {date(start.legacy.observed_at)} · {t("Talentueux : rang {rank}", { rank: start.legacy.talented_rank })}</p>
               <ul>{start.legacy.ranks.map((rank) => <li key={rank.tree + ":" + rank.node}>{rank.name || rank.spell || rank.node}: {rank.rank}/{rank.max_rank}</li>)}</ul>
             </div>
           )}
-          <small>{t("Répartition enregistrée pour examiner le build. Les effets des talents et de l’héritage ne sont pas automatiquement appliqués au temps du parcours.")}</small>
+          <small>{t("Les talents de déplacement connus remplacent les hypothèses génériques sur Forever. Les autres talents et l’héritage sont conservés pour examiner le build, sans simulation complète de leurs effets.")}</small>
         </details>
       )}
       {start && unread.length > 0 && (
@@ -119,6 +121,9 @@ export function CharacterPicker({ characters, start, onPick, options, recorded, 
             parts: unread.join(", "),
           })}
         </small>
+      )}
+      {start && (start.errors?.talents || start.errors?.legacy) && (
+        <small className="field-error">{t("Appliquez ou annulez les changements dans les panneaux de talents et d’héritage avant d’enregistrer à nouveau.")}</small>
       )}
       {start && latest && latest.profile.time > start.time && (
         <small>

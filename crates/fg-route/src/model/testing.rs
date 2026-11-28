@@ -933,6 +933,7 @@ impl Scenario {
             crate::job::start_from(&mut model, &world, &mut self.params, start, &mates, &mut notes);
         }
         crate::job::settle_objective_guide(&mut model, &world, &self.params, &self.profile)?;
+        model.abilities.observe_talents(first, self.params.edition);
         model.initial.abilities = model.abilities.initial(first, self.profile.from_level);
         Ok(Prepared {
             profile: self.profile,

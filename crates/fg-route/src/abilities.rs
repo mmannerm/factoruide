@@ -45,6 +45,8 @@ struct Travel {
     bonus: f64,
     activation: f64,
     talent: Option<MovementTalent>,
+    /// A committed Forever rank; None keeps the generic movement assumption.
+    observed_rank: Option<i64>,
 }
 
 #[derive(Default, Clone)]
@@ -83,6 +85,7 @@ impl Abilities {
                     bonus: def.bonus,
                     activation: def.activation,
                     talent: def.talent,
+                    observed_rank: None,
                 }),
             });
         }
@@ -210,6 +213,31 @@ impl Abilities {
         Ok(abilities)
     }
 
+    /// Use actual movement ranks when a complete Forever snapshot is available. Keep the
+    /// saved settings intact, and hold these observed ranks for the route: future spending
+    /// is not inferred. Names are localized, so only stable client spell IDs identify talents.
+    pub(crate) fn observe_talents(&mut self, start: Option<&StartState>, edition: crate::xp::Edition) {
+        let snapshot = start
+            .filter(|s| edition == crate::xp::Edition::Forever && !s.errors.contains_key("talents"))
+            .and_then(|s| s.talents.as_ref())
+            .filter(|s| s.source == "traits");
+        for travel in self.entries.iter_mut().filter_map(|a| a.travel.as_mut()) {
+            travel.observed_rank = snapshot.and_then(|snapshot| {
+                let spell = match travel.talent? {
+                    MovementTalent::FeralSwiftness => 17002,
+                    MovementTalent::ImprovedGhostWolf => 16262,
+                };
+                match snapshot.ranks.iter().find(|r| r.spell == Some(spell)) {
+                    // A complete tree stores learned ranks only: absence is a confirmed zero.
+                    None => Some(0),
+                    Some(r) if r.max_rank == 2 && (0..=2).contains(&r.rank) => Some(r.rank),
+                    // A changed live rank cap needs new effect data, not extrapolation.
+                    Some(_) => None,
+                }
+            });
+        }
+    }
+
     fn entry(&mut self, conn: &Connection, trainer: &[(i64, String, i64, i64)], spell: i64) -> Result<usize> {
         if let Some(i) = self.entries.iter().position(|a| a.spells.contains(&spell)) {
             return Ok(i);
@@ -324,6 +352,22 @@ impl Abilities {
             .filter(move |(i, _)| known & (1 << i) != 0)
             .filter_map(move |(_, a)| {
                 let t = a.travel.as_ref()?;
+                if let Some(rank) = t.observed_rank {
+                    return Some(match t.talent {
+                        Some(MovementTalent::FeralSwiftness) => (0.15 * rank as f64, t.activation),
+                        // Blizzard's Forever Mage/Shaman deep dive: rank 1 removes one
+                        // second, rank 2 makes Ghost Wolf instant (not a linear curve).
+                        Some(MovementTalent::ImprovedGhostWolf) => (
+                            t.bonus,
+                            match rank {
+                                0 => t.activation,
+                                1 => (t.activation - 1.0).max(0.0),
+                                _ => 0.0,
+                            },
+                        ),
+                        None => (t.bonus, t.activation),
+                    });
+                }
                 Some(match (t.talent, talents) {
                     (Some(MovementTalent::FeralSwiftness), true) => (
                         if edition != crate::xp::Edition::Forever && level == 20 {

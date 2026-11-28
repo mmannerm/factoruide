@@ -1,8 +1,9 @@
 #!/bin/sh
 # The addon's smoke tests (luajit): the installed luajit, or a Docker image built once.
 #
-#   scripts/addon-test.sh            both suites (guide, then profile alone)
-#   scripts/addon-test.sh profile    one of them
+#   scripts/addon-test.sh            all suites (guide, profile, talent capture, installer)
+#   scripts/addon-test.sh profile    profile suite
+#   scripts/addon-test.sh talents-profile    talent and Legacy capture
 set -eu
 cd "$(dirname "$0")/.."
 

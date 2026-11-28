@@ -5,11 +5,13 @@
 type Entry = Partial<Record<"en" | "de" | "es" | "esMX" | "pt" | "ru" | "ko" | "zhCN" | "zhTW", string>>;
 
 export const CATALOG: Record<string, Entry> = {
+  "Talentueux : rang {rank}": { en: "Talented: rank {rank}" },
+  "Appliquez ou annulez les changements dans les panneaux de talents et d’héritage avant d’enregistrer à nouveau.": { en: "Apply or undo changes in the talent and Legacy panels before saving again." },
   "Talents et héritage": { en: "Talents and Legacy" },
   "Talents de classe": { en: "Class talents" },
   "Héritage": { en: "Legacy" },
   "{n} points disponibles": { en: "{n} unspent points" },
-  "Répartition enregistrée pour examiner le build. Les effets des talents et de l’héritage ne sont pas automatiquement appliqués au temps du parcours.": { en: "Saved allocations for build review. Talent and Legacy effects are not automatically applied to route timing." },
+  "Les talents de déplacement connus remplacent les hypothèses génériques sur Forever. Les autres talents et l’héritage sont conservés pour examiner le build, sans simulation complète de leurs effets.": { en: "Known movement talents replace generic assumptions on Forever. Other talents and Legacy ranks are retained for build review, without a full simulation of their effects." },
 
   "Objectifs": { en: "Objectives", de: "Ziele", es: "Objetivos", pt: "Objetivos", ru: "Цели", ko: "목표", zhCN: "目标", zhTW: "目標" },
   "Guide d'objectifs": { en: "Objective guide", de: "Ziel-Guide", es: "Guía de objetivos", pt: "Guia de objetivos", ru: "Гайд по целям", ko: "목표 가이드", zhCN: "目标指南", zhTW: "目標指南" },

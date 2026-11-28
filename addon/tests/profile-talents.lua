@@ -39,33 +39,73 @@ Constants = {
     },
 }
 local staged, missing, group = {}, nil, 1
-local trees = { [100] = { 10, 11 }, [200] = { 20 }, [1187] = { 30 }, [1188] = { 110298 }, [1189] = { 40 } }
-local ranks = { [10] = 2, [11] = 2, [20] = 1, [30] = 1, [110298] = 5, [40] = 0 }
+local initialized, defaultNode, subtree, reads = true, false, false, 0
+local trees =
+    { [100] = { 10, 11 }, [200] = { 20 }, [300] = { 50 }, [1187] = { 30 }, [1188] = { 110298 }, [1189] = { 40 } }
+local ranks = { [10] = 2, [11] = 2, [20] = 1, [30] = 1, [110298] = 5, [40] = 0, [50] = 0 }
 C_SpecializationInfo = {
+    IsInitialized = function() return initialized end,
     GetActiveSpecGroup = function() return group end,
     GetCombatConfigIDForSpecGroup = function(g) return g * 100 end,
 }
 C_Spell = { GetSpellName = function(id) return "Spell " .. id end }
 C_Traits = {
     ConfigHasStagedChanges = function(config) return staged[config] or false end,
-    GetConfigInfo = function(config) return { treeIDs = { config } } end,
+    GetConfigInfo = function(config) return { treeIDs = { config, 300 } } end,
+    GetTreeCurrencyInfo = function(_, _, excludeStaged)
+        assert(excludeStaged)
+        return { { traitCurrencyID = 1, quantity = 3 } }
+    end,
     GetConfigIDByTreeID = function(tree) return tree end,
     GetTreeNodes = function(tree) return tree ~= missing and trees[tree] or nil end,
     GetNodeInfo = function(_, id)
-        return { currentRank = ranks[id], maxRanks = 5, activeEntry = { entryID = id + 1000 } }
+        reads = reads + 1
+        return {
+            ID = defaultNode and 0 or id,
+            activeRank = ranks[id],
+            currentRank = 99,
+            maxRanks = 5,
+            activeEntry = { entryID = id + 1000 },
+        }
     end,
-    GetEntryInfo = function(_, id) return { definitionID = id + 10000 } end,
+    GetEntryInfo = function(_, id) return subtree and { subTreeID = 400 } or { definitionID = id + 10000 } end,
     GetDefinitionInfo = function(id) return { spellID = id + 100000 } end,
 }
 assert(loadfile("addon/Factoruide_Profile/Profile.lua"))("Factoruide_Profile", FG)
 events.PLAYER_LOGIN()
 local p = FactoruideDB.profiles["Rogue-Realm"]
 assert(not p.errors, "complete snapshot")
-assert(p.talents.source == "traits" and p.talents.active_group == 1 and p.talents.unspent == 1)
+assert(p.talents.source == "traits" and p.talents.active_group == 1 and p.talents.unspent == 3)
 assert(#p.talents.ranks == 2 and p.talents.ranks[1].rank == 2)
 assert(p.talents.ranks[1].spell == 111010 and p.talents.ranks[1].name == "Spell 111010")
 assert(#p.legacy.ranks == 2 and p.legacy.talented_rank == 5)
 local talents, legacy = p.talents, p.legacy
+local previousReads = reads
+FG.Profile:Snapshot(false)
+assert(reads == previousReads, "minute snapshots skip unchanged trait trees")
+events.TRAIT_TREE_CURRENCY_INFO_UPDATED()
+FG.Profile:Snapshot(false)
+assert(reads > previousReads, "trait events invalidate the cached observation")
+talents, legacy = p.talents, p.legacy
+initialized = false
+FG.Profile:Snapshot()
+assert(p.errors.talents and p.talents == talents, "uninitialized class API preserves prior observation")
+legacy = p.legacy
+initialized, defaultNode = true, true
+FG.Profile:Snapshot()
+assert(
+    p.errors.talents and p.errors.legacy and p.talents == talents and p.legacy == legacy,
+    "default nodes cannot erase ranks"
+)
+defaultNode, subtree = false, true
+FG.Profile:Snapshot(false)
+assert(
+    not p.errors and p.talents.ranks[1].node == 10 and p.talents.ranks[1].spell == nil,
+    "subtree selections need no definition"
+)
+subtree = false
+FG.Profile:Snapshot()
+talents, legacy = p.talents, p.legacy
 now = 200
 staged[100], staged[1188] = true, true
 FG.Profile:Snapshot()
@@ -76,6 +116,8 @@ staged = {}
 missing = 1189
 FG.Profile:Snapshot()
 assert(p.legacy == legacy and p.errors.legacy, "partial Legacy read is atomic across all three trees")
+FG.Profile:Snapshot(false)
+assert(p.errors.legacy and p.legacy == legacy, "failed cached reads keep errors and retry")
 missing = nil
 ranks[110298] = 0
 FG.Profile:Snapshot()

@@ -62,7 +62,8 @@ pub fn load(
     params: &Params,
     starts: &[&crate::job::StartState],
 ) -> Result<Model> {
-    let abilities = crate::abilities::Abilities::load(conn, profile)?;
+    let mut abilities = crate::abilities::Abilities::load(conn, profile)?;
+    abilities.observe_talents(starts.first().copied(), params.edition);
     let mut mate_abilities = Vec::new();
     for m in &profile.mates {
         mate_abilities.push(crate::abilities::Abilities::load(
@@ -76,6 +77,9 @@ pub fn load(
                 ..profile.clone()
             },
         )?);
+    }
+    for (index, book) in mate_abilities.iter_mut().enumerate() {
+        book.observe_talents(starts.get(index + 1).copied(), params.edition);
     }
     let mut knowledge = HashMap::<i64, (bool, bool)>::new();
     for (i, book) in std::iter::once(&abilities).chain(&mate_abilities).enumerate() {

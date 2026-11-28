@@ -1,7 +1,3 @@
-## Unreleased
-
-- Save active class talents and Forever Legacy ranks in character profiles. Keep the last successful observation and report unavailable or unconfirmed talent data.
-
 # Factoruide Profile
 
 What changes for players in each version of this addon, shown on its CurseForge and Wago pages.
@@ -10,6 +6,7 @@ under Unreleased; `scripts/release.sh` gives them the release's version.
 
 ## Unreleased
 
+- Save active class talents and Forever Legacy ranks in character profiles. Keep the last successful observation and report unavailable or unconfirmed talent data.
 - Your profile no longer loses its done quests, professions or quest log after a loading screen.
 - WoW Forever characters sharing a first name now keep separate guides, progress and profiles by surname.
 - Profession caps use the client's skill IDs and localized profession names, including skills hidden under collapsed legacy headers.

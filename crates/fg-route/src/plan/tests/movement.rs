@@ -555,3 +555,109 @@ fn a_trainer_detour_returns_with_the_new_movement_spell() {
         state.spent.travel
     );
 }
+
+/// Recorded ranks change real route estimates while leaving the request's generic option intact.
+#[test]
+fn forever_saved_movement_ranks_override_assumptions_without_projecting_points() {
+    use crate::terrain::TestGround::{Dry, Indoor};
+    for (class, spell, talent, expected) in [
+        ("shaman", 2645, 16262, [67.22449, 65.22449, 61.22449]),
+        ("druid", 768, 17002, [85.71429, 74.53416, 65.93407]),
+    ] {
+        let files: &[&str] = if class == "druid" { &["forever_druid"] } else { &[] };
+        let conn = fixture_of("forever", files);
+        let overrides = Overrides::load_edition(&repo().join("overrides"), Edition::Forever).unwrap();
+        for rank in 0..=2 {
+            for assumption in [false, true] {
+                let ranks = if rank == 0 {
+                    serde_json::json!([])
+                } else {
+                    serde_json::json!([{
+                        "tree":100,"node":10,"spell":talent,"name":"Localized talent",
+                        "rank":rank,"max_rank":2
+                    }])
+                };
+                let req: PlanRequest = serde_json::from_value(serde_json::json!({
+                    "race": if class == "druid" { "skyborne_horde" } else { "orc" },
+                    "class":class,"from_level":30,"to_level":31,"required_class_quests":[],
+                    "start":{"level":30,"spells":[spell],"talents":{
+                        "source":"traits","observed_at":100,"ranks":ranks
+                    }}
+                }))
+                .unwrap();
+                let base = class_scenario(&conn, &overrides, &req);
+                let mut p = at_start(base.build(), 1);
+                let a = crate::world::Pos {
+                    continent: 1,
+                    x: -100.0,
+                    y: -100.0,
+                    zone: 0,
+                    z: None,
+                };
+                p.model.initial.pos = Some((a, 0));
+                (p.params.run_speed, p.params.detour, p.params.mount_level) = (7.0, 1.0, 60);
+                p.params.assume_movement_talents = assumption;
+                let q = &mut p.model.quests[0];
+                q.level = 30;
+                q.xp = 100_000;
+                q.starts[0].pos = crate::world::Pos { x: -400.0, ..a };
+                q.ends[0].pos = a;
+                let route = [Stop::quest(0, Kind::Accept), Stop::quest(0, Kind::TurnIn)];
+                for (ground, seconds) in [(Dry, expected[rank]), (Indoor, 85.71429)] {
+                    p.world.terrain = crate::terrain::movement_test_ground(ground);
+                    let plan = planner(&p).explicit();
+                    let guide = crate::export::build(&plan, &p.profile, &route);
+                    assert!(
+                        (guide.breakdown.travel - seconds).abs() < 0.01,
+                        "{class} rank {rank}, assumption {assumption}: {}",
+                        guide.breakdown.travel
+                    );
+                }
+                assert_eq!(p.params.assume_movement_talents, assumption);
+                // Moving beyond the start level does not spend projected points.
+                let future = 2.0
+                    * p.model
+                        .abilities
+                        .walk_time(300.0, p.model.initial.abilities, 40, &p.params);
+                assert!(
+                    (future - expected[rank]).abs() < 0.01,
+                    "{class} rank {rank} future travel {future}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn unavailable_or_unrecognized_talent_snapshots_keep_movement_assumptions() {
+    let conn = base_of("forever");
+    let overrides = Overrides::load_edition(&repo().join("overrides"), Edition::Forever).unwrap();
+    for start in [
+        serde_json::json!({"level":30,"spells":[2645]}),
+        serde_json::json!({"level":30,"spells":[2645],"errors":{"talents":"configuration not loaded"},
+            "talents":{"source":"traits","observed_at":100,"ranks":[]}}),
+        serde_json::json!({"level":30,"spells":[2645],
+            "talents":{"source":"classic","observed_at":100,"ranks":[]}}),
+        serde_json::json!({"level":30,"spells":[2645],
+        "talents":{"source":"traits","observed_at":100,"ranks":[{
+            "tree":100,"node":10,"spell":16262,"name":"","rank":1,"max_rank":3
+        }]}}),
+    ] {
+        let req: PlanRequest = serde_json::from_value(serde_json::json!({
+            "race":"orc","class":"shaman","from_level":30,"to_level":31,
+            "required_class_quests":[],"start":start
+        }))
+        .unwrap();
+        let mut p = class_prepared(&conn, &overrides, &req);
+        p.params.mount_level = 60;
+        p.params.run_speed = 7.0;
+        for (assumption, seconds) in [(false, 33.6122449), (true, 30.6122449)] {
+            p.params.assume_movement_talents = assumption;
+            let time = p
+                .model
+                .abilities
+                .walk_time(300.0, p.model.initial.abilities, 30, &p.params);
+            assert!((time - seconds).abs() < 0.01, "{start}: {time}");
+        }
+    }
+}

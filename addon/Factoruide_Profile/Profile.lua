@@ -91,11 +91,14 @@ local function TraitTree(out, config, tree)
     assert(nodes and #nodes > 0, "talent tree not loaded")
     for _, id in ipairs(nodes) do
         local node = assert(C_Traits.GetNodeInfo(config, id), "talent node not loaded")
-        local rank = assert(node.currentRank, "talent rank unavailable")
+        assert(node.ID == id, "talent node not loaded")
+        local rank = assert(node.activeRank, "talent rank unavailable")
         if rank > 0 then
             local entry = assert(node.activeEntry, "active talent entry unavailable")
             local info = assert(C_Traits.GetEntryInfo(config, entry.entryID), "talent entry not loaded")
-            local definition = assert(C_Traits.GetDefinitionInfo(info.definitionID), "talent definition not loaded")
+            local definition = info.definitionID
+                    and assert(C_Traits.GetDefinitionInfo(info.definitionID), "talent definition not loaded")
+                or {}
             local spell = definition.spellID
             local name = spell
                 and (
@@ -119,14 +122,25 @@ local function Talents()
     local out = { source = "classic", observed_at = time(), ranks = {} }
     if FG.Edition == "forever" then
         local api = assert(C_SpecializationInfo, "class talent API unavailable")
+        assert(api.IsInitialized and api.IsInitialized(), "class talents not initialized")
         out.active_group = api.GetActiveSpecGroup()
         local config =
             assert(api.GetCombatConfigIDForSpecGroup(out.active_group), "active talent configuration not loaded")
         local info = assert(C_Traits.GetConfigInfo(config), "class talent configuration not loaded")
         assert(info.treeIDs and #info.treeIDs > 0, "class talent trees not loaded")
         out.source = "traits"
+        local currencies = {}
+        out.unspent = 0
         for _, tree in ipairs(info.treeIDs) do
             TraitTree(out.ranks, config, tree)
+            local available = assert(C_Traits.GetTreeCurrencyInfo(config, tree, true), "talent currency not loaded")
+            assert(#available > 0, "talent currency not loaded")
+            for _, currency in ipairs(available) do
+                if not currencies[currency.traitCurrencyID] then
+                    currencies[currency.traitCurrencyID] = true
+                    out.unspent = out.unspent + currency.quantity
+                end
+            end
         end
     else
         assert(GetNumTalentTabs and GetNumTalents and GetTalentInfo, "class talent API unavailable")
@@ -144,7 +158,7 @@ local function Talents()
             end
         end
     end
-    out.unspent = UnitCharacterPoints and UnitCharacterPoints("player") or nil
+    if FG.Edition ~= "forever" then out.unspent = UnitCharacterPoints and UnitCharacterPoints("player") or nil end
     return out
 end
 
@@ -160,7 +174,8 @@ local function Legacy()
         if key == "LEGACY_TREE_ADVENTURE_ID" then
             local node = assert(constants.LEGACY_TREE_ADVENTURE_TALENTED_NODE_ID, "Talented node ID unavailable")
             local info = assert(C_Traits.GetNodeInfo(config, node), "Talented rank not loaded")
-            out.talented_rank = assert(info.currentRank, "Talented rank unavailable")
+            assert(info.ID == node, "Talented node not loaded")
+            out.talented_rank = assert(info.activeRank, "Talented rank unavailable")
         end
     end
     return out
@@ -212,14 +227,32 @@ end
 -- closed, the spell book), read again by the minute's snapshot only when the game said they
 -- changed; always on a full one (login, reload, logout). Opening the reputation headers makes
 -- the game tell every addon and its own panel, each minute, for nothing.
-local changed = { completed = true, reputation = true, spells = true }
+local changed = { completed = true, reputation = true, spells = true, talents = true, legacy = true }
 local CHANGED_BY = {
     QUEST_TURNED_IN = "completed",
     CHAT_MSG_COMBAT_FACTION_CHANGE = "reputation",
     SPELLS_CHANGED = "spells",
+    PLAYER_TALENT_UPDATE = "talents",
+    ACTIVE_TALENT_GROUP_CHANGED = "talents",
+    CHARACTER_POINTS_CHANGED = "talents",
 }
 for event, part in pairs(CHANGED_BY) do
     FG:On(event, function() changed[part] = true end)
+end
+
+-- Trait events also cover Legacy changes; defer the scan to the next snapshot.
+if FG.Edition == "forever" then
+    for _, event in ipairs({
+        "TRAIT_CONFIG_UPDATED",
+        "TRAIT_CONFIG_LIST_UPDATED",
+        "TRAIT_NODE_CHANGED",
+        "TRAIT_TREE_CHANGED",
+        "TRAIT_TREE_CURRENCY_INFO_UPDATED",
+    }) do
+        FG:On(event, function()
+            changed.talents, changed.legacy = true, true
+        end)
+    end
 end
 
 --- Read part `name` with `fn` when `full` or the game said it changed (else keep it as it is).
@@ -263,8 +296,8 @@ function Profile:Snapshot(full)
     profile.professions = Part("professions", Professions)
     profile.riding = Part("riding", function() return FG.ProfessionSkill(RIDING) or 0 end)
     profile.gear = Part("gear", Gear)
-    profile.talents = Part("talents", Talents)
-    profile.legacy = Part("legacy", Legacy)
+    profile.talents = Changed("talents", Talents, full)
+    profile.legacy = Changed("legacy", Legacy, full)
     profile.spells = Changed("spells", Spells, full)
     profile.reputation = Changed("reputation", FG.Reputations, full)
     profile.flights = profile.flights or {}

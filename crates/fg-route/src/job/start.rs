@@ -219,7 +219,7 @@ impl StartState {
     pub fn initial(&self, model: &Model, world: &World, params: &mut Params, notes: &mut Vec<String>) -> Initial {
         if let Some(talents) = &self.talents {
             let spent: i64 = talents.ranks.iter().map(|r| r.rank).sum();
-            notes.push(format!("saved class talents: {spent} ranks invested (observed at {}); allocations retained for build review, not a talent-by-talent combat simulation", talents.observed_at));
+            notes.push(format!("saved class talents: {spent} ranks recorded (observed at {}); allocations retained for build review, not a talent-by-talent combat simulation", talents.observed_at));
         }
         if let Some(legacy) = &self.legacy {
             notes.push(format!("saved Legacy Talented rank: {} (observed at {}); Legacy effects are recorded, not automatically applied to route timing", legacy.talented_rank, legacy.observed_at));
