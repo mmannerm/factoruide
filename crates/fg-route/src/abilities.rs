@@ -228,12 +228,10 @@ impl Abilities {
                     MovementTalent::ImprovedGhostWolf => 16262,
                 };
                 match snapshot.ranks.iter().find(|r| r.spell == Some(spell)) {
-                    // Missing IDs may be an unlearned talent or an unmapped live entry.
-                    // Until node-to-spell mappings are verified, absence stays unknown.
-                    None => None,
                     Some(r) if r.max_rank == 2 && (0..=2).contains(&r.rank) => Some(r.rank),
-                    // A changed live rank cap needs new effect data, not extrapolation.
-                    Some(_) => None,
+                    // Missing IDs may be unlearned or unmapped; changed caps need new
+                    // effect data. Neither proves a rank we can use for movement.
+                    _ => None,
                 }
             });
         }
