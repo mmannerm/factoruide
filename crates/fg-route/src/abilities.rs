@@ -228,14 +228,26 @@ impl Abilities {
                     MovementTalent::ImprovedGhostWolf => 16262,
                 };
                 match snapshot.ranks.iter().find(|r| r.spell == Some(spell)) {
-                    // A complete tree stores learned ranks only: absence is a confirmed zero.
-                    None => Some(0),
+                    // Missing IDs may be an unlearned talent or an unmapped live entry.
+                    // Until node-to-spell mappings are verified, absence stays unknown.
+                    None => None,
                     Some(r) if r.max_rank == 2 && (0..=2).contains(&r.rank) => Some(r.rank),
                     // A changed live rank cap needs new effect data, not extrapolation.
                     Some(_) => None,
                 }
             });
         }
+    }
+
+    /// Report only ranks actually used by the movement model, not merely saved allocations.
+    pub(crate) fn talent_notes(&self) -> impl Iterator<Item = String> + '_ {
+        self.entries.iter().filter_map(|ability| {
+            let rank = ability.travel.as_ref()?.observed_rank?;
+            Some(format!(
+                "{} uses saved movement talent rank {rank}/2 for this route; held constant without projected point spending, overriding the generic movement-talent assumption without changing its saved setting",
+                ability.name
+            ))
+        })
     }
 
     fn entry(&mut self, conn: &Connection, trainer: &[(i64, String, i64, i64)], spell: i64) -> Result<usize> {

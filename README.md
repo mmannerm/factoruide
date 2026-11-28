@@ -57,7 +57,9 @@ zones to do, the level to reach before moving on from each, and where the XP is.
   with a group in any supported edition.
 - **Your travel spells**: learned Cat Form, Travel Form, Ghost Wolf and Aspect of the Cheetah
   affect walking estimates only for walks entirely outdoors without swimming; few walks currently
-  qualify. In Advanced, **Assume movement talents are learned** is on by default. Cheetah needs
+  qualify. In Advanced, **Assume movement talents are learned** is on by default.
+  A recognized Forever talent rank in the saved profile replaces that assumption; an unknown
+  talent keeps it. Cheetah needs
   no talent. Forms become available through the quests or trainers of your game version.
 - **Your class spells**: quest rewards and trainer visits determine which spells are known.
   Form attacks need both the form and its learned attack rank. Imported characters use their

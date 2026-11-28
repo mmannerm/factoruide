@@ -78,9 +78,6 @@ pub fn load(
             },
         )?);
     }
-    for (index, book) in mate_abilities.iter_mut().enumerate() {
-        book.observe_talents(starts.get(index + 1).copied(), params.edition);
-    }
     let mut knowledge = HashMap::<i64, (bool, bool)>::new();
     for (i, book) in std::iter::once(&abilities).chain(&mate_abilities).enumerate() {
         let start = starts.get(i).copied();

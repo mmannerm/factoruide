@@ -122,7 +122,7 @@ export function CharacterPicker({ characters, start, onPick, options, recorded, 
           })}
         </small>
       )}
-      {start && (start.errors?.talents || start.errors?.legacy) && (
+      {start && [start.errors?.talents, start.errors?.legacy].some((error) => error?.includes("staged talent changes")) && (
         <small className="field-error">{t("Appliquez ou annulez les changements dans les panneaux de talents et d’héritage avant d’enregistrer à nouveau.")}</small>
       )}
       {start && latest && latest.profile.time > start.time && (

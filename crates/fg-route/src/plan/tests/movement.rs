@@ -603,7 +603,12 @@ fn forever_saved_movement_ranks_override_assumptions_without_projecting_points()
                 q.starts[0].pos = crate::world::Pos { x: -400.0, ..a };
                 q.ends[0].pos = a;
                 let route = [Stop::quest(0, Kind::Accept), Stop::quest(0, Kind::TurnIn)];
-                for (ground, seconds) in [(Dry, *expected_seconds), (Indoor, 85.71429)] {
+                let effective = if rank == 0 && assumption {
+                    expected[2]
+                } else {
+                    *expected_seconds
+                };
+                for (ground, seconds) in [(Dry, effective), (Indoor, 85.71429)] {
                     p.world.terrain = crate::terrain::movement_test_ground(ground);
                     let plan = planner(&p).explicit();
                     let guide = crate::export::build(&plan, &p.profile, &route);
@@ -614,13 +619,25 @@ fn forever_saved_movement_ranks_override_assumptions_without_projecting_points()
                     );
                 }
                 assert_eq!(p.params.assume_movement_talents, assumption);
+                let applied_notes: Vec<_> = p
+                    .notes
+                    .iter()
+                    .filter(|note| note.contains("uses saved movement talent rank"))
+                    .collect();
+                if rank == 0 {
+                    assert!(applied_notes.is_empty(), "an absent talent is not a verified zero");
+                } else {
+                    assert_eq!(applied_notes.len(), 1);
+                    assert!(applied_notes[0].contains(&format!("rank {rank}/2")));
+                    assert!(applied_notes[0].contains("without projected point spending"));
+                }
                 // Moving beyond the start level does not spend projected points.
                 let future = 2.0
                     * p.model
                         .abilities
                         .walk_time(300.0, p.model.initial.abilities, 40, &p.params);
                 assert!(
-                    (future - *expected_seconds).abs() < 0.01,
+                    (future - effective).abs() < 0.01,
                     "{class} rank {rank} future travel {future}"
                 );
             }
@@ -634,6 +651,12 @@ fn unavailable_or_unrecognized_talent_snapshots_keep_movement_assumptions() {
     let overrides = Overrides::load_edition(&repo().join("overrides"), Edition::Forever).unwrap();
     for start in [
         serde_json::json!({"level":30,"spells":[2645]}),
+        serde_json::json!({"level":30,"spells":[2645],
+            "talents":{"source":"traits","observed_at":100,"ranks":[]}}),
+        serde_json::json!({"level":30,"spells":[2645],
+        "talents":{"source":"traits","observed_at":100,"ranks":[{
+            "tree":100,"node":10,"name":"Improved Ghost Wolf","rank":2,"max_rank":2
+        }]}}),
         serde_json::json!({"level":30,"spells":[2645],"errors":{"talents":"configuration not loaded"},
             "talents":{"source":"traits","observed_at":100,"ranks":[]}}),
         serde_json::json!({"level":30,"spells":[2645],

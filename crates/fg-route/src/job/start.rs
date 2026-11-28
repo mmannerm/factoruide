@@ -221,6 +221,7 @@ impl StartState {
             let spent: i64 = talents.ranks.iter().map(|r| r.rank).sum();
             notes.push(format!("saved class talents: {spent} ranks recorded (observed at {}); allocations retained for build review, not a talent-by-talent combat simulation", talents.observed_at));
         }
+        notes.extend(model.abilities.talent_notes());
         if let Some(legacy) = &self.legacy {
             notes.push(format!("saved Legacy Talented rank: {} (observed at {}); Legacy effects are recorded, not automatically applied to route timing", legacy.talented_rank, legacy.observed_at));
         }
